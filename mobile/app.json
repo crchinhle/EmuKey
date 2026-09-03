@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "EmuKey",
+    "slug": "emukey",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "newArchEnabled": true
+  }
+}
