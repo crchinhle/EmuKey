@@ -1,0 +1,31 @@
+export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');
+export const PAYMENT_IPN_PROTOCOL_VERSION = 1 as const;
+
+export interface CreateCheckoutInput {
+  amountVnd: number;
+  attemptId: string;
+}
+
+export interface CheckoutSession {
+  checkoutReference: string;
+  checkoutUrl: string;
+}
+
+export interface PaymentGatewayPort {
+  createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession>;
+  verifyIpn(input: PaymentIpnInput): Promise<VerifiedPaymentEvent>;
+}
+
+export interface PaymentIpnInput {
+  payload: unknown;
+  signature?: string;
+}
+
+export interface VerifiedPaymentEvent {
+  amountVnd: number;
+  eventId: string;
+  occurredAt: Date;
+  protocolVersion: typeof PAYMENT_IPN_PROTOCOL_VERSION;
+  providerReference: string;
+  transactionReference?: string;
+}

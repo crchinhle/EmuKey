@@ -1,0 +1,141 @@
+import type { Hex } from 'viem';
+import type { Pool } from 'pg';
+
+import { RpcChainIndexerService } from '../../src/modules/blockchain/application/rpc-chain-indexer.service.js';
+import { ChainIndexerCheckpointRepository } from '../../src/modules/blockchain/infrastructure/chain-indexer-checkpoint.repository.js';
+
+function bytes16(value: string): Hex {
+  return `0x${value.replaceAll('-', '')}`;
+}
+
+describe('RpcChainIndexerService', () => {
+  it('keeps overlap inside the configured RPC batch limit', async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ next_block: '100' }] });
+    const repository = new ChainIndexerCheckpointRepository({
+      query,
+    } as unknown as Pool);
+
+    await expect(
+      repository.claimRange(
+        {
+          chainId: 31_337,
+          contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+          network: 'hardhat',
+        },
+        'worker-1',
+        1,
+        200,
+        10,
+        3,
+      ),
+    ).resolves.toEqual({ fromBlock: 97, toBlock: 106 });
+  });
+
+  it('resumes from PostgreSQL, ingests canonical RPC logs and advances only after success', async () => {
+    const commandId = '00000000-0000-4000-8000-000000000901';
+    const licenseId = '00000000-0000-4000-8000-000000000401';
+    const checkpoints = {
+      claimRange: vi.fn().mockResolvedValue({ fromBlock: 10, toBlock: 20 }),
+      commandContext: vi.fn().mockResolvedValue({
+        commandId,
+        licenseId,
+        providerUserId: '00000000-0000-4000-8000-000000000002',
+      }),
+      completeRange: vi.fn().mockResolvedValue(undefined),
+      eventIdentities: vi.fn().mockResolvedValue([
+        {
+          blockHash: `0x${'99'.repeat(32)}`,
+          id: '00000000-0000-4000-8000-000000000801',
+          logIndex: 2,
+          transactionHash: `0x${'88'.repeat(32)}`,
+        },
+      ]),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const indexer = {
+      ingest: vi.fn().mockResolvedValue({ created: true, id: 'event-1' }),
+      markReorged: vi.fn().mockResolvedValue(undefined),
+    };
+    const rpc = {
+      blockHash: vi.fn().mockResolvedValue(`0x${'20'.repeat(32)}`),
+      contractEvents: vi.fn().mockResolvedValue([
+        {
+          args: {
+            commandId: bytes16(commandId),
+            licenseId: bytes16(licenseId),
+          },
+          blockHash: `0x${'15'.repeat(32)}`,
+          blockNumber: 15n,
+          eventName: 'LicenseIssued',
+          logIndex: 0,
+          transactionHash: `0x${'77'.repeat(32)}`,
+        },
+      ]),
+      latestBlock: vi.fn().mockResolvedValue(20),
+    };
+    const service = new RpcChainIndexerService(checkpoints, indexer, rpc, {
+      batchSize: 100,
+      chainId: 31_337,
+      contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+      deploymentBlock: 1,
+      network: 'hardhat',
+      requiredConfirmations: 2,
+    });
+
+    await expect(service.poll('worker-1')).resolves.toBe(1);
+
+    expect(indexer.markReorged).toHaveBeenCalledWith(
+      '00000000-0000-4000-8000-000000000801',
+    );
+    expect(indexer.ingest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chainCommandId: commandId,
+        confirmationCount: 6,
+        eventType: 'LICENSE_ISSUED',
+        licenseId,
+      }),
+    );
+    expect(checkpoints.completeRange).toHaveBeenCalledWith(
+      expect.any(Object),
+      'worker-1',
+      { fromBlock: 10, toBlock: 20 },
+      `0x${'20'.repeat(32)}`,
+    );
+    expect(checkpoints.release).not.toHaveBeenCalled();
+  });
+
+  it('does not advance the durable cursor when RPC processing fails', async () => {
+    const checkpoints = {
+      claimRange: vi.fn().mockResolvedValue({ fromBlock: 10, toBlock: 20 }),
+      commandContext: vi.fn(),
+      completeRange: vi.fn(),
+      eventIdentities: vi.fn().mockResolvedValue([]),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const rpc = {
+      blockHash: vi.fn(),
+      contractEvents: vi.fn().mockRejectedValue(new Error('RPC unavailable')),
+      latestBlock: vi.fn().mockResolvedValue(20),
+    };
+    const service = new RpcChainIndexerService(
+      checkpoints,
+      { ingest: vi.fn(), markReorged: vi.fn() },
+      rpc,
+      {
+        batchSize: 100,
+        chainId: 31_337,
+        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+        deploymentBlock: 1,
+        network: 'hardhat',
+        requiredConfirmations: 2,
+      },
+    );
+
+    await expect(service.poll('worker-1')).rejects.toThrow('RPC unavailable');
+    expect(checkpoints.completeRange).not.toHaveBeenCalled();
+    expect(checkpoints.release).toHaveBeenCalled();
+  });
+});

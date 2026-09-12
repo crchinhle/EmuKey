@@ -1,0 +1,863 @@
+{
+  "_format": "hh3-artifact-1",
+  "contractName": "LicenseRegistry",
+  "sourceName": "solidity/LicenseRegistry.sol",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "admin",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "relayer",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "AccessControlBadConfirmation",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "neededRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "AccessControlUnauthorizedAccount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "CommandAlreadyProcessed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidInput",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidState",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "activationCommitment",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "activationKeyVersion",
+          "type": "uint256"
+        }
+      ],
+      "name": "ActivationKeyRotated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "deviceId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "active",
+          "type": "bool"
+        }
+      ],
+      "name": "DeviceStatusChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "provider",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "planCommitment",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "activationCommitment",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "activationKeyVersion",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "expiresAt",
+          "type": "uint256"
+        }
+      ],
+      "name": "LicenseIssued",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "expiresAt",
+          "type": "uint256"
+        }
+      ],
+      "name": "LicenseRenewed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum LicenseRegistry.LicenseStatus",
+          "name": "status",
+          "type": "uint8"
+        }
+      ],
+      "name": "LicenseStatusChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "previousAdminRole",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "newAdminRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "RoleAdminChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        }
+      ],
+      "name": "RoleGranted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        }
+      ],
+      "name": "RoleRevoked",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "DEFAULT_ADMIN_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "DOMAIN_PLAN_V1",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "RELAYER_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "deviceId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "activateDevice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "deviceId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "activeDevice",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "provider",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "productId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "planId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "uint256",
+          "name": "planVersion",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "durationMonths",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxActiveDevices",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "entitlementsHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "termsHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "computePlanCommitment",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        }
+      ],
+      "name": "effectiveStatus",
+      "outputs": [
+        {
+          "internalType": "enum LicenseRegistry.LicenseStatus",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        }
+      ],
+      "name": "getLicense",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "provider",
+              "type": "address"
+            },
+            {
+              "internalType": "bytes16",
+              "name": "productId",
+              "type": "bytes16"
+            },
+            {
+              "internalType": "bytes16",
+              "name": "planId",
+              "type": "bytes16"
+            },
+            {
+              "internalType": "uint256",
+              "name": "planVersion",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "planCommitment",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "activationCommitment",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint256",
+              "name": "activationKeyVersion",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "maxActiveDevices",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "activeDevices",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "expiresAt",
+              "type": "uint256"
+            },
+            {
+              "internalType": "enum LicenseRegistry.LicenseStatus",
+              "name": "status",
+              "type": "uint8"
+            }
+          ],
+          "internalType": "struct LicenseRegistry.LicenseData",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        }
+      ],
+      "name": "getRoleAdmin",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "grantRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "hasRole",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "address",
+          "name": "provider",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "productId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "planId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "uint256",
+          "name": "planVersion",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "planCommitment",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "activationCommitment",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "activationKeyVersion",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxActiveDevices",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "expiresAt",
+          "type": "uint256"
+        }
+      ],
+      "name": "issueLicense",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        }
+      ],
+      "name": "processedCommands",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "uint256",
+          "name": "expiresAt",
+          "type": "uint256"
+        }
+      ],
+      "name": "renewLicense",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "callerConfirmation",
+          "type": "address"
+        }
+      ],
+      "name": "renounceRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        }
+      ],
+      "name": "resumeLicense",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "deviceId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "revokeDevice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        }
+      ],
+      "name": "revokeLicense",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "revokeRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "newCommitment",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint256",
+          "name": "newVersion",
+          "type": "uint256"
+        }
+      ],
+      "name": "rotateActivationKey",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes4",
+          "name": "interfaceId",
+          "type": "bytes4"
+        }
+      ],
+      "name": "supportsInterface",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes16",
+          "name": "commandId",
+          "type": "bytes16"
+        },
+        {
+          "internalType": "bytes16",
+          "name": "licenseId",
+          "type": "bytes16"
+        }
+      ],
+      "name": "suspendLicense",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080346100aa57601f61141438819003918201601f19168301916001600160401b038311848410176100ae5780849260409485528339810103126100aa57610052602061004b836100c2565b92016100c2565b6001600160a01b038216158015610099575b61008a5761007461007a926100d6565b5061014c565b506040516111d490816101e08239f35b63b4fa3fb360e01b5f5260045ffd5b506001600160a01b03811615610064565b5f80fd5b634e487b7160e01b5f52604160045260245ffd5b51906001600160a01b03821682036100aa57565b6001600160a01b0381165f9081525f5160206113d45f395f51905f52602052604090205460ff16610147576001600160a01b03165f8181525f5160206113d45f395f51905f5260205260408120805460ff191660011790553391905f5160206113b45f395f51905f528180a4600190565b505f90565b6001600160a01b0381165f9081525f5160206113f45f395f51905f52602052604090205460ff16610147576001600160a01b03165f8181525f5160206113f45f395f51905f5260205260408120805460ff191660011790553391907fe2b7fb3b832174769106daebcfd6d1970523240dda11281102db9363b83b0dc4905f5160206113b45f395f51905f529080a460019056fe6080806040526004361015610012575f80fd5b5f3560e01c90816301ffc9a714610e36575080630ac08b4814610e0657806319acc6b114610dc8578063248a9ca314610d965780632f2ff15d14610d5957806333aa07b814610aea57806336568abe14610aa6578063390d2c5f14610a6c578063504a513e146109af5780637b002898146108fa5780637b65e8811461081c57806391d14854146107d4578063926d7d7f1461079a578063a217fddf14610780578063a686687714610652578063afe1dcfb146105b0578063b8c55f1614610417578063be4d0a0614610375578063c001ab1a1461032b578063d547741f146102e7578063d592aec0146101f25763dd6d0bb51461010e575f80fd5b346101ee5760403660031901126101ee57610127610e89565b61012f610ea0565b610137610fa4565b610140826110d3565b61014981610f76565b600981019060ff82541660058110156101da57600214908115916101cb575b506101bc57600160ff198254161790557f31adf22d20d49d47d503a1dd5931c5a4a9b7afc778d5f960c9785b9351edf57d602060405192600184526001600160801b031916936001600160801b03191692a3005b63baf3f0f760e01b5f5260045ffd5b6008915001544210155f610168565b634e487b7160e01b5f52602160045260245ffd5b5f80fd5b346101ee576101003660031901126101ee576004356001600160a01b038116908190036101ee57610221610ea0565b906044356001600160801b031981168091036101ee576040519260208401927f0dae47fff65b3d43b115e0f5601de4bbdf90dcd8bb2dac529e1f412c835eac9a845260408501526001600160801b0319166060840152608083015260643560a083015260843560c083015260a43560e083015260c43561010083015260e435610120830152610120825261014082019180831067ffffffffffffffff8411176102d35760408390525190208152602090f35b634e487b7160e01b5f52604160045260245ffd5b346101ee5760403660031901126101ee57610329600435610306610ec4565b9061032461031f825f525f602052600160405f20015490565b611013565b61111e565b005b346101ee5760403660031901126101ee576001600160801b031961034d610e89565b165f52600360205260405f206024355f52602052602060ff60405f2054166040519015158152f35b346101ee5760403660031901126101ee5761038e610e89565b610396610ea0565b61039e610fa4565b6103a7826110d3565b60096103b282610f76565b0160ff81541660058110156101da576003146101bc57600360ff198254161790557f31adf22d20d49d47d503a1dd5931c5a4a9b7afc778d5f960c9785b9351edf57d602060405192600384526001600160801b031916936001600160801b03191692a3005b346101ee5760203660031901126101ee57610485610433610e89565b5f61014060405161044381610f59565b8281528260208201528260408201528260608201528260808201528260a08201528260c08201528260e082015282610100820152826101208201520152610f76565b60405161049181610f59565b60018060a01b03825416815260018201549160208201926001600160801b03198160801b16845260408301906001600160801b031916815260028201549160608401928352600381015460808501908152600482015460a08601908152600583015460c0870190815260068401549160e08801928352600785015493610100890194855260ff60096008880154976101208c01988952015416976101408a019760058a10156101da576101609b6105ae9a8a526040519b60018060a01b039051168c526001600160801b031990511660208c01526001600160801b031990511660408b01525160608a01525160808901525160a08801525160c08701525160e0860152516101008501525161012084015251610140830190610eb7565bf35b346101ee5760403660031901126101ee576105c9610e89565b6105d1610ea0565b6105d9610fa4565b6105e2826110d3565b60096105ed82610f76565b0160ff81541660058110156101da576001036101bc57600260ff198254161790557f31adf22d20d49d47d503a1dd5931c5a4a9b7afc778d5f960c9785b9351edf57d602060405192600284526001600160801b031916936001600160801b03191692a3005b346101ee5761066036610eda565b91610669610fa4565b610672816110d3565b61067b82610f76565b9160ff60098401541660058110156101da57600114801590610772575b8015610748575b8015610736575b6101bc576007906001600160801b03191692835f52600360205260405f20855f5260205260405f20600160ff19825416179055018054906001820180921161072257557f215d7bc686b2351452380d7297f1f69f8ae2e5b07429f3bb367d1e627ba38b4d602060405192600184526001600160801b03191692a4005b634e487b7160e01b5f52601160045260245ffd5b506007830154600684015411156106a6565b506001600160801b031981165f52600360205260405f20845f5260205260ff60405f20541661069f565b506008830154421015610698565b346101ee575f3660031901126101ee5760206040515f8152f35b346101ee575f3660031901126101ee5760206040517fe2b7fb3b832174769106daebcfd6d1970523240dda11281102db9363b83b0dc48152f35b346101ee5760403660031901126101ee576107ed610ec4565b6004355f525f60205260405f209060018060a01b03165f52602052602060ff60405f2054166040519015158152f35b346101ee5760803660031901126101ee57610835610e89565b61083d610ea0565b604435906064359061084d610fa4565b610856846110d3565b61085f81610f76565b9060ff60098301541660058110156101da5760031480156108f2575b80156108d9575b6101bc57827f10c9f91cb8da5da8338e027f4d2329ad16a0e2ddba69b7e0e5fdfd1226f3d5869360058487600460409701550155825194855260208501526001600160801b031916936001600160801b03191692a3005b5060058201546001810180911161072257831415610882565b50831561087b565b346101ee5760603660031901126101ee57610913610e89565b61091b610ea0565b60443590610927610fa4565b610930836110d3565b61093981610f76565b60ff60098201541660058110156101da5760031480156109a1575b6101bc577fc087a339111b863bb5bd1124ece1529412bc2bac08f0a16c894bc03c05689af89183600860209301556040519384526001600160801b031916936001600160801b03191692a3005b506008810154831115610954565b346101ee576109bd36610eda565b916109c6610fa4565b6109cf816110d3565b6109d882610f76565b916001600160801b03191691825f52600360205260405f20845f5260205260ff60405f205416156101bc57600790835f52600360205260405f20855f5260205260405f2060ff198154169055018054905f19820191821161072257557f215d7bc686b2351452380d7297f1f69f8ae2e5b07429f3bb367d1e627ba38b4d6020604051925f84526001600160801b03191692a4005b346101ee575f3660031901126101ee5760206040517f0dae47fff65b3d43b115e0f5601de4bbdf90dcd8bb2dac529e1f412c835eac9a8152f35b346101ee5760403660031901126101ee57610abf610ec4565b336001600160a01b03821603610adb576103299060043561111e565b63334bd91960e11b5f5260045ffd5b346101ee576101603660031901126101ee57610b04610e89565b610b0c610ea0565b6044356001600160a01b0381169291908390036101ee576064356001600160801b031981168091036101ee57608435926001600160801b031984168094036101ee5760a4359060c4359360e43592610104359061012435956101443593610b71610fa4565b610b7a866110d3565b6001600160801b0319169889158015610d51575b8015610d49575b8015610d41575b8015610d39575b8015610d31575b8015610d29575b8015610d1f575b610d1057895f52600160205260ff600960405f2001541660058110156101da576101bc57899760405193610beb85610f59565b8c8552602085019384526040850192835260608501908152608085018b815260a08601908a825260c087019288845260e088019485526101008801955f87526101208901978b89526101408a019e8f600190525f52600160205260405f2099600160a01b600190039051166bffffffffffffffffffffffff60a01b8b5416178a555160801c906001600160801b031990511617600189015551600288015551600387015551600486015551600585015551600684015551600783015551600882015560090194519360058510156101da577f4ec4b24b61570a0dd81a3d019bceb3047b775c368a8c2ef7785425d4498078f39560809560ff801983541691161790556040519687526020870152604086015260608501526001600160801b03191692a4005b63b4fa3fb360e01b5f5260045ffd5b5042851115610bb8565b508715610bb1565b508315610baa565b508615610ba3565b508815610b9c565b508215610b95565b508a15610b8e565b346101ee5760403660031901126101ee57610329600435610d78610ec4565b90610d9161031f825f525f602052600160405f20015490565b61104b565b346101ee5760203660031901126101ee576020610dc06004355f525f602052600160405f20015490565b604051908152f35b346101ee5760203660031901126101ee576001600160801b0319610dea610e89565b165f526002602052602060ff60405f2054166040519015158152f35b346101ee5760203660031901126101ee576020610e29610e24610e89565b610f16565b6105ae6040518092610eb7565b346101ee5760203660031901126101ee576004359063ffffffff60e01b82168092036101ee57602091637965db0b60e01b8114908115610e78575b5015158152f35b6301ffc9a760e01b14905083610e71565b600435906001600160801b0319821682036101ee57565b602435906001600160801b0319821682036101ee57565b9060058210156101da5752565b602435906001600160a01b03821682036101ee57565b60609060031901126101ee576004356001600160801b0319811681036101ee57906024356001600160801b0319811681036101ee579060443590565b610f1f90610f76565b60ff6009820154169060058210156101da57600182149081610f4a575b50610f445790565b50600490565b6008915001544210155f610f3c565b610160810190811067ffffffffffffffff8211176102d357604052565b6001600160801b0319165f52600160205260405f209060ff60098301541660058110156101da57156101bc57565b335f9081527ffaf93c3d007e112089dc8351e013e6685ef67703975d0224b26fc45941d4f1f5602052604090205460ff1615610fdc57565b63e2517d3f60e01b5f52336004527fe2b7fb3b832174769106daebcfd6d1970523240dda11281102db9363b83b0dc460245260445ffd5b5f8181526020818152604080832033845290915290205460ff16156110355750565b63e2517d3f60e01b5f523360045260245260445ffd5b5f818152602081815260408083206001600160a01b038616845290915290205460ff166110cd575f818152602081815260408083206001600160a01b0395909516808452949091528120805460ff19166001179055339291907f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d9080a4600190565b50505f90565b6001600160801b0319168015610d1057805f52600260205260ff60405f20541661110f575f52600260205260405f20600160ff19825416179055565b63d2442bef60e01b5f5260045ffd5b5f818152602081815260408083206001600160a01b038616845290915290205460ff16156110cd575f818152602081815260408083206001600160a01b0395909516808452949091528120805460ff19169055339291907ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9080a460019056fea2646970667358221220a3778a606b721130f14542b695871408cf0b69c62adf46f46a0d6d1b77aa247464736f6c634300082200332f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0dad3228b676f7d3cd4284a5443f17f1962b36e491b30a40b2405849e597ba5fb5faf93c3d007e112089dc8351e013e6685ef67703975d0224b26fc45941d4f1f5",
+  "deployedBytecode": "0x6080806040526004361015610012575f80fd5b5f3560e01c90816301ffc9a714610e36575080630ac08b4814610e0657806319acc6b114610dc8578063248a9ca314610d965780632f2ff15d14610d5957806333aa07b814610aea57806336568abe14610aa6578063390d2c5f14610a6c578063504a513e146109af5780637b002898146108fa5780637b65e8811461081c57806391d14854146107d4578063926d7d7f1461079a578063a217fddf14610780578063a686687714610652578063afe1dcfb146105b0578063b8c55f1614610417578063be4d0a0614610375578063c001ab1a1461032b578063d547741f146102e7578063d592aec0146101f25763dd6d0bb51461010e575f80fd5b346101ee5760403660031901126101ee57610127610e89565b61012f610ea0565b610137610fa4565b610140826110d3565b61014981610f76565b600981019060ff82541660058110156101da57600214908115916101cb575b506101bc57600160ff198254161790557f31adf22d20d49d47d503a1dd5931c5a4a9b7afc778d5f960c9785b9351edf57d602060405192600184526001600160801b031916936001600160801b03191692a3005b63baf3f0f760e01b5f5260045ffd5b6008915001544210155f610168565b634e487b7160e01b5f52602160045260245ffd5b5f80fd5b346101ee576101003660031901126101ee576004356001600160a01b038116908190036101ee57610221610ea0565b906044356001600160801b031981168091036101ee576040519260208401927f0dae47fff65b3d43b115e0f5601de4bbdf90dcd8bb2dac529e1f412c835eac9a845260408501526001600160801b0319166060840152608083015260643560a083015260843560c083015260a43560e083015260c43561010083015260e435610120830152610120825261014082019180831067ffffffffffffffff8411176102d35760408390525190208152602090f35b634e487b7160e01b5f52604160045260245ffd5b346101ee5760403660031901126101ee57610329600435610306610ec4565b9061032461031f825f525f602052600160405f20015490565b611013565b61111e565b005b346101ee5760403660031901126101ee576001600160801b031961034d610e89565b165f52600360205260405f206024355f52602052602060ff60405f2054166040519015158152f35b346101ee5760403660031901126101ee5761038e610e89565b610396610ea0565b61039e610fa4565b6103a7826110d3565b60096103b282610f76565b0160ff81541660058110156101da576003146101bc57600360ff198254161790557f31adf22d20d49d47d503a1dd5931c5a4a9b7afc778d5f960c9785b9351edf57d602060405192600384526001600160801b031916936001600160801b03191692a3005b346101ee5760203660031901126101ee57610485610433610e89565b5f61014060405161044381610f59565b8281528260208201528260408201528260608201528260808201528260a08201528260c08201528260e082015282610100820152826101208201520152610f76565b60405161049181610f59565b60018060a01b03825416815260018201549160208201926001600160801b03198160801b16845260408301906001600160801b031916815260028201549160608401928352600381015460808501908152600482015460a08601908152600583015460c0870190815260068401549160e08801928352600785015493610100890194855260ff60096008880154976101208c01988952015416976101408a019760058a10156101da576101609b6105ae9a8a526040519b60018060a01b039051168c526001600160801b031990511660208c01526001600160801b031990511660408b01525160608a01525160808901525160a08801525160c08701525160e0860152516101008501525161012084015251610140830190610eb7565bf35b346101ee5760403660031901126101ee576105c9610e89565b6105d1610ea0565b6105d9610fa4565b6105e2826110d3565b60096105ed82610f76565b0160ff81541660058110156101da576001036101bc57600260ff198254161790557f31adf22d20d49d47d503a1dd5931c5a4a9b7afc778d5f960c9785b9351edf57d602060405192600284526001600160801b031916936001600160801b03191692a3005b346101ee5761066036610eda565b91610669610fa4565b610672816110d3565b61067b82610f76565b9160ff60098401541660058110156101da57600114801590610772575b8015610748575b8015610736575b6101bc576007906001600160801b03191692835f52600360205260405f20855f5260205260405f20600160ff19825416179055018054906001820180921161072257557f215d7bc686b2351452380d7297f1f69f8ae2e5b07429f3bb367d1e627ba38b4d602060405192600184526001600160801b03191692a4005b634e487b7160e01b5f52601160045260245ffd5b506007830154600684015411156106a6565b506001600160801b031981165f52600360205260405f20845f5260205260ff60405f20541661069f565b506008830154421015610698565b346101ee575f3660031901126101ee5760206040515f8152f35b346101ee575f3660031901126101ee5760206040517fe2b7fb3b832174769106daebcfd6d1970523240dda11281102db9363b83b0dc48152f35b346101ee5760403660031901126101ee576107ed610ec4565b6004355f525f60205260405f209060018060a01b03165f52602052602060ff60405f2054166040519015158152f35b346101ee5760803660031901126101ee57610835610e89565b61083d610ea0565b604435906064359061084d610fa4565b610856846110d3565b61085f81610f76565b9060ff60098301541660058110156101da5760031480156108f2575b80156108d9575b6101bc57827f10c9f91cb8da5da8338e027f4d2329ad16a0e2ddba69b7e0e5fdfd1226f3d5869360058487600460409701550155825194855260208501526001600160801b031916936001600160801b03191692a3005b5060058201546001810180911161072257831415610882565b50831561087b565b346101ee5760603660031901126101ee57610913610e89565b61091b610ea0565b60443590610927610fa4565b610930836110d3565b61093981610f76565b60ff60098201541660058110156101da5760031480156109a1575b6101bc577fc087a339111b863bb5bd1124ece1529412bc2bac08f0a16c894bc03c05689af89183600860209301556040519384526001600160801b031916936001600160801b03191692a3005b506008810154831115610954565b346101ee576109bd36610eda565b916109c6610fa4565b6109cf816110d3565b6109d882610f76565b916001600160801b03191691825f52600360205260405f20845f5260205260ff60405f205416156101bc57600790835f52600360205260405f20855f5260205260405f2060ff198154169055018054905f19820191821161072257557f215d7bc686b2351452380d7297f1f69f8ae2e5b07429f3bb367d1e627ba38b4d6020604051925f84526001600160801b03191692a4005b346101ee575f3660031901126101ee5760206040517f0dae47fff65b3d43b115e0f5601de4bbdf90dcd8bb2dac529e1f412c835eac9a8152f35b346101ee5760403660031901126101ee57610abf610ec4565b336001600160a01b03821603610adb576103299060043561111e565b63334bd91960e11b5f5260045ffd5b346101ee576101603660031901126101ee57610b04610e89565b610b0c610ea0565b6044356001600160a01b0381169291908390036101ee576064356001600160801b031981168091036101ee57608435926001600160801b031984168094036101ee5760a4359060c4359360e43592610104359061012435956101443593610b71610fa4565b610b7a866110d3565b6001600160801b0319169889158015610d51575b8015610d49575b8015610d41575b8015610d39575b8015610d31575b8015610d29575b8015610d1f575b610d1057895f52600160205260ff600960405f2001541660058110156101da576101bc57899760405193610beb85610f59565b8c8552602085019384526040850192835260608501908152608085018b815260a08601908a825260c087019288845260e088019485526101008801955f87526101208901978b89526101408a019e8f600190525f52600160205260405f2099600160a01b600190039051166bffffffffffffffffffffffff60a01b8b5416178a555160801c906001600160801b031990511617600189015551600288015551600387015551600486015551600585015551600684015551600783015551600882015560090194519360058510156101da577f4ec4b24b61570a0dd81a3d019bceb3047b775c368a8c2ef7785425d4498078f39560809560ff801983541691161790556040519687526020870152604086015260608501526001600160801b03191692a4005b63b4fa3fb360e01b5f5260045ffd5b5042851115610bb8565b508715610bb1565b508315610baa565b508615610ba3565b508815610b9c565b508215610b95565b508a15610b8e565b346101ee5760403660031901126101ee57610329600435610d78610ec4565b90610d9161031f825f525f602052600160405f20015490565b61104b565b346101ee5760203660031901126101ee576020610dc06004355f525f602052600160405f20015490565b604051908152f35b346101ee5760203660031901126101ee576001600160801b0319610dea610e89565b165f526002602052602060ff60405f2054166040519015158152f35b346101ee5760203660031901126101ee576020610e29610e24610e89565b610f16565b6105ae6040518092610eb7565b346101ee5760203660031901126101ee576004359063ffffffff60e01b82168092036101ee57602091637965db0b60e01b8114908115610e78575b5015158152f35b6301ffc9a760e01b14905083610e71565b600435906001600160801b0319821682036101ee57565b602435906001600160801b0319821682036101ee57565b9060058210156101da5752565b602435906001600160a01b03821682036101ee57565b60609060031901126101ee576004356001600160801b0319811681036101ee57906024356001600160801b0319811681036101ee579060443590565b610f1f90610f76565b60ff6009820154169060058210156101da57600182149081610f4a575b50610f445790565b50600490565b6008915001544210155f610f3c565b610160810190811067ffffffffffffffff8211176102d357604052565b6001600160801b0319165f52600160205260405f209060ff60098301541660058110156101da57156101bc57565b335f9081527ffaf93c3d007e112089dc8351e013e6685ef67703975d0224b26fc45941d4f1f5602052604090205460ff1615610fdc57565b63e2517d3f60e01b5f52336004527fe2b7fb3b832174769106daebcfd6d1970523240dda11281102db9363b83b0dc460245260445ffd5b5f8181526020818152604080832033845290915290205460ff16156110355750565b63e2517d3f60e01b5f523360045260245260445ffd5b5f818152602081815260408083206001600160a01b038616845290915290205460ff166110cd575f818152602081815260408083206001600160a01b0395909516808452949091528120805460ff19166001179055339291907f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d9080a4600190565b50505f90565b6001600160801b0319168015610d1057805f52600260205260ff60405f20541661110f575f52600260205260405f20600160ff19825416179055565b63d2442bef60e01b5f5260045ffd5b5f818152602081815260408083206001600160a01b038616845290915290205460ff16156110cd575f818152602081815260408083206001600160a01b0395909516808452949091528120805460ff19169055339291907ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9080a460019056fea2646970667358221220a3778a606b721130f14542b695871408cf0b69c62adf46f46a0d6d1b77aa247464736f6c63430008220033",
+  "linkReferences": {},
+  "deployedLinkReferences": {},
+  "immutableReferences": {},
+  "inputSourceName": "project/solidity/LicenseRegistry.sol",
+  "buildInfoId": "solc-0_8_34-1ef440af27d2b1e5a5e131b1524292bb61f36c04"
+}
