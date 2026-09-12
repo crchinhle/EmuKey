@@ -3,6 +3,7 @@
     "name": "EmuKey",
     "slug": "emukey",
     "version": "0.0.0",
+    "scheme": "emukey",
     "orientation": "portrait",
     "newArchEnabled": true
   }
