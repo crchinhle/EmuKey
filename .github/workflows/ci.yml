@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, ChinhLe]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.21.0
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install frozen dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Verify backend
+        run: |
+          corepack pnpm baseline:check
+          corepack pnpm lint
+          corepack pnpm typecheck
+          corepack pnpm test
+          corepack pnpm contracts:verify
+          corepack pnpm delivery:check
+          corepack pnpm openapi:check
+          corepack pnpm build
+      - name: Build backend image
+        run: docker build -t emukey-backend:ci .
+      - name: Verify backend runtime image excludes sensitive maintenance files
+        run: docker run --rm --entrypoint sh emukey-backend:ci -c "test ! -e /app/.env && test ! -e /app/database/maintenance/drop-all-public-tables.sql && test ! -d /app/contracts"
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.21.0
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install frozen dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Verify frontend
+        run: |
+          corepack pnpm lint
+          corepack pnpm typecheck
+          corepack pnpm test
+          corepack pnpm openapi:check
+          corepack pnpm build
+      - name: Build frontend image
+        run: docker build -t emukey-frontend:ci .
+
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.21.0
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install frozen dependencies
+        run: corepack pnpm install --frozen-lockfile
+      - name: Verify mobile
+        run: |
+          corepack pnpm exec expo install --check
+          corepack pnpm lint
+          corepack pnpm typecheck
+          corepack pnpm test
+          corepack pnpm openapi:check
+          corepack pnpm build
+      - name: Build mobile delivery image
+        run: docker build -t emukey-mobile:ci .
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Prepare Compose validation environment
+        run: cp backend/.env.example backend/.env
+      - name: Validate external-database platform model
+        run: docker compose --env-file .env.example config --quiet

@@ -24,8 +24,6 @@ local.properties
 *.apk
 *.aab
 captures/
-app-test/app/release/
-app-test/app/debug/
 
 # Editors, operating systems, and logs
 .idea/
@@ -42,7 +40,11 @@ Thumbs.db
 *.orig
 *.rej
 
-contracts/
-database/
-docs/
-scripts/
+# Runtime data belongs to volumes/object storage, never the repository.
+/backend/data/
+
+# Local agent tooling is not product source.
+/skill/
+/skills/
+kilo.json
+skills-lock.json
