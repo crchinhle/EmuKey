@@ -15,22 +15,24 @@ export interface NavigationItem {
 }
 
 export interface RoleShellConfig {
-  readonly role: 'BUYER' | 'PROVIDER' | 'SUPPORT' | 'SYSTEM';
-  readonly account: string;
+  readonly role:
+    | 'CUSTOMER'
+    | 'PROVIDER_ADMIN'
+    | 'SUPPORT_STAFF'
+    | 'SYSTEM_ADMIN';
+  readonly account?: string;
   readonly items: readonly NavigationItem[];
 }
 
 export type OrderStatus =
-  'awaiting-signature' | 'awaiting-payment' | 'complete';
+  'awaiting-payment' | 'complete';
 
 export interface OrderRecord {
   readonly id: string;
-  readonly company: string;
+  readonly buyerReference: string;
   readonly product: string;
   readonly plan: string;
   readonly devices: number;
-  readonly subtotal: number;
-  readonly discount: number;
   readonly total: number;
   readonly status: OrderStatus;
   readonly statusLabel: string;
@@ -51,7 +53,6 @@ export interface LicenseRecord {
   readonly expiresAt: string;
   readonly status: 'active' | 'expiring' | 'revoked';
   readonly statusLabel: string;
-  readonly demoKey: string;
   readonly devices: readonly LicenseDevice[];
 }
 
@@ -63,8 +64,7 @@ export interface ConversationMessage {
 
 export interface ConversationRecord {
   readonly id: string;
-  readonly customer: string;
-  readonly company: string;
+  readonly buyerReference: string;
   readonly subject: string;
   readonly preview: string;
   readonly status: string;
@@ -75,16 +75,6 @@ export interface ConversationRecord {
   readonly usedDevices: number;
   readonly totalDevices: number;
   readonly messages: readonly ConversationMessage[];
-}
-
-export interface PromotionRecord {
-  readonly id: string;
-  readonly name: string;
-  readonly scope: string;
-  readonly discount: string;
-  readonly period: string;
-  readonly status: string;
-  readonly tone: StatusTone;
 }
 
 export interface KnowledgeDocument {
@@ -116,14 +106,14 @@ export interface AuditEvent {
 
 export interface VerificationRecord {
   readonly code: string;
-  readonly contractId: string;
+  readonly licenseId: string;
   readonly product: string;
   readonly provider: string;
   readonly validity: string;
   readonly devices: number;
   readonly createdAt: string;
   readonly blockNumber: string;
-  readonly documentHash: string;
+  readonly planCommitment: string;
 }
 
 export interface MetricRecord {

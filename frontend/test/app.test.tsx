@@ -1,147 +1,94 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/presentation/app/App';
 
 afterEach(cleanup);
 
 describe('EmuKey public web screens', () => {
-  it('renders W01 with the text brand and navigates to the catalog', async () => {
-    render(<App initialEntries={['/auth']} />);
-
-    expect(screen.getAllByText('EmuKey').length).toBeGreaterThan(0);
-    expect(screen.queryByText('LicenseHub')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
-
-    expect(
-      await screen.findByRole('heading', {
-        name: 'Bản quyền phần mềm cho doanh nghiệp hiện đại',
-      }),
-    ).toBeTruthy();
+  it('keeps the AI assistant launcher available across routes', async () => {
+    render(<App initialEntries={['/verify']} />);
+    const launcher = screen.getByRole('button', { name: 'Hỏi AI' });
+    expect(launcher.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(launcher);
+    expect(await screen.findByRole('region', { name: 'Trợ lý AI EmuKey' })).toBeTruthy();
   });
 
-  it('renders W02 from the product mock array and filters by search text', () => {
-    render(<App initialEntries={['/products']} />);
+  it('offers customer registration and navigates to the catalog', async () => {
+    render(<App initialEntries={['/auth']} />);
+    expect(screen.getByRole('heading', { name: 'Một tài khoản cho mọi license' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Đăng ký' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem sản phẩm' }));
+    expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
+  });
 
-    expect(screen.getByText('SecureDesk Pro')).toBeTruthy();
-    expect(screen.getByText('CloudStudio AI')).toBeTruthy();
-    expect(screen.getByText('DataGuard SDK')).toBeTruthy();
+  it('rejects a weak password for login', async () => {
+    render(<App initialEntries={['/auth']} />);
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'provider@example.com' } });
+    fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'emu@1234' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
+    expect(await screen.findByText('Mật khẩu phải có ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Đăng nhập' })).toBeTruthy();
+  });
 
-    fireEvent.change(screen.getByLabelText('Tìm sản phẩm'), {
-      target: { value: 'cloud' },
+  it('registers a Customer account without sending a backup key', async () => {
+    render(<App initialEntries={['/auth']} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng ký' }));
+    fireEvent.change(screen.getByLabelText('Họ và tên'), { target: { value: 'Khách hàng mới' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'buyer@example.com' } });
+    fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'Emu@1234' } });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu'), { target: { value: 'Emu@1234' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
+    expect(await screen.findByRole('heading', { name: 'Xác minh email' })).toBeTruthy();
+    const registrationCall = vi.mocked(fetch).mock.calls.find(
+      ([input, init]) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        return url.endsWith('/auth/register') && init?.method === 'POST';
+      },
+    );
+    const body = registrationCall?.[1]?.body;
+    if (typeof body !== 'string') throw new Error('Registration body missing');
+    expect(JSON.parse(body)).toEqual({
+      customerType: 'INDIVIDUAL',
+      displayName: 'Khách hàng mới',
+      email: 'buyer@example.com',
+      password: 'Emu@1234',
     });
+  });
 
+  it('renders the public catalog API and filters by search text', async () => {
+    render(<App initialEntries={['/products']} />);
+    expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
+    expect(await screen.findByText('CloudStudio AI')).toBeTruthy();
+    expect(await screen.findByText('DataGuard SDK')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Tìm sản phẩm'), { target: { value: 'cloud' } });
     expect(screen.getByText('CloudStudio AI')).toBeTruthy();
     expect(screen.queryByText('DataGuard SDK')).toBeNull();
   });
 
-  it('opens customer registration and returns with the arrow control', async () => {
+  it('shows the generic forgot-password response for internal accounts', async () => {
     render(<App initialEntries={['/auth']} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Đăng ký' }));
-
-    expect(
-      await screen.findByRole('heading', { name: 'Tạo tài khoản' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('combobox', { name: 'Loại khách hàng' }),
-    ).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Quay lại đăng nhập' }),
-    );
-
-    expect(
-      await screen.findByRole('heading', { name: 'Chào mừng trở lại' }),
-    ).toBeTruthy();
-  });
-
-  it('rejects a registration when password confirmation does not match', async () => {
-    render(<App initialEntries={['/auth?mode=register']} />);
-
-    fireEvent.change(screen.getByLabelText('Họ và tên'), {
-      target: { value: 'Nguyễn Minh Anh' },
-    });
-    fireEvent.change(screen.getByLabelText('Email'), {
-      target: { value: 'minhanh@example.com' },
-    });
-    fireEvent.change(screen.getByLabelText('Mật khẩu'), {
-      target: { value: 'MatKhauDemo12' },
-    });
-    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu'), {
-      target: { value: 'KhongTrungKhop12' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
-
-    expect(
-      await screen.findByText('Mật khẩu xác nhận không khớp.'),
-    ).toBeTruthy();
-    expect(
-      screen.queryByText('Kiểm tra email để xác minh tài khoản'),
-    ).toBeNull();
-  });
-
-  it('creates a pending customer registration from valid form values', async () => {
-    render(<App initialEntries={['/auth?mode=register']} />);
-
-    fireEvent.change(screen.getByLabelText('Họ và tên'), {
-      target: { value: 'Nguyễn Minh Anh' },
-    });
-    fireEvent.mouseDown(
-      screen.getByRole('combobox', { name: 'Loại khách hàng' }),
-    );
-    fireEvent.click(await screen.findByText('Học sinh'));
-    fireEvent.change(screen.getByLabelText('Email'), {
-      target: { value: 'minhanh@example.com' },
-    });
-    fireEvent.change(screen.getByLabelText('Mật khẩu'), {
-      target: { value: 'MatKhauDemo12' },
-    });
-    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu'), {
-      target: { value: 'MatKhauDemo12' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo tài khoản' }));
-
-    expect(
-      await screen.findByRole('status', {
-        name: 'Kiểm tra email để xác minh tài khoản',
-      }),
-    ).toBeTruthy();
-  });
-
-  it('shows the generic forgot-password response without exposing account existence', async () => {
-    render(<App initialEntries={['/auth']} />);
-
     fireEvent.click(screen.getByRole('button', { name: 'Quên mật khẩu?' }));
-    expect(
-      await screen.findByRole('heading', { name: 'Quên mật khẩu' }),
-    ).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText('Email'), {
-      target: { value: 'unknown@example.com' },
-    });
+    expect(await screen.findByRole('heading', { name: 'Quên mật khẩu' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'unknown@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: 'Gửi hướng dẫn' }));
-
-    expect(
-      await screen.findByRole('alert', {
-        name: 'Yêu cầu đặt lại mật khẩu đã được tiếp nhận',
-      }),
-    ).toBeTruthy();
+    expect(await screen.findByText('Nếu email hợp lệ, hướng dẫn đặt lại mật khẩu đã được gửi.')).toBeTruthy();
     expect(screen.queryByText('unknown@example.com')).toBeNull();
   });
 
-  it('opens W03 and renders feature and device options from mock arrays', () => {
+  it('opens a product and renders published plan data', async () => {
     render(<App initialEntries={['/products/securedesk']} />);
-
-    expect(
-      screen.getByRole('heading', { name: 'SecureDesk Pro' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByText('Khóa license theo fingerprint thiết bị'),
-    ).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Số thiết bị' })).toBeTruthy();
-    expect(screen.getByText('25 thiết bị')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'SecureDesk Pro' })).toBeTruthy();
+    const artwork = screen.getByRole('img', { name: 'Minh họa SecureDesk Pro' });
+    expect(artwork.tagName).toBe('IMG');
+    expect(artwork.getAttribute('src')).toBe('https://picsum.photos/seed/emukey-securedesk/1200/800');
+    expect(screen.getByRole('combobox', { name: 'Gói' })).toBeTruthy();
+    expect(screen.getAllByText('25 thiết bị').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeTruthy();
   });
 });

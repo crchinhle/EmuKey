@@ -1,108 +1,161 @@
-import { Alert, Button, Checkbox, Input, Select, Steps } from 'antd';
+import { Alert, Button, Checkbox, Input, Result, Spin, Steps } from 'antd';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { products } from '../../infrastructure/catalog/mockCatalog';
-import { primaryOrder } from '../../infrastructure/workspace/mockWorkspace';
+import { useProduct } from '../../application/catalog/catalogQueries';
+import { describeApiError } from '../../application/auth/authContext';
+import {
+  type OrderDetail,
+  useOrderMutations,
+  useOrderTerms,
+} from '../../application/orders/orderQueries';
 import { OrderSummary } from '../components/OrderSummary';
 import { PageHeader } from '../components/WorkspacePrimitives';
 
 export function BuyerCheckoutScreen() {
   const navigate = useNavigate();
-  const product = products[0]!;
-  const [devices, setDevices] = useState(25);
+  const [searchParams] = useSearchParams();
+  const productSlug = searchParams.get('product') ?? 'securedesk';
+  const { data: product, isLoading, isError } = useProduct(productSlug);
+  const planId = searchParams.get('planId') ?? product?.plans[0]?.id;
+  const [order, setOrder] = useState<OrderDetail>();
   const [accepted, setAccepted] = useState(false);
-  const [showError, setShowError] = useState(false);
-  const order = primaryOrder;
+  const [error, setError] = useState<string | null>(null);
+  const orderMutations = useOrderMutations();
+  const createOrderMutation = orderMutations.create;
+  const termsQuery = useOrderTerms(order?.id ?? '');
 
-  function createContract() {
-    if (!accepted) {
-      setShowError(true);
+  function createOrder() {
+    if (!planId) return;
+    setError(null);
+    createOrderMutation.mutate(
+      { planId },
+      {
+        onSuccess: setOrder,
+      },
+    );
+  }
+
+  function acceptTerms() {
+    if (!accepted || !order) {
+      setError('Bạn cần đọc và đồng ý điều khoản trước khi tiếp tục.');
       return;
     }
-    void navigate(`/buyer/contracts/${order.id}/sign`);
+    setError(null);
+    orderMutations.acceptTerms.mutate(order, {
+      onSuccess: (acceptedOrder) =>
+        void navigate(`/buyer/orders/${acceptedOrder.id}/payment`),
+    });
   }
+
+  if (isLoading) return <Spin aria-label="Đang tải gói giá" />;
+  if (isError)
+    return (
+      <Result
+        status="error"
+        title="Không thể tải gói giá"
+        subTitle="Danh mục đang tạm thời không khả dụng."
+      />
+    );
+  if (!product || !planId)
+    return (
+      <Result
+        status="info"
+        title="Gói chưa sẵn sàng"
+        subTitle="Gói này chưa được công bố hoặc đã thay đổi. Quay lại danh mục để chọn gói khác."
+      />
+    );
+  const selectedPlan =
+    product.plans.find((plan) => plan.id === planId) ?? product.plans[0];
+  if (!selectedPlan)
+    return <Result status="info" title="Sản phẩm chưa có gói được công bố" />;
 
   return (
     <div className="workspace-screen">
       <PageHeader
         title="Hoàn tất mua bản quyền"
-        description="Xác nhận doanh nghiệp, gói giá và điều khoản trước khi tạo hợp đồng."
+        description="Backend tạo snapshot đơn hàng trước, sau đó bạn đọc và chấp nhận đúng phiên bản điều khoản đã lưu."
         action={<Button>Thông báo</Button>}
       />
       <Steps
-        current={1}
+        current={order ? 1 : 0}
         items={[
           { title: 'Chọn gói' },
           { title: 'Xác nhận' },
-          { title: 'Ký & thanh toán' },
+          { title: 'Thanh toán' },
         ]}
       />
       <div className="checkout-grid">
         <div className="checkout-stack">
-          <section className="workspace-card section-card">
-            <h2>Thông tin doanh nghiệp</h2>
-            <div className="form-grid">
-              <label>
-                Tên doanh nghiệp
-                <Input value="Công ty TNHH Minh An" readOnly />
-              </label>
-              <label>
-                Mã số thuế
-                <Input value="0312345678" readOnly />
-              </label>
-              <label className="full-field">
-                Địa chỉ ký hợp đồng
-                <Input value="12 Nguyễn Huệ, Quận 1, TP.HCM" readOnly />
-              </label>
-            </div>
-          </section>
+          <Alert
+            showIcon
+            type="success"
+            message="Đơn hàng và License sẽ được gắn với tài khoản EmuKey đang đăng nhập. Activation key không cần thêm khóa riêng hay khóa dự phòng theo tài khoản."
+          />
           <section className="workspace-card section-card">
             <h2>Cấu hình đơn hàng</h2>
             <div className="form-grid">
               <label>
                 Gói
-                <Select
-                  aria-label="Gói"
-                  value="Business"
-                  options={[{ value: 'Business', label: 'Business' }]}
-                />
+                <Input aria-label="Gói" value={selectedPlan.label} readOnly />
               </label>
               <label>
-                Số thiết bị
-                <Select
-                  aria-label="Số thiết bị"
-                  value={devices}
-                  onChange={setDevices}
-                  options={product.plans.map((plan) => ({
-                    value: plan.devices,
-                    label: plan.label,
-                  }))}
+                Số thiết bị tối đa
+                <Input
+                  aria-label="Số thiết bị tối đa"
+                  value={`${selectedPlan.devices} thiết bị`}
+                  readOnly
                 />
               </label>
             </div>
-            <p className="commerce-note">
-              Khuyến mãi “Ưu đãi tháng 8” được tự động áp dụng. Không cần mã
-              coupon.
-            </p>
           </section>
           <section className="workspace-card section-card">
-            <Checkbox
-              checked={accepted}
-              onChange={(event) => {
-                setAccepted(event.target.checked);
-                setShowError(false);
-              }}
-            >
-              Tôi đã đọc điều khoản và chính sách hoàn tiền
-            </Checkbox>
-            <p className="muted-copy">
-              Giá và khuyến mãi chỉ là preview UI; backend mới là nguồn quyết
-              định.
-            </p>
-            {showError ? (
+            {!order ? (
               <Alert
-                message="Bạn cần đồng ý điều khoản trước khi tạo hợp đồng."
+                showIcon
+                type="info"
+                message="Tạo đơn hàng để backend khóa giá, quyền sử dụng và phiên bản điều khoản."
+              />
+            ) : termsQuery.isPending ? (
+              <Spin aria-label="Đang tải điều khoản" />
+            ) : termsQuery.isError || !termsQuery.data ? (
+              <Alert
+                showIcon
+                type="error"
+                message="Không thể tải đúng phiên bản điều khoản của đơn hàng."
+              />
+            ) : (
+              <>
+                <h2>Điều khoản cấp phép</h2>
+                <pre className="terms-document">{termsQuery.data.content}</pre>
+                <p className="muted-copy">
+                  Phiên bản {termsQuery.data.version} · Hash {termsQuery.data.hash}
+                </p>
+                <Checkbox
+                  checked={accepted}
+                  onChange={(event) => {
+                    setAccepted(event.target.checked);
+                    setError(null);
+                  }}
+                >
+                  Tôi đã đọc và đồng ý với điều khoản cấp phép
+                </Checkbox>
+              </>
+            )}
+            {error ||
+            createOrderMutation.error ||
+            orderMutations.acceptTerms.error ||
+            termsQuery.error ? (
+              <Alert
+                message={
+                  error ??
+                  describeApiError(
+                    createOrderMutation.error ??
+                      orderMutations.acceptTerms.error ??
+                      termsQuery.error,
+                    'Không thể hoàn tất bước đơn hàng và điều khoản. Vui lòng thử lại.',
+                  )
+                }
                 role="alert"
                 type="error"
               />
@@ -110,20 +163,35 @@ export function BuyerCheckoutScreen() {
           </section>
         </div>
         <aside className="checkout-stack">
-          <OrderSummary order={{ ...order, devices }} />
+          <OrderSummary
+            order={{ total: order?.priceVndSnapshot ?? selectedPlan.priceVnd }}
+          />
           <section className="workspace-card section-card">
             <StatusHold />
-            <p>
-              Nếu thay đổi gói hoặc số thiết bị, backend sẽ tính lại khi được
-              kết nối.
-            </p>
+            <p>Quay lại danh mục nếu bạn muốn chọn một gói khác.</p>
           </section>
           <div className="workspace-actions">
             <Button onClick={() => void navigate('/products/securedesk')}>
               Quay lại
             </Button>
-            <Button type="primary" onClick={createContract}>
-              Tạo hợp đồng
+            <Button
+              type="primary"
+              disabled={
+                order
+                  ? !accepted || termsQuery.isPending
+                  : createOrderMutation.isPending
+              }
+              loading={
+                createOrderMutation.isPending ||
+                orderMutations.acceptTerms.isPending
+              }
+              onClick={order ? acceptTerms : createOrder}
+            >
+              {order
+                ? 'Đồng ý và tiếp tục thanh toán'
+                : createOrderMutation.isPending
+                  ? 'Đang tạo...'
+                  : 'Tạo đơn hàng'}
             </Button>
           </div>
         </aside>
@@ -135,7 +203,7 @@ export function BuyerCheckoutScreen() {
 function StatusHold() {
   return (
     <span className="status-chip status-chip--warning">
-      Giữ giá 30 phút · mô phỏng
+      Deadline được backend xác định sau khi tạo đơn
     </span>
   );
 }

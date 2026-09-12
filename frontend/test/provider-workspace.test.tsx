@@ -5,32 +5,29 @@ import { App } from '../src/presentation/app/App';
 
 afterEach(cleanup);
 
-describe('W12-W16 Provider workspace', () => {
-  it('renders the provider dashboard from mock metrics', () => {
+describe('Provider workspace', () => {
+  it('renders the updated Figma provider dashboard hierarchy', () => {
     render(<App initialEntries={['/provider']} />);
 
     expect(
-      screen.getByRole('heading', { name: 'Tổng quan nhà cung cấp' }),
+      screen.getByRole('heading', { name: 'Tổng quan Provider' }),
+    ).toBeTruthy();
+    expect(screen.getByText('LicenseHub')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Cài đặt' })).toBeTruthy();
+    expect(
+      screen.getByRole('alert', { name: 'Còn 2 bước để sẵn sàng publish' }),
     ).toBeTruthy();
     expect(screen.getByText('128,4 triệu ₫')).toBeTruthy();
-    expect(screen.getByText('ORD-0225')).toBeTruthy();
-  });
-
-  it('creates a local promotion draft from the reusable modal', async () => {
-    render(<App initialEntries={['/provider/catalog']} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo khuyến mãi' }));
-    expect(await screen.findByRole('dialog')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Tên chương trình'), {
-      target: { value: 'Ưu đãi demo' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Lưu bản nháp' }));
+    expect(screen.getByText('ORD-0221')).toBeTruthy();
     expect(
-      await screen.findByText('Đã lưu bản nháp “Ưu đãi demo”'),
+      screen.getByRole('heading', { name: 'Hàng đợi cần xử lý' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Blockchain status' }),
     ).toBeTruthy();
   });
 
-  it('adds a selected knowledge file to the local list', () => {
+  it('adds an allowed knowledge file to the local list', () => {
     render(<App initialEntries={['/provider/knowledge']} />);
 
     const file = new File(['demo'], 'huong-dan-demo.pdf', {
@@ -46,7 +43,7 @@ describe('W12-W16 Provider workspace', () => {
     render(<App initialEntries={['/provider/operations']} />);
 
     fireEvent.change(screen.getByLabelText('Tìm dữ liệu vận hành'), {
-      target: { value: 'Lam Sơn' },
+      target: { value: 'P024' },
     });
 
     expect(screen.getByText(/ORD-0224/)).toBeTruthy();

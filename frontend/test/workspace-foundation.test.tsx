@@ -21,7 +21,7 @@ describe('workspace foundation', () => {
     expect(orders).toEqual(before);
   });
 
-  it('renders the active Buyer navigation inside the shared role shell', () => {
+  it('renders the active Customer navigation inside the shared role shell', () => {
     render(
       <MemoryRouter initialEntries={['/buyer/orders']}>
         <Routes>
@@ -32,7 +32,7 @@ describe('workspace foundation', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('EmuKey').className).toContain('brand--script');
+    expect(screen.getByText('LicenseHub')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Đơn hàng' }).className).toContain(
       'active',
     );

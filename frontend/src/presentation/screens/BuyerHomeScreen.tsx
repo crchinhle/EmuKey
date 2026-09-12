@@ -1,9 +1,9 @@
 import { Button } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
+import { useLicenses } from '../../application/licenses/licenseQueries';
 import {
   buyerMetrics,
-  licenses,
   orders,
 } from '../../infrastructure/workspace/mockWorkspace';
 import {
@@ -15,12 +15,14 @@ import {
 
 export function BuyerHomeScreen() {
   const navigate = useNavigate();
+  const licenseQuery = useLicenses();
+  const licenses = licenseQuery.data ?? [];
 
   return (
     <div className="workspace-screen">
       <PageHeader
-        title="Xin chào, Minh An"
-        description="Tổng quan hợp đồng, license và hỗ trợ gần đây."
+        title="Tổng quan tài khoản người mua"
+        description="Tổng quan đơn hàng, license và hỗ trợ gần đây."
         action={<Button>Thông báo</Button>}
       />
       <section
@@ -51,15 +53,13 @@ export function BuyerHomeScreen() {
                   onClick={() => void navigate('/buyer/licenses')}
                 >
                   <span>
-                    <strong>{license.product}</strong>
-                    <small>
-                      {license.used}/{license.total} thiết bị
-                    </small>
+                    <strong>{license.productName}</strong>
+                    <small>{license.maxActiveDevices} thiết bị tối đa</small>
                   </span>
                   <StatusChip
-                    tone={license.status === 'expiring' ? 'warning' : 'success'}
+                    tone={license.status === 'ACTIVE' ? 'success' : 'warning'}
                   >
-                    {license.statusLabel}
+                    {license.status}
                   </StatusChip>
                 </button>
               ))}
@@ -85,14 +85,6 @@ export function BuyerHomeScreen() {
         <aside className="workspace-aside">
           <section className="workspace-card section-card">
             <h2>Cần bạn xử lý</h2>
-            <button
-              className="text-action"
-              onClick={() =>
-                void navigate('/buyer/contracts/ORD-2026-0218/sign')
-              }
-            >
-              Ký hợp đồng SecureDesk Pro<small>Mở chi tiết để tiếp tục</small>
-            </button>
             <button
               className="text-action"
               onClick={() =>

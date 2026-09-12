@@ -5,39 +5,51 @@ import { App } from '../src/presentation/app/App';
 
 afterEach(cleanup);
 
-describe('W05-W08 Buyer commerce', () => {
-  it('renders Buyer home from the metric and license arrays', () => {
+describe('Customer commerce', () => {
+  it('renders the authenticated Customer home from the metric and license arrays', () => {
     render(<App initialEntries={['/buyer']} />);
 
     expect(
-      screen.getByRole('heading', { name: 'Xin chào, Minh An' }),
+      screen.getByRole('heading', { name: 'Tổng quan tài khoản người mua' }),
     ).toBeTruthy();
     expect(screen.getByText('18 / 25')).toBeTruthy();
     expect(screen.getAllByText('CloudStudio AI').length).toBeGreaterThan(0);
   });
 
-  it('requires accepted terms before creating the mock contract', () => {
+  it('creates the server snapshot before asking for Terms acceptance', async () => {
     render(<App initialEntries={['/buyer/checkout']} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Tạo hợp đồng' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Tạo đơn hàng' }),
+    );
 
-    expect(screen.getByRole('alert').textContent).toContain('điều khoản');
+    expect(
+      await screen.findByRole('heading', { name: 'Điều khoản cấp phép' }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Đơn hàng và License sẽ được gắn với tài khoản EmuKey/)).toBeTruthy();
+    expect(screen.getByText(/deterministic Terms snapshot/i)).toBeTruthy();
+    expect(
+      screen.getByRole('checkbox', { name: /đồng ý với điều khoản cấp phép/i }),
+    ).toBeTruthy();
   });
 
-  it('moves from signing to the matching mock payment screen', async () => {
-    render(<App initialEntries={['/buyer/contracts/ORD-2026-0218/sign']} />);
+  it('creates an order after explicit Terms acceptance and opens payment', async () => {
+    render(<App initialEntries={['/buyer/checkout']} />);
 
-    fireEvent.change(screen.getByLabelText('Mã xác nhận OTP'), {
-      target: { value: '123456' },
-    });
     fireEvent.click(
-      screen.getByRole('checkbox', { name: /đọc toàn bộ hợp đồng/i }),
+      await screen.findByRole('button', { name: 'Tạo đơn hàng' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Ký hợp đồng' }));
+    fireEvent.click(
+      await screen.findByRole('checkbox', {
+        name: /đồng ý với điều khoản cấp phép/i,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Đồng ý và tiếp tục thanh toán' }),
+    );
 
     expect(
       await screen.findByRole('heading', { name: 'Thanh toán đơn hàng' }),
     ).toBeTruthy();
-    expect(screen.getByText(/mô phỏng/i)).toBeTruthy();
   });
 });

@@ -7,6 +7,7 @@ import {
 import type { ProductTone } from '../../domain/product';
 
 interface ProductArtworkProps {
+  readonly imageUrl?: string | null;
   readonly tone: ProductTone;
   readonly productName: string;
   readonly large?: boolean;
@@ -19,6 +20,7 @@ const artworkByTone = {
 } as const;
 
 export function ProductArtwork({
+  imageUrl,
   tone,
   productName,
   large = false,
@@ -31,6 +33,17 @@ export function ProductArtwork({
   ]
     .filter(Boolean)
     .join(' ');
+
+  if (imageUrl) {
+    return (
+      <img
+        alt={'Minh họa ' + productName}
+        className={className}
+        loading="lazy"
+        src={imageUrl}
+      />
+    );
+  }
 
   return (
     <div

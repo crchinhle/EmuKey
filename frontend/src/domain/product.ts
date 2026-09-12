@@ -1,20 +1,17 @@
 export type ProductTone = 'brand' | 'module' | 'neutral';
 
 export interface DevicePlan {
+  readonly id: string;
   readonly devices: number;
   readonly label: string;
-  readonly listPrice: number;
-  readonly salePrice: number;
+  readonly priceVnd: number;
 }
 
 export interface Product {
+  readonly imageUrl: string | null;
   readonly slug: string;
   readonly name: string;
   readonly summary: string;
-  readonly group: string;
-  readonly promotion: string;
   readonly tone: ProductTone;
-  readonly tags: readonly string[];
-  readonly features: readonly string[];
   readonly plans: readonly DevicePlan[];
 }

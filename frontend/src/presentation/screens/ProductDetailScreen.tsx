@@ -1,39 +1,52 @@
-import { Button, Result, Select, Tag } from 'antd';
-import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Button, Result, Select, Spin } from 'antd';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import {
-  findProduct,
   formatVnd,
+  useProduct,
 } from '../../application/catalog/catalogQueries';
 import { ProductArtwork } from '../components/ProductArtwork';
 import { PublicHeader } from '../components/PublicHeader';
 
-const tabs = ['Tổng quan', 'Tính năng', 'Gói giá', 'Tài liệu'] as const;
-
 export function ProductDetailScreen() {
   const { slug = '' } = useParams();
-  const product = findProduct(slug);
-  const [selectedDevices, setSelectedDevices] = useState(
-    product?.plans.find((plan) => plan.devices === 25)?.devices ??
-      product?.plans[0]?.devices ??
-      0,
-  );
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [purchaseStarted, setPurchaseStarted] = useState(false);
-  const selectedPlan = useMemo(
-    () =>
-      product?.plans.find((plan) => plan.devices === selectedDevices) ??
-      product?.plans[0],
-    [product, selectedDevices],
-  );
+  const navigate = useNavigate();
+  const { data: product, isLoading, isError } = useProduct(slug);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
 
-  if (!product || !selectedPlan) {
+  const defaultPlan =
+    product?.plans.find((plan) => plan.devices === 25) ?? product?.plans[0];
+  const selectedPlan =
+    product?.plans.find((plan) => plan.id === selectedPlanId) ?? defaultPlan;
+
+  if (isLoading) return <Spin aria-label="Đang tải sản phẩm" />;
+  if (isError) {
+    return (
+      <Result
+        extra={<Button href="/products">Về danh mục</Button>}
+        status="error"
+        title="Không thể tải sản phẩm"
+        subTitle="Danh mục public đang tạm thời không khả dụng."
+      />
+    );
+  }
+  if (!product) {
     return (
       <Result
         extra={<Button href="/products">Về danh mục</Button>}
         status="404"
-        title="Không tìm thấy sản phẩm"
+        title="Sản phẩm chưa được công bố"
+        subTitle="Sản phẩm có thể đang ở trạng thái nháp, đã lưu trữ hoặc chưa có gói public hợp lệ."
+      />
+    );
+  }
+  if (!selectedPlan) {
+    return (
+      <Result
+        extra={<Button href="/products">Về danh mục</Button>}
+        status="info"
+        title="Sản phẩm chưa có gói được công bố"
       />
     );
   }
@@ -49,94 +62,47 @@ export function ProductDetailScreen() {
         </nav>
 
         <section className="product-hero">
-          <ProductArtwork
-            large
-            productName={product.name}
-            tone={product.tone}
-          />
+          <ProductArtwork imageUrl={product.imageUrl} large productName={product.name} tone={product.tone} />
           <div className="product-summary">
-            <Tag className="promotion-tag">% Đang giảm 15%</Tag>
             <h1>{product.name}</h1>
             <p>{product.summary}</p>
-            <div className="tag-row">
-              {product.tags.map((tag) => (
-                <Tag key={tag}>{tag}</Tag>
-              ))}
-            </div>
           </div>
-          <aside className="assistant-card">
-            <Tag color="purple">AI</Tag>
-            <h2>Chưa biết chọn gói?</h2>
-            <p>Hỏi trợ lý về số thiết bị, thời hạn và quyền sử dụng.</p>
-            <Button onClick={() => setAssistantOpen((open) => !open)}>
-              Hỏi AI
-            </Button>
-            {assistantOpen ? (
-              <p className="inline-message" role="status">
-                Gói Business phù hợp với nhóm từ 11–50 thiết bị.
-              </p>
-            ) : null}
-          </aside>
         </section>
 
-        <nav aria-label="Nội dung sản phẩm" className="detail-tabs">
-          {tabs.map((tab, index) => (
-            <button
-              className={index === 0 ? 'active' : ''}
-              key={tab}
-              type="button"
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-
         <section className="detail-lower">
-          <article className="feature-card">
-            <h2>Tính năng nổi bật</h2>
-            <ul>
-              {product.features.map((feature) => (
-                <li key={feature}>
-                  <span aria-hidden="true">✓</span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-          </article>
           <article className="pricing-card">
-            <h2>Gói Business</h2>
-            <p>Phù hợp 11–50 thiết bị</p>
-            <del>{formatVnd(selectedPlan.listPrice)}</del>
-            <strong>{formatVnd(selectedPlan.salePrice)}</strong>
-            <small>
-              Tiết kiệm{' '}
-              {formatVnd(selectedPlan.listPrice - selectedPlan.salePrice)} · tự
-              động áp dụng
-            </small>
+            <h2>Gói đã công bố</h2>
+            <p>Chọn một gói đang xuất bản để tiếp tục mua hàng.</p>
             <label>
-              <span>Số thiết bị</span>
+              <span>Gói</span>
               <Select
-                aria-label="Số thiết bị"
+                aria-label="Gói"
                 options={product.plans.map((plan) => ({
-                  value: plan.devices,
-                  label: plan.label,
+                  value: plan.id,
+                  label: `${plan.label} · ${formatVnd(plan.priceVnd)}`,
                 }))}
-                value={selectedDevices}
-                onChange={setSelectedDevices}
+                value={selectedPlan.id}
+                onChange={setSelectedPlanId}
               />
             </label>
+            <div className="plan-summary">
+              <strong>{selectedPlan.label}</strong>
+              <p>{formatVnd(selectedPlan.priceVnd)}</p>
+              <p>{selectedPlan.devices} thiết bị được công bố</p>
+            </div>
             <div className="plan-actions">
               <Button>So sánh gói</Button>
-              <Button type="primary" onClick={() => setPurchaseStarted(true)}>
+              <Button
+                type="primary"
+                onClick={() =>
+                  void navigate(
+                    `/buyer/checkout?product=${encodeURIComponent(slug)}&planId=${encodeURIComponent(selectedPlan.id)}`,
+                  )
+                }
+              >
                 Mua ngay
               </Button>
             </div>
-            {purchaseStarted ? (
-              <p className="inline-message" role="status">
-                Đã chọn gói {selectedPlan.label}. Dữ liệu hiện tại là dữ liệu
-                mẫu.
-              </p>
-            ) : null}
           </article>
         </section>
       </main>

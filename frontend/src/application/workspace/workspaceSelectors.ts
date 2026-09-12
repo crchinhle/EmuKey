@@ -1,4 +1,3 @@
-import type { DevicePlan } from '../../domain/product';
 import type {
   OrderRecord,
   OrderStatus,
@@ -21,7 +20,7 @@ export function filterOrders(
   return items.filter((order) => {
     const matchesQuery = [
       order.id,
-      order.company,
+      order.buyerReference,
       order.product,
       order.plan,
     ].some((value) => normalize(value).includes(normalizedQuery));
@@ -35,12 +34,4 @@ export function findVerification(
 ): VerificationRecord | undefined {
   const normalizedCode = normalize(code);
   return items.find((record) => normalize(record.code) === normalizedCode);
-}
-
-export function calculateOrderPreview(plan: DevicePlan) {
-  return {
-    subtotal: plan.listPrice,
-    discount: plan.listPrice - plan.salePrice,
-    total: plan.salePrice,
-  } as const;
 }

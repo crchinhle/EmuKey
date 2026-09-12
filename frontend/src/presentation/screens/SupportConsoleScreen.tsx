@@ -19,7 +19,7 @@ export function SupportConsoleScreen() {
     <>
       <PageHeader
         title="Support Console"
-        description="Hàng đợi hội thoại và ngữ cảnh khách hàng theo thời gian thực."
+        description="Hàng đợi hội thoại và ngữ cảnh Customer tối thiểu theo thời gian thực."
         action={<StatusChip tone="realtime">Realtime · demo</StatusChip>}
       />
       <div className="console-grid support-console">
@@ -36,7 +36,7 @@ export function SupportConsoleScreen() {
               onClick={() => setSelected(conversation)}
             >
               <span>
-                <strong>{conversation.customer}</strong>
+                <strong>{conversation.buyerReference}</strong>
                 <small>{conversation.subject}</small>
               </span>
               <StatusChip tone={conversation.tone}>
@@ -61,8 +61,8 @@ export function SupportConsoleScreen() {
           />
         </section>
         <aside className="workspace-card detail-card">
-          <h2>Ngữ cảnh khách hàng</h2>
-          <strong>{selected.company}</strong>
+          <h2>Ngữ cảnh Customer</h2>
+          <strong>{selected.buyerReference}</strong>
           <FactList
             facts={[
               { label: 'Sản phẩm', value: selected.product },

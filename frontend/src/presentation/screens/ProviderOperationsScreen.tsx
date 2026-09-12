@@ -17,7 +17,7 @@ export function ProviderOperationsScreen() {
   const visibleOrders = useMemo(
     () =>
       providerOrders.filter((order) =>
-        `${order.id} ${order.company} ${order.product}`
+        `${order.id} ${order.buyerReference} ${order.product}`
           .toLocaleLowerCase('vi')
           .includes(normalized),
       ),
@@ -56,7 +56,7 @@ export function ProviderOperationsScreen() {
                     <article key={order.id}>
                       <div>
                         <strong>
-                          {order.id} · {order.company}
+                          {order.id} · {order.buyerReference}
                         </strong>
                         <small>
                           {order.product} · {order.devices} thiết bị

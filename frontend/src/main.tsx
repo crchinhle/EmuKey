@@ -1,4 +1,9 @@
 import 'antd/dist/reset.css';
+import '@fontsource-variable/ibm-plex-sans/wght.css';
+import '@fontsource/ibm-plex-mono/latin-400.css';
+import '@fontsource/ibm-plex-mono/vietnamese-400.css';
+import '@fontsource/ibm-plex-mono/latin-500.css';
+import '@fontsource/ibm-plex-mono/vietnamese-500.css';
 import './presentation/styles.css';
 
 import { StrictMode } from 'react';

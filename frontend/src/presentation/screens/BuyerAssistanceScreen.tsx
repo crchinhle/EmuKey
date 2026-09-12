@@ -40,7 +40,7 @@ export function BuyerAssistanceScreen() {
             initialMessages={conversation.messages}
             inputLabel="Tin nhắn hỗ trợ"
             submitLabel="Gửi tin nhắn"
-            suggestion="Gợi ý demo: Vui lòng kiểm tra quota và fingerprint thiết bị trước khi kích hoạt lại."
+            suggestion="Gợi ý demo: Vui lòng kiểm tra quota và mã tham chiếu thiết bị trước khi kích hoạt lại."
           />
         </section>
         <aside className="workspace-card detail-card">

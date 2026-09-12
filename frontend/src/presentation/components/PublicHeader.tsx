@@ -23,7 +23,6 @@ export function PublicHeader() {
         >
           Xác thực
         </Link>
-        <a href="#documentation">Tài liệu</a>
       </nav>
       <div className="header-actions">
         <Button
@@ -32,7 +31,7 @@ export function PublicHeader() {
             void navigate('/auth');
           }}
         >
-          Đăng nhập
+          Đăng nhập quản trị
         </Button>
         <Button
           onClick={() => {

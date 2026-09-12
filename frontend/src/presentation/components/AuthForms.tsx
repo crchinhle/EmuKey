@@ -1,46 +1,55 @@
 import { Alert, Button, Checkbox, Form, Input, Select } from 'antd';
 import { useState } from 'react';
 
-export type AuthMode = 'forgot' | 'login' | 'register';
+import type { AuthUser, RegisterInput } from '../../application/auth/authContext';
 
-interface LoginFormProps {
-  readonly onForgotPassword: () => void;
-  readonly onSuccess: () => void;
-}
-
-const customerTypes = [
-  { label: 'Học sinh', value: 'STUDENT' },
-  { label: 'Giáo viên', value: 'TEACHER' },
-  { label: 'Trung tâm STEM', value: 'STEM_CENTER' },
-  { label: 'Trường học', value: 'SCHOOL' },
-] as const;
+export type AuthMode = 'forgot' | 'login' | 'register' | 'reset' | 'verify';
 
 const emailRules = [
   { message: 'Vui lòng nhập email.', required: true },
   { message: 'Email chưa đúng định dạng.', type: 'email' as const },
 ];
+const passwordComplexityRule = {
+  message: 'Mật khẩu phải có ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt.',
+  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).+$/,
+};
 
 export function LoginForm({
   onForgotPassword,
+  onLogin,
   onSuccess,
-}: LoginFormProps) {
+}: {
+  readonly onForgotPassword: () => void;
+  readonly onLogin: (email: string, password: string) => Promise<AuthUser>;
+  readonly onSuccess: (user: AuthUser) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   return (
     <Form
-      initialValues={{
-        email: 'buyer@company.vn',
-        password: '123456789012',
-        remember: false,
-      }}
       layout="vertical"
-      onFinish={onSuccess}
+      onFinish={(values: { email: string; password: string }) => {
+        setLoading(true);
+        setError(null);
+        void onLogin(values.email, values.password)
+          .then((user) => onSuccess(user))
+          .catch(() => setError('Không thể đăng nhập. Vui lòng kiểm tra thông tin và thử lại.'))
+          .finally(() => setLoading(false));
+      }}
     >
+      {error ? <Alert message={error} role="alert" type="error" /> : null}
       <Form.Item label="Email" name="email" rules={emailRules}>
         <Input autoComplete="email" inputMode="email" />
       </Form.Item>
       <Form.Item
+        extra="Tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt."
         label="Mật khẩu"
         name="password"
-        rules={[{ message: 'Vui lòng nhập mật khẩu.', required: true }]}
+        rules={[
+          { message: 'Vui lòng nhập mật khẩu.', required: true },
+          { message: 'Mật khẩu cần có ít nhất 8 ký tự.', min: 8 },
+          passwordComplexityRule,
+        ]}
       >
         <Input.Password autoComplete="current-password" />
       </Form.Item>
@@ -48,120 +57,144 @@ export function LoginForm({
         <Form.Item name="remember" noStyle valuePropName="checked">
           <Checkbox>Ghi nhớ đăng nhập</Checkbox>
         </Form.Item>
-        <Button onClick={onForgotPassword} type="link">
-          Quên mật khẩu?
-        </Button>
+        <Button onClick={onForgotPassword} type="link">Quên mật khẩu?</Button>
       </div>
-      <Button block htmlType="submit" type="primary">
-        Đăng nhập
-      </Button>
+      <Button block htmlType="submit" loading={loading} type="primary">Đăng nhập</Button>
     </Form>
   );
 }
 
-export function RegisterForm() {
-  const [submitted, setSubmitted] = useState(false);
-
-  if (submitted) {
-    return (
-      <Alert
-        aria-label="Kiểm tra email để xác minh tài khoản"
-        className="auth-result"
-        description="Tài khoản đang ở trạng thái chờ xác minh. Hãy mở liên kết được gửi qua email trước khi đăng nhập."
-        message="Kiểm tra email để xác minh tài khoản"
-        role="status"
-        showIcon
-        type="success"
-      />
-    );
-  }
-
+export function RegisterForm({
+  onRegister,
+  onRegistered,
+}: {
+  readonly onRegister: (input: RegisterInput) => Promise<void>;
+  readonly onRegistered: (email: string) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   return (
-    <Form layout="vertical" onFinish={() => setSubmitted(true)}>
-      <Form.Item
-        label="Họ và tên"
-        name="displayName"
-        rules={[
-          { message: 'Vui lòng nhập họ và tên.', required: true, whitespace: true },
-          { max: 255, message: 'Họ và tên không được quá 255 ký tự.' },
-        ]}
-      >
+    <Form
+      initialValues={{ customerType: 'INDIVIDUAL' }}
+      layout="vertical"
+      onFinish={(values: RegisterInput & { passwordConfirmation: string }) => {
+        setLoading(true);
+        setError(null);
+        void onRegister(values)
+          .then(() => onRegistered(values.email))
+          .catch(() => setError('Không thể tạo tài khoản. Email có thể đã được sử dụng.'))
+          .finally(() => setLoading(false));
+      }}
+    >
+      {error ? <Alert message={error} role="alert" type="error" /> : null}
+      <Form.Item label="Họ và tên" name="displayName" rules={[{ required: true }, { max: 255 }]}>
         <Input autoComplete="name" />
       </Form.Item>
-      <Form.Item
-        label="Loại khách hàng"
-        name="customerType"
-        rules={[{ message: 'Vui lòng chọn loại khách hàng.', required: true }]}
-      >
-        <Select options={[...customerTypes]} placeholder="Chọn loại khách hàng" />
+      <Form.Item label="Loại khách hàng" name="customerType" rules={[{ required: true }]}>
+        <Select options={[
+          { label: 'Cá nhân', value: 'INDIVIDUAL' },
+          { label: 'Học sinh / sinh viên', value: 'STUDENT' },
+          { label: 'Doanh nghiệp', value: 'BUSINESS' },
+        ]} />
       </Form.Item>
       <Form.Item label="Email" name="email" rules={emailRules}>
         <Input autoComplete="email" inputMode="email" />
       </Form.Item>
-      <Form.Item
-        extra="Tối thiểu 12 ký tự."
-        label="Mật khẩu"
-        name="password"
-        rules={[
-          { message: 'Vui lòng nhập mật khẩu.', required: true },
-          { message: 'Mật khẩu cần có ít nhất 12 ký tự.', min: 12 },
-        ]}
-      >
+      <Form.Item label="Mật khẩu" name="password" rules={[{ required: true }, { min: 8 }, passwordComplexityRule]}>
         <Input.Password autoComplete="new-password" />
       </Form.Item>
       <Form.Item
         dependencies={['password']}
         label="Xác nhận mật khẩu"
         name="passwordConfirmation"
+        rules={[{ required: true }, ({ getFieldValue }) => ({ validator(_, value) { return !value || getFieldValue('password') === value ? Promise.resolve() : Promise.reject(new Error('Mật khẩu xác nhận không khớp.')); } })]}
+      >
+        <Input.Password autoComplete="new-password" />
+      </Form.Item>
+      <Button block htmlType="submit" loading={loading} type="primary">Tạo tài khoản</Button>
+    </Form>
+  );
+}
+
+export function ForgotPasswordForm({
+  onForgotPassword,
+}: {
+  readonly onForgotPassword: (email: string) => Promise<void>;
+}) {
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  if (submitted) {
+    return <Alert showIcon type="info" message="Nếu email hợp lệ, hướng dẫn đặt lại mật khẩu đã được gửi." />;
+  }
+  return (
+    <Form
+      layout="vertical"
+      onFinish={(values: { email: string }) => {
+        setLoading(true);
+        setError(null);
+        void onForgotPassword(values.email)
+          .then(() => setSubmitted(true))
+          .catch(() => setError('Không thể gửi yêu cầu lúc này.'))
+          .finally(() => setLoading(false));
+      }}
+    >
+      {error ? <Alert message={error} role="alert" type="error" /> : null}
+      <Form.Item label="Email" name="email" rules={emailRules}>
+        <Input autoComplete="email" inputMode="email" />
+      </Form.Item>
+      <Button block htmlType="submit" loading={loading} type="primary">Gửi hướng dẫn</Button>
+    </Form>
+  );
+}
+
+export function ResetPasswordForm({
+  onResetPassword,
+}: {
+  readonly onResetPassword: (token: string, password: string) => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  return (
+    <Form
+      layout="vertical"
+      onFinish={(values: { password: string; passwordConfirmation: string; token: string }) => {
+        setLoading(true);
+        setError(null);
+        void onResetPassword(values.token, values.password)
+          .catch(() => setError('Không thể đặt lại mật khẩu. Mã có thể đã hết hạn.'))
+          .finally(() => setLoading(false));
+      }}
+    >
+      {error ? <Alert message={error} role="alert" type="error" /> : null}
+      <Form.Item label="Mã đặt lại mật khẩu" name="token" rules={[{ required: true }]}>
+        <Input autoComplete="one-time-code" />
+      </Form.Item>
+      <Form.Item
+        label="Mật khẩu mới"
+        name="password"
+        rules={[{ required: true }, { min: 12 }, passwordComplexityRule]}
+      >
+        <Input.Password autoComplete="new-password" />
+      </Form.Item>
+      <Form.Item
+        dependencies={['password']}
+        label="Xác nhận mật khẩu mới"
+        name="passwordConfirmation"
         rules={[
-          { message: 'Vui lòng xác nhận mật khẩu.', required: true },
+          { required: true },
           ({ getFieldValue }) => ({
             validator(_, value) {
-              if (!value || getFieldValue('password') === value) {
-                return Promise.resolve();
-              }
-
-              return Promise.reject(
-                new Error('Mật khẩu xác nhận không khớp.'),
-              );
+              return !value || getFieldValue('password') === value
+                ? Promise.resolve()
+                : Promise.reject(new Error('Mật khẩu xác nhận không khớp.'));
             },
           }),
         ]}
       >
         <Input.Password autoComplete="new-password" />
       </Form.Item>
-      <Button block htmlType="submit" type="primary">
-        Tạo tài khoản
-      </Button>
-    </Form>
-  );
-}
-
-export function ForgotPasswordForm() {
-  const [submitted, setSubmitted] = useState(false);
-
-  if (submitted) {
-    return (
-      <Alert
-        aria-label="Yêu cầu đặt lại mật khẩu đã được tiếp nhận"
-        className="auth-result"
-        description="Nếu email thuộc một tài khoản hợp lệ, hướng dẫn đặt lại mật khẩu sẽ được gửi."
-        message="Yêu cầu đặt lại mật khẩu đã được tiếp nhận"
-        role="alert"
-        showIcon
-        type="info"
-      />
-    );
-  }
-
-  return (
-    <Form layout="vertical" onFinish={() => setSubmitted(true)}>
-      <Form.Item label="Email" name="email" rules={emailRules}>
-        <Input autoComplete="email" inputMode="email" />
-      </Form.Item>
-      <Button block htmlType="submit" type="primary">
-        Gửi hướng dẫn
-      </Button>
+      <Button block htmlType="submit" loading={loading} type="primary">Đặt lại mật khẩu</Button>
     </Form>
   );
 }

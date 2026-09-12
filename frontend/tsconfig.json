@@ -1,5 +1,5 @@
 {
-  "extends": "../tsconfig.base.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -12,7 +12,9 @@
     "src/**/*.tsx",
     "test/**/*.ts",
     "test/**/*.tsx",
-    "vite.config.ts"
+    "vite.config.ts",
+    "playwright.config.ts",
+    "e2e/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "build", "coverage"]
 }

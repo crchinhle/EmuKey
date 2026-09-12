@@ -30,14 +30,12 @@ export function AiKnowledgeScreen() {
       <section className="workspace-card knowledge-upload">
         <div>
           <h2>Tải tài liệu</h2>
-          <p>
-            Chấp nhận PDF, DOCX hoặc Markdown tối đa 10 MB trong bản giao diện.
-          </p>
+          <p>Chấp nhận PDF hoặc TXT tối đa 10 MB trong bản giao diện.</p>
         </div>
         <div className="file-picker">
           <label htmlFor="knowledge-upload">Chọn tài liệu kiến thức</label>
           <Upload
-            accept=".pdf,.docx,.md"
+            accept=".pdf,.txt"
             beforeUpload={beforeUpload}
             id="knowledge-upload"
             showUploadList={false}
