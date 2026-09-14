@@ -7,6 +7,7 @@ const LOG_LEVELS = [
   'debug',
   'trace',
 ] as const;
+const EMAIL_ADAPTERS = ['fake', 'brevo'] as const;
 const LOCAL_ADAPTERS = [
   'PAYMENT_ADAPTER',
   'AI_ADAPTER',
@@ -18,6 +19,7 @@ const HARDHAT_DEVELOPMENT_RELAYER_KEY =
 
 type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
 type LogLevel = (typeof LOG_LEVELS)[number];
+type EmailAdapter = (typeof EMAIL_ADAPTERS)[number];
 
 export interface PlatformEnvironment {
   NODE_ENV: NodeEnvironment;
@@ -31,7 +33,11 @@ export interface PlatformEnvironment {
   PAYMENT_ADAPTER: string;
   PAYMENT_WEBHOOK_SECRET: string;
   AI_ADAPTER: string;
-  EMAIL_ADAPTER: string;
+  EMAIL_ADAPTER: EmailAdapter;
+  BREVO_API_KEY?: string;
+  BREVO_SENDER_EMAIL?: string;
+  BREVO_SENDER_NAME?: string;
+  WEB_APP_URL?: string;
   PUSH_ADAPTER: string;
   EVM_ADAPTER: string;
   EVM_NETWORK: string;
@@ -163,7 +169,11 @@ export function validateEnvironment(
       'PAYMENT_WEBHOOK_SECRET',
     ),
     AI_ADAPTER: requiredString(environment, 'AI_ADAPTER'),
-    EMAIL_ADAPTER: requiredString(environment, 'EMAIL_ADAPTER'),
+    EMAIL_ADAPTER: oneOf(
+      requiredString(environment, 'EMAIL_ADAPTER'),
+      'EMAIL_ADAPTER',
+      EMAIL_ADAPTERS,
+    ),
     PUSH_ADAPTER: requiredString(environment, 'PUSH_ADAPTER'),
     EVM_ADAPTER: requiredString(environment, 'EVM_ADAPTER'),
     EVM_NETWORK: requiredString(environment, 'EVM_NETWORK'),
@@ -194,6 +204,19 @@ export function validateEnvironment(
 
   if (otlpEndpoint !== undefined) {
     result.OTEL_EXPORTER_OTLP_ENDPOINT = otlpEndpoint;
+  }
+  if (result.EMAIL_ADAPTER === 'brevo') {
+    result.BREVO_API_KEY = requiredString(environment, 'BREVO_API_KEY');
+    result.BREVO_SENDER_EMAIL = requiredString(
+      environment,
+      'BREVO_SENDER_EMAIL',
+    );
+    result.BREVO_SENDER_NAME = requiredString(
+      environment,
+      'BREVO_SENDER_NAME',
+    );
+    result.WEB_APP_URL = requiredString(environment, 'WEB_APP_URL');
+    assertHttpUrl(result.WEB_APP_URL, 'WEB_APP_URL');
   }
   if (result.EVM_ADAPTER !== 'viem') {
     throw new Error('EVM_ADAPTER must use viem');

@@ -61,6 +61,32 @@ describe('validateEnvironment', () => {
     ).toThrow('OTEL_EXPORTER_OTLP_ENDPOINT is required');
   });
 
+  it('requires Brevo credentials only when the Brevo email adapter is selected', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        EMAIL_ADAPTER: 'brevo',
+      }),
+    ).toThrow('BREVO_API_KEY is required');
+
+    const result = validateEnvironment({
+      ...validEnvironment,
+      BREVO_API_KEY: 'test-brevo-api-key',
+      BREVO_SENDER_EMAIL: 'no-reply@example.com',
+      BREVO_SENDER_NAME: 'EmuKey',
+      EMAIL_ADAPTER: 'brevo',
+      WEB_APP_URL: 'http://localhost:5173',
+    });
+
+    expect(result).toMatchObject({
+      BREVO_API_KEY: 'test-brevo-api-key',
+      BREVO_SENDER_EMAIL: 'no-reply@example.com',
+      BREVO_SENDER_NAME: 'EmuKey',
+      EMAIL_ADAPTER: 'brevo',
+      WEB_APP_URL: 'http://localhost:5173',
+    });
+  });
+
   it('requires an injected relayer private key for the viem adapter', () => {
     expect(() =>
       validateEnvironment({
@@ -96,6 +122,10 @@ describe('validateEnvironment', () => {
         PAYMENT_ADAPTER: 'sepay',
         AI_ADAPTER: 'gemini',
         EMAIL_ADAPTER: 'brevo',
+        BREVO_API_KEY: 'test-brevo-api-key',
+        BREVO_SENDER_EMAIL: 'no-reply@example.com',
+        BREVO_SENDER_NAME: 'EmuKey',
+        WEB_APP_URL: 'https://app.example.com',
         PUSH_ADAPTER: 'expo',
         STORAGE_ADAPTER: 'cloudinary',
         EVM_RPC_HTTP_URL: 'https://rpc.example.com',
