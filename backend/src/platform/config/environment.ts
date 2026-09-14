@@ -7,6 +7,9 @@ const LOG_LEVELS = [
   'debug',
   'trace',
 ] as const;
+const EMAIL_ADAPTERS = ['fake', 'brevo'] as const;
+const PAYMENT_ADAPTERS = ['fake', 'sepay'] as const;
+const SEPAY_ENVIRONMENTS = ['sandbox', 'production'] as const;
 const LOCAL_ADAPTERS = [
   'PAYMENT_ADAPTER',
   'AI_ADAPTER',
@@ -18,6 +21,9 @@ const HARDHAT_DEVELOPMENT_RELAYER_KEY =
 
 type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
 type LogLevel = (typeof LOG_LEVELS)[number];
+type EmailAdapter = (typeof EMAIL_ADAPTERS)[number];
+type PaymentAdapter = (typeof PAYMENT_ADAPTERS)[number];
+type SePayEnvironment = (typeof SEPAY_ENVIRONMENTS)[number];
 
 export interface PlatformEnvironment {
   NODE_ENV: NodeEnvironment;
@@ -28,10 +34,17 @@ export interface PlatformEnvironment {
   LOG_LEVEL: LogLevel;
   OTEL_ENABLED: boolean;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
-  PAYMENT_ADAPTER: string;
-  PAYMENT_WEBHOOK_SECRET: string;
+  PAYMENT_ADAPTER: PaymentAdapter;
+  PAYMENT_WEBHOOK_SECRET?: string;
+  SEPAY_ENV?: SePayEnvironment;
+  SEPAY_MERCHANT_ID?: string;
+  SEPAY_SECRET_KEY?: string;
   AI_ADAPTER: string;
-  EMAIL_ADAPTER: string;
+  EMAIL_ADAPTER: EmailAdapter;
+  BREVO_API_KEY?: string;
+  BREVO_SENDER_EMAIL?: string;
+  BREVO_SENDER_NAME?: string;
+  WEB_APP_URL?: string;
   PUSH_ADAPTER: string;
   EVM_ADAPTER: string;
   EVM_NETWORK: string;
@@ -157,13 +170,17 @@ export function validateEnvironment(
       LOG_LEVELS,
     ),
     OTEL_ENABLED: otelEnabled,
-    PAYMENT_ADAPTER: requiredString(environment, 'PAYMENT_ADAPTER'),
-    PAYMENT_WEBHOOK_SECRET: requiredString(
-      environment,
-      'PAYMENT_WEBHOOK_SECRET',
+    PAYMENT_ADAPTER: oneOf(
+      requiredString(environment, 'PAYMENT_ADAPTER'),
+      'PAYMENT_ADAPTER',
+      PAYMENT_ADAPTERS,
     ),
     AI_ADAPTER: requiredString(environment, 'AI_ADAPTER'),
-    EMAIL_ADAPTER: requiredString(environment, 'EMAIL_ADAPTER'),
+    EMAIL_ADAPTER: oneOf(
+      requiredString(environment, 'EMAIL_ADAPTER'),
+      'EMAIL_ADAPTER',
+      EMAIL_ADAPTERS,
+    ),
     PUSH_ADAPTER: requiredString(environment, 'PUSH_ADAPTER'),
     EVM_ADAPTER: requiredString(environment, 'EVM_ADAPTER'),
     EVM_NETWORK: requiredString(environment, 'EVM_NETWORK'),
@@ -194,6 +211,35 @@ export function validateEnvironment(
 
   if (otlpEndpoint !== undefined) {
     result.OTEL_EXPORTER_OTLP_ENDPOINT = otlpEndpoint;
+  }
+  if (result.EMAIL_ADAPTER === 'brevo') {
+    result.BREVO_API_KEY = requiredString(environment, 'BREVO_API_KEY');
+    result.BREVO_SENDER_EMAIL = requiredString(
+      environment,
+      'BREVO_SENDER_EMAIL',
+    );
+    result.BREVO_SENDER_NAME = requiredString(
+      environment,
+      'BREVO_SENDER_NAME',
+    );
+  }
+  if (result.PAYMENT_ADAPTER === 'sepay') {
+    result.SEPAY_ENV = oneOf(
+      requiredString(environment, 'SEPAY_ENV'),
+      'SEPAY_ENV',
+      SEPAY_ENVIRONMENTS,
+    );
+    result.SEPAY_MERCHANT_ID = requiredString(environment, 'SEPAY_MERCHANT_ID');
+    result.SEPAY_SECRET_KEY = requiredString(environment, 'SEPAY_SECRET_KEY');
+  } else {
+    result.PAYMENT_WEBHOOK_SECRET = requiredString(
+      environment,
+      'PAYMENT_WEBHOOK_SECRET',
+    );
+  }
+  if (result.EMAIL_ADAPTER === 'brevo' || result.PAYMENT_ADAPTER === 'sepay') {
+    result.WEB_APP_URL = requiredString(environment, 'WEB_APP_URL');
+    assertHttpUrl(result.WEB_APP_URL, 'WEB_APP_URL');
   }
   if (result.EVM_ADAPTER !== 'viem') {
     throw new Error('EVM_ADAPTER must use viem');

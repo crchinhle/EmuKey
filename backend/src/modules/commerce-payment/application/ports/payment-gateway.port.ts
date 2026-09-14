@@ -4,9 +4,12 @@ export const PAYMENT_IPN_PROTOCOL_VERSION = 1 as const;
 export interface CreateCheckoutInput {
   amountVnd: number;
   attemptId: string;
+  orderId: string;
 }
 
 export interface CheckoutSession {
+  checkoutFields: Record<string, string>;
+  checkoutMethod: 'POST';
   checkoutReference: string;
   checkoutUrl: string;
 }

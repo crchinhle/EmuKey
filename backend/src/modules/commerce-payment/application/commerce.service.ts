@@ -146,6 +146,7 @@ export class CommerceService {
       const checkout = await this.payment.createCheckout({
         amountVnd: preparation.amountVnd,
         attemptId: preparation.attemptId,
+        orderId: preparation.orderId,
       });
       await this.repository.completeCheckout(
         preparation.attemptId,

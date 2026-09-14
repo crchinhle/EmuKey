@@ -1538,7 +1538,7 @@
         "operationId": "PaymentController_ingest",
         "parameters": [
           {
-            "name": "x-emukey-payment-signature",
+            "name": "x-secret-key",
             "required": true,
             "in": "header",
             "schema": {
@@ -2864,6 +2864,18 @@
             "type": "string",
             "format": "uuid"
           },
+          "checkoutFields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "checkoutMethod": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ]
+          },
           "checkoutReference": {
             "type": "string"
           },
@@ -2882,6 +2894,8 @@
         "required": [
           "amountVnd",
           "attemptId",
+          "checkoutFields",
+          "checkoutMethod",
           "checkoutReference",
           "checkoutUrl",
           "expiresAt",

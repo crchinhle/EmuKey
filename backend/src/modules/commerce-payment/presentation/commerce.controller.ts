@@ -130,7 +130,7 @@ export class PaymentController {
   @ApiOkResponse({ type: PaymentIngestResultDto })
   ingest(
     @Body() payload: unknown,
-    @Headers('x-emukey-payment-signature') signature?: string,
+    @Headers('x-secret-key') signature?: string,
   ) {
     return this.service.ingestIpn(payload, signature);
   }

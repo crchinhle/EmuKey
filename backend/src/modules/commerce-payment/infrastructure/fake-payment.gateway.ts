@@ -10,6 +10,8 @@ export class FakePaymentGateway implements PaymentGatewayPort {
 
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession> {
     return Promise.resolve({
+      checkoutFields: {},
+      checkoutMethod: 'POST',
       checkoutReference: `fake-checkout-${input.attemptId}`,
       checkoutUrl: `http://localhost:3000/fake-checkout/${input.attemptId}`,
     });

@@ -21,6 +21,7 @@ import {
   type ChainConfiguration,
 } from './infrastructure/commerce.repository.js';
 import { FakePaymentGateway } from './infrastructure/fake-payment.gateway.js';
+import { SePayPaymentGateway } from './infrastructure/sepay-payment.gateway.js';
 import {
   CommerceController,
   PaymentController,
@@ -43,12 +44,20 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
       inject: [ConfigService],
       useFactory: (config: ConfigService): PaymentGatewayPort => {
         const adapter = config.getOrThrow<string>('PAYMENT_ADAPTER');
-        if (adapter !== 'fake') {
-          throw new Error(`Payment adapter ${adapter} is not configured`);
+        if (adapter === 'fake') {
+          return new FakePaymentGateway(
+            config.getOrThrow<string>('PAYMENT_WEBHOOK_SECRET'),
+          );
         }
-        return new FakePaymentGateway(
-          config.getOrThrow<string>('PAYMENT_WEBHOOK_SECRET'),
-        );
+        if (adapter === 'sepay') {
+          return new SePayPaymentGateway({
+            environment: config.getOrThrow<'production' | 'sandbox'>('SEPAY_ENV'),
+            merchantId: config.getOrThrow<string>('SEPAY_MERCHANT_ID'),
+            secretKey: config.getOrThrow<string>('SEPAY_SECRET_KEY'),
+            webAppUrl: config.getOrThrow<string>('WEB_APP_URL'),
+          });
+        }
+        throw new Error(`Payment adapter ${adapter} is not configured`);
       },
     },
     {
