@@ -105,6 +105,9 @@ export class OrderTermsDto {
 export class CheckoutSessionDto {
   @ApiProperty() amountVnd!: number;
   @ApiProperty({ format: 'uuid' }) attemptId!: string;
+  @ApiProperty({ additionalProperties: { type: 'string' }, type: 'object' })
+  checkoutFields!: Record<string, string>;
+  @ApiProperty({ enum: ['POST'] }) checkoutMethod!: 'POST';
   @ApiProperty() checkoutReference!: string;
   @ApiProperty({ format: 'uri' }) checkoutUrl!: string;
   @ApiProperty({ format: 'date-time' }) expiresAt!: string;

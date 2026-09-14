@@ -87,6 +87,32 @@ describe('validateEnvironment', () => {
     });
   });
 
+  it('requires SePay credentials only when the SePay adapter is selected', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        PAYMENT_ADAPTER: 'sepay',
+      }),
+    ).toThrow('SEPAY_ENV is required');
+
+    const result = validateEnvironment({
+      ...validEnvironment,
+      PAYMENT_ADAPTER: 'sepay',
+      SEPAY_ENV: 'sandbox',
+      SEPAY_MERCHANT_ID: 'SP-TEST-EMUKEY',
+      SEPAY_SECRET_KEY: 'sandbox-merchant-secret',
+      WEB_APP_URL: 'https://demo.emukey.test',
+    });
+
+    expect(result).toMatchObject({
+      PAYMENT_ADAPTER: 'sepay',
+      SEPAY_ENV: 'sandbox',
+      SEPAY_MERCHANT_ID: 'SP-TEST-EMUKEY',
+      SEPAY_SECRET_KEY: 'sandbox-merchant-secret',
+      WEB_APP_URL: 'https://demo.emukey.test',
+    });
+  });
+
   it('requires an injected relayer private key for the viem adapter', () => {
     expect(() =>
       validateEnvironment({
@@ -120,6 +146,9 @@ describe('validateEnvironment', () => {
         ...validEnvironment,
         NODE_ENV: 'production',
         PAYMENT_ADAPTER: 'sepay',
+        SEPAY_ENV: 'production',
+        SEPAY_MERCHANT_ID: 'SP-LIVE-EMUKEY',
+        SEPAY_SECRET_KEY: 'production-merchant-secret',
         AI_ADAPTER: 'gemini',
         EMAIL_ADAPTER: 'brevo',
         BREVO_API_KEY: 'test-brevo-api-key',
