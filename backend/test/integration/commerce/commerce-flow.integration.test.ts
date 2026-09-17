@@ -72,11 +72,22 @@ describe('customer commerce and payment flow', () => {
     await expect(service.findOrder(otherCustomer, first.id)).rejects.toBeInstanceOf(
       NotFoundException,
     );
-    const stored = await pool.query<{ customer_user_id: string; idempotency_key: string }>(
-      'SELECT customer_user_id, idempotency_key FROM orders WHERE id=$1',
+    const stored = await pool.query<{
+      customer_user_id: string;
+      idempotency_key: string;
+      ipn_delivery_grace_seconds: number;
+    }>(
+      `SELECT customer_user_id, idempotency_key,
+              extract(epoch FROM ipn_accept_until - payment_due_at)::integer
+                AS ipn_delivery_grace_seconds
+       FROM orders WHERE id=$1`,
       [first.id],
     );
-    expect(stored.rows[0]).toEqual({ customer_user_id: customer.sub, idempotency_key: idempotencyKey });
+    expect(stored.rows[0]).toEqual({
+      customer_user_id: customer.sub,
+      idempotency_key: idempotencyKey,
+      ipn_delivery_grace_seconds: 86_400,
+    });
   });
 
   it('accepts payment and creates a license owned by the customer account', async () => {
@@ -86,11 +97,14 @@ describe('customer commerce and payment flow', () => {
       termsVersion: order.termsVersionSnapshot,
     });
     const checkout = await service.checkout(customer, order.id);
+    const providerClock = await pool.query<{ occurred_at: Date }>(
+      "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
+    );
     const payment = await service.ingestIpn(
       {
         amountVnd: order.priceVndSnapshot,
         eventId: 'customer-payment-event-1',
-        occurredAt: new Date().toISOString(),
+        occurredAt: providerClock.rows[0]!.occurred_at.toISOString(),
         providerReference: checkout.checkoutReference,
       },
       webhookSecret,

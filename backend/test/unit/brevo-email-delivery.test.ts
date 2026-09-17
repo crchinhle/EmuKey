@@ -3,7 +3,7 @@ import { BrevoEmailDelivery } from '../../src/modules/operations/infrastructure/
 describe('BrevoEmailDelivery', () => {
   const sender = {
     email: 'no-reply@example.com',
-    name: 'EmuKey',
+    name: 'Emukey',
   };
 
   it('sends an email-verification link through the Brevo transactional API', async () => {
@@ -38,7 +38,7 @@ describe('BrevoEmailDelivery', () => {
     };
     expect(request).toMatchObject({
       sender,
-      subject: 'Xác minh email EmuKey',
+      subject: 'Xác minh email Emukey',
       to: [{ email: 'customer@example.com' }],
     });
     expect(request.headers.idempotencyKey).toMatch(

@@ -35,9 +35,17 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
   providers: [
     {
       provide: CommerceRepository,
-      inject: [Pool, AuditWriter],
-      useFactory: (pool: Pool, audit: AuditWriter) =>
-        new CommerceRepository(pool, audit),
+      inject: [Pool, AuditWriter, ConfigService],
+      useFactory: (
+        pool: Pool,
+        audit: AuditWriter,
+        config: ConfigService,
+      ) =>
+        new CommerceRepository(
+          pool,
+          audit,
+          config.getOrThrow<number>('IPN_DELIVERY_GRACE_SECONDS'),
+        ),
     },
     {
       provide: PAYMENT_GATEWAY,

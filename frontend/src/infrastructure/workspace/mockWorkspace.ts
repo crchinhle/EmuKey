@@ -318,7 +318,7 @@ export const verificationRecords: readonly VerificationRecord[] = [
     code: 'KLTN-2026-8F3A91',
     licenseId: 'LIC-2026-000128',
     product: 'SecureDesk Pro',
-    provider: 'EmuKey Software',
+    provider: 'Emukey Software',
     validity: '22/08/2026 – 21/08/2027',
     devices: 25,
     createdAt: '22/08/2026 · 09:41',

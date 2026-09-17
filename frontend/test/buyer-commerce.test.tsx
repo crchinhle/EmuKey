@@ -26,7 +26,7 @@ describe('Customer commerce', () => {
     expect(
       await screen.findByRole('heading', { name: 'Điều khoản cấp phép' }),
     ).toBeTruthy();
-    expect(screen.getByText(/Đơn hàng và License sẽ được gắn với tài khoản EmuKey/)).toBeTruthy();
+    expect(screen.getByText(/Đơn hàng và License sẽ được gắn với tài khoản Emukey/)).toBeTruthy();
     expect(screen.getByText(/deterministic Terms snapshot/i)).toBeTruthy();
     expect(
       screen.getByRole('checkbox', { name: /đồng ý với điều khoản cấp phép/i }),

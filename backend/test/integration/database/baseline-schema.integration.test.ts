@@ -68,7 +68,7 @@ describe('account-linked Customer PostgreSQL baseline', () => {
     expect(result.rows).toEqual([]);
   });
 
-  it('treats differently-cased EVM provider addresses as the same identity', async () => {
+  it('requires normalized EVM provider addresses and keeps them unique', async () => {
     await database.query('BEGIN');
     try {
       await database.query(
@@ -78,9 +78,10 @@ describe('account-linked Customer PostgreSQL baseline', () => {
          VALUES
           ('00000000-0000-4000-8000-000000000091', 'provider.case-a@example.test',
            'hash', 'Provider Case A', 'PROVIDER_ADMIN', 'ACTIVE',
-           'Provider Case A', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', 'provider-case-a')`,
+          'Provider Case A', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', 'provider-case-a')`,
       );
 
+      await database.query('SAVEPOINT invalid_provider_address');
       await expect(
         database.query(
           `INSERT INTO users
@@ -90,6 +91,19 @@ describe('account-linked Customer PostgreSQL baseline', () => {
             ('00000000-0000-4000-8000-000000000092', 'provider.case-b@example.test',
              'hash', 'Provider Case B', 'PROVIDER_ADMIN', 'ACTIVE',
              'Provider Case B', '0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD', 'provider-case-b')`,
+        ),
+      ).rejects.toMatchObject({ code: '23514' });
+      await database.query('ROLLBACK TO SAVEPOINT invalid_provider_address');
+
+      await expect(
+        database.query(
+          `INSERT INTO users
+            (id, email, password_hash, display_name, role, status,
+             organization_name, provider_chain_address, provider_chain_namespace)
+           VALUES
+            ('00000000-0000-4000-8000-000000000093', 'provider.case-c@example.test',
+             'hash', 'Provider Case C', 'PROVIDER_ADMIN', 'ACTIVE',
+             'Provider Case C', '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd', 'provider-case-c')`,
         ),
       ).rejects.toMatchObject({ code: '23505' });
     } finally {
@@ -162,7 +176,6 @@ describe('account-linked Customer PostgreSQL baseline', () => {
     await database.query('BEGIN');
     await audit.write(database, {
       action: 'ROLLBACK_TEST',
-      actorRole: 'CUSTOMER',
       targetType: 'ORDER',
     });
     await database.query('ROLLBACK');

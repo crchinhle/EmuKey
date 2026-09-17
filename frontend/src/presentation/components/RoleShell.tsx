@@ -2,7 +2,6 @@ import { Link, Outlet, useLocation } from 'react-router-dom';
 
 import type { RoleShellConfig } from '../../domain/workspace';
 import { useOptionalAuth } from '../../application/auth/authContext';
-import brandMarkShield from '../assets/brand-mark-shield.svg';
 
 export const buyerShell: RoleShellConfig = {
   role: 'CUSTOMER',
@@ -65,9 +64,8 @@ export function RoleShell({ config }: { readonly config: RoleShellConfig }) {
   return (
     <div className="role-shell">
       <aside className="role-sidebar">
-        <Link aria-label="LicenseHub - Trang sản phẩm" className="role-brand" to="/products">
-          <img alt="" height="30" src={brandMarkShield} width="30" />
-          <span>LicenseHub</span>
+        <Link aria-label="Emukey - Trang sản phẩm" className="role-brand" to="/products">
+          <span className="brand-wordmark">Emukey</span>
         </Link>
         <span className="role-label">{roleLabels[config.role]}</span>
         <nav aria-label={`Điều hướng ${config.role}`} className="role-nav">

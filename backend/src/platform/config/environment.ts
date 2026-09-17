@@ -35,6 +35,7 @@ export interface PlatformEnvironment {
   OTEL_ENABLED: boolean;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   PAYMENT_ADAPTER: PaymentAdapter;
+  IPN_DELIVERY_GRACE_SECONDS: number;
   PAYMENT_WEBHOOK_SECRET?: string;
   SEPAY_ENV?: SePayEnvironment;
   SEPAY_MERCHANT_ID?: string;
@@ -176,6 +177,13 @@ export function validateEnvironment(
       'PAYMENT_ADAPTER',
       PAYMENT_ADAPTERS,
     ),
+    IPN_DELIVERY_GRACE_SECONDS: parsePositiveInteger(
+      typeof environment.IPN_DELIVERY_GRACE_SECONDS === 'string' &&
+        environment.IPN_DELIVERY_GRACE_SECONDS.trim() !== ''
+        ? environment.IPN_DELIVERY_GRACE_SECONDS
+        : '86400',
+      'IPN_DELIVERY_GRACE_SECONDS',
+    ),
     AI_ADAPTER: requiredString(environment, 'AI_ADAPTER'),
     EMAIL_ADAPTER: oneOf(
       requiredString(environment, 'EMAIL_ADAPTER'),
@@ -272,6 +280,7 @@ export function validateEnvironment(
   if (!/^0x[0-9a-fA-F]{40}$/.test(result.EVM_CONTRACT_ADDRESS)) {
     throw new Error('EVM_CONTRACT_ADDRESS must contain a 20-byte address');
   }
+  result.EVM_CONTRACT_ADDRESS = result.EVM_CONTRACT_ADDRESS.toLowerCase();
   if (!/^[0-9a-fA-F]{64}$/.test(result.ACTIVATION_ENVELOPE_KEY)) {
     throw new Error('ACTIVATION_ENVELOPE_KEY must contain exactly 32 bytes');
   }

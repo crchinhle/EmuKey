@@ -128,11 +128,14 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       termsVersion: order.termsVersionSnapshot,
     });
     const checkout = await commerce.checkout(customer, order.id);
+    const purchaseProviderClock = await pool.query<{ occurred_at: Date }>(
+      "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
+    );
     const payment = await commerce.ingestIpn(
       {
         amountVnd: order.priceVndSnapshot,
         eventId: 'phase5-customer-event-1',
-        occurredAt: new Date().toISOString(),
+        occurredAt: purchaseProviderClock.rows[0]!.occurred_at.toISOString(),
         providerReference: checkout.checkoutReference,
       },
       webhookSecret,
@@ -356,11 +359,14 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       termsVersion: renewalOrder.termsVersionSnapshot,
     });
     const renewalCheckout = await commerce.checkout(customer, renewalOrder.id);
+    const renewalProviderClock = await pool.query<{ occurred_at: Date }>(
+      "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
+    );
     const renewalPayment = await commerce.ingestIpn(
       {
         amountVnd: renewalOrder.priceVndSnapshot,
         eventId: 'phase6-renewal-event-1',
-        occurredAt: new Date().toISOString(),
+        occurredAt: renewalProviderClock.rows[0]!.occurred_at.toISOString(),
         providerReference: renewalCheckout.checkoutReference,
       },
       webhookSecret,

@@ -44,28 +44,27 @@ a {
 
 .page-shell {
   min-height: 100vh;
-  background: var(--surface);
+  background: var(--canvas);
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
   color: var(--text);
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 32px;
-  letter-spacing: 0.01em;
   text-decoration: none;
 }
 
-.brand--script {
-  font-family: 'Segoe Script', 'Lucida Handwriting', cursive;
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
+.brand-wordmark {
+  font-family: 'Great Vibes', 'Segoe Script', 'Brush Script MT', cursive;
+  font-size: 34px;
+  font-weight: 400;
+  line-height: 40px;
+  letter-spacing: 0;
 }
 
 .brand--inverted {
-  color: var(--surface);
+  color: var(--sidebar-text);
 }
 
 .role-shell {
@@ -89,17 +88,14 @@ a {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
-  gap: 10px;
+  gap: 0;
   color: var(--sidebar-text);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
   text-decoration: none;
 }
 
-.role-brand img {
-  width: 30px;
-  height: 30px;
+.role-brand .brand-wordmark {
+  font-size: 32px;
+  line-height: 38px;
 }
 
 .role-label {
@@ -156,12 +152,12 @@ a {
 
 .workspace-page-header {
   min-height: 72px;
-  margin-bottom: 14px;
+  margin-bottom: 20px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  background: var(--surface);
+  background: var(--canvas);
 }
 
 .workspace-page-header h1 {
@@ -240,8 +236,8 @@ a {
 }
 
 .metric-card {
-  min-height: 124px;
-  padding: 18px;
+  min-height: 128px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -249,8 +245,8 @@ a {
 }
 
 .metric-card strong {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 24px;
+  line-height: 32px;
 }
 
 .metric-card small {
@@ -363,8 +359,8 @@ a {
   display: flex;
   align-items: center;
   gap: 28px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  border-bottom: 1px solid var(--sidebar-border);
+  background: var(--sidebar);
 }
 
 .public-nav {
@@ -375,14 +371,17 @@ a {
 }
 
 .public-nav a {
-  color: var(--text-secondary);
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--sidebar-text);
   font-size: 14px;
   font-weight: 500;
   text-decoration: none;
 }
 
 .public-nav a.active {
-  color: var(--primary-dark);
+  color: var(--sidebar-text);
 }
 
 .header-actions {
@@ -391,11 +390,27 @@ a {
   gap: 12px;
 }
 
+.public-header .ant-btn-text {
+  color: var(--sidebar-text);
+}
+
+.public-header .ant-btn-text:hover,
+.public-header .ant-btn-text:focus-visible {
+  color: var(--sidebar-text) !important;
+  background: var(--sidebar-selected) !important;
+}
+
+.public-header .ant-btn-default {
+  border-color: var(--control);
+  color: var(--text);
+  background: var(--surface);
+}
+
 .auth-screen {
   min-height: 100vh;
   display: grid;
   grid-template-columns: minmax(390px, 620px) minmax(520px, 1fr);
-  background: var(--surface);
+  background: var(--canvas);
 }
 
 .auth-story {
@@ -411,19 +426,21 @@ a {
 .auth-story h1 {
   max-width: 480px;
   margin: 0;
-  font-size: 28px;
-  line-height: 1.35;
+  font-size: 24px;
+  line-height: 32px;
 }
 
 .auth-story > p {
   max-width: 470px;
   margin: 0;
-  line-height: 1.6;
+  color: var(--sidebar-muted);
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .benefit-list {
   display: grid;
-  gap: 20px;
+  gap: 24px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -433,6 +450,9 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .benefit-list span {
@@ -441,14 +461,18 @@ a {
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
-  color: var(--success-text);
-  background: var(--success-surface);
+  border: 1px solid var(--border-decorative);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  font-size: 12px;
 }
 
 .auth-area {
-  padding: 64px;
-  display: grid;
-  place-items: center;
+  padding: 64px 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   background: var(--canvas);
 }
 
@@ -458,6 +482,10 @@ a {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
+}
+
+.auth-card--login {
+  min-height: 560px;
 }
 
 .auth-card h2 {
@@ -495,12 +523,21 @@ a {
 }
 
 .auth-tabs > span {
-  padding: 5px 12px;
-  border: 1px solid var(--info-border);
+  min-width: 96px;
+  padding: 5px 10px;
+  border: 1px solid var(--primary);
   border-radius: 999px;
-  color: var(--info-text);
-  background: var(--info-surface);
+  color: var(--on-primary);
+  background: var(--primary);
   font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.auth-tabs .ant-btn-link {
+  width: 120px;
+  height: 40px;
+  padding: 10px 16px;
 }
 
 .remember-row {
@@ -526,7 +563,7 @@ a {
   min-height: calc(100vh - 72px);
   margin: 0 auto;
   padding: 40px 5%;
-  background: var(--surface);
+  background: var(--canvas);
 }
 
 .catalog-hero {
@@ -874,7 +911,7 @@ a {
   display: grid;
   grid-template-columns: 480px minmax(0, 756px);
   gap: 28px;
-  background: var(--surface);
+  background: var(--canvas);
 }
 
 .verification-query {
@@ -963,11 +1000,11 @@ a {
   width: min(100%, 1196px);
   min-height: calc(100vh - 56px);
   margin: 0 auto;
-  background: var(--surface);
+  background: var(--canvas);
 }
 
 .metric-grid {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   display: grid;
   gap: 16px;
 }

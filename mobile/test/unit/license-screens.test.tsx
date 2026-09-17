@@ -35,8 +35,8 @@ describe('mobile License screens', () => {
         originOrderId: 'order-1',
         periodStart: '2026-09-10T00:00:00.000Z',
         plan: { commitment: `0x${'11'.repeat(32)}`, name: 'Pro', version: 1 },
-        productName: 'EmuKey Desktop',
-        provider: { displayName: 'EmuKey' },
+        productName: 'Emukey Desktop',
+        provider: { displayName: 'Emukey' },
         publicLicenseId: 'EMU-LICENSE-1',
         status: 'ACTIVE',
         updatedAt: '2026-09-10T00:00:00.000Z',
@@ -56,8 +56,8 @@ describe('mobile License screens', () => {
       blockNumber: 42,
       finality: 'CHAIN_CONFIRMED',
       licenseId: 'EMU-LICENSE-1',
-      productName: 'EmuKey Desktop',
-      provider: { displayName: 'EmuKey' },
+      productName: 'Emukey Desktop',
+      provider: { displayName: 'Emukey' },
       state: 'CHAIN_CONFIRMED',
     });
     await render(<VerifyLicenseScreen />);

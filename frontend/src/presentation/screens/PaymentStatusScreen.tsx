@@ -42,7 +42,7 @@ export function PaymentStatusScreen() {
             <Alert
               showIcon
               type="info"
-              message="SePay đã chuyển bạn về EmuKey. Hệ thống đang chờ IPN để xác minh giao dịch."
+              message="SePay đã chuyển bạn về Emukey. Hệ thống đang chờ IPN để xác minh giao dịch."
             />
           ) : null}
           {searchParams.get('sepay') === 'error' ? (

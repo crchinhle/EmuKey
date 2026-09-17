@@ -14,6 +14,7 @@ describe('SePayPaymentGateway', () => {
     const checkout = await gateway.createCheckout({
       amountVnd: 199_000,
       attemptId: '959ded01-53f4-4b64-ae49-7f193c939b95',
+      checkoutReference: '959ded01-53f4-4b64-ae49-7f193c939b95',
       orderId: '7f3ce9a4-7216-48ff-9b27-0ea22ec49c50',
     });
 

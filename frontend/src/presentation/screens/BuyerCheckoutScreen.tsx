@@ -90,7 +90,7 @@ export function BuyerCheckoutScreen() {
           <Alert
             showIcon
             type="success"
-            message="Đơn hàng và License sẽ được gắn với tài khoản EmuKey đang đăng nhập. Activation key không cần thêm khóa riêng hay khóa dự phòng theo tài khoản."
+            message="Đơn hàng và License sẽ được gắn với tài khoản Emukey đang đăng nhập. Activation key không cần thêm khóa riêng hay khóa dự phòng theo tài khoản."
           />
           <section className="workspace-card section-card">
             <h2>Cấu hình đơn hàng</h2>

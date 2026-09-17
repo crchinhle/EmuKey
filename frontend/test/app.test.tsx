@@ -5,20 +5,23 @@ import { App } from '../src/presentation/app/App';
 
 afterEach(cleanup);
 
-describe('EmuKey public web screens', () => {
+describe('Emukey public web screens', () => {
   it('keeps the AI assistant launcher available across routes', async () => {
     render(<App initialEntries={['/verify']} />);
     const launcher = screen.getByRole('button', { name: 'Hỏi AI' });
     expect(launcher.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(launcher);
-    expect(await screen.findByRole('region', { name: 'Trợ lý AI EmuKey' })).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'Trợ lý AI Emukey' })).toBeTruthy();
   });
 
   it('offers customer registration and navigates to the catalog', async () => {
     render(<App initialEntries={['/auth']} />);
-    expect(screen.getByRole('heading', { name: 'Một tài khoản cho mọi license' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Quản lý bản quyền phần mềm đa Provider bằng Blockchain' })).toBeTruthy();
+    expect(screen.getByText('Quản lý License và thiết bị')).toBeTruthy();
+    expect(screen.getByText('Theo dõi đơn hàng và thanh toán')).toBeTruthy();
+    expect(screen.getByText('Xác minh công khai trên Blockchain')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Đăng ký' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Xem sản phẩm' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Emukey - Trang sản phẩm' }));
     expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
   });
 
@@ -40,7 +43,7 @@ describe('EmuKey public web screens', () => {
     fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'emu@1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập' }));
     expect(await screen.findByText('Mật khẩu phải có ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt.')).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Đăng nhập' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Chào mừng trở lại' })).toBeTruthy();
   });
 
   it('registers a Customer account without sending a backup key', async () => {

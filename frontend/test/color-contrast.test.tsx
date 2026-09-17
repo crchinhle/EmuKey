@@ -47,14 +47,14 @@ describe('high-contrast color system', () => {
       text: theme!.style.getPropertyValue('--text'),
       textSecondary: theme!.style.getPropertyValue('--text-secondary'),
     }).toEqual({
-      canvas: '#f3f0e9',
-      control: '#a9977a',
-      primary: '#a8792e',
-      sidebar: '#1e1b17',
-      sidebarSelected: '#2e2a24',
-      surface: '#fdfbf6',
-      text: '#1c1a17',
-      textSecondary: '#52493c',
+      canvas: '#e3e1dc',
+      control: '#403e39',
+      primary: '#7a2e3a',
+      sidebar: '#1f1e1c',
+      sidebarSelected: '#2e2c29',
+      surface: '#f8f7f3',
+      text: '#1c1c1a',
+      textSecondary: '#4a4844',
     });
   });
 

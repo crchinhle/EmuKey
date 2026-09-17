@@ -146,12 +146,12 @@ export class CommerceService {
       const checkout = await this.payment.createCheckout({
         amountVnd: preparation.amountVnd,
         attemptId: preparation.attemptId,
+        checkoutReference: preparation.checkoutReference,
         orderId: preparation.orderId,
       });
-      await this.repository.completeCheckout(
-        preparation.attemptId,
-        checkout.checkoutReference,
-      );
+      if (checkout.checkoutReference !== preparation.checkoutReference) {
+        throw new Error('PAYMENT_CHECKOUT_REFERENCE_MISMATCH');
+      }
       return {
         ...checkout,
         amountVnd: preparation.amountVnd,

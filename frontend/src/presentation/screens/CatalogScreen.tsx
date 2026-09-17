@@ -42,10 +42,9 @@ export function CatalogScreen() {
       <main className="catalog-content">
         <section className="catalog-hero">
           <div>
-            <h1>Bản quyền phần mềm cho doanh nghiệp hiện đại</h1>
+            <h1>Bản quyền phần mềm được xác lập on-chain</h1>
             <p>
-              Chọn gói phù hợp theo số thiết bị và điều khoản cấp phép đã được
-              công bố.
+              Chọn Product và Plan phù hợp theo thời hạn, quyền sử dụng và số thiết bị.
             </p>
             <a className="primary-link" href="#product-grid">
               Khám phá sản phẩm
@@ -53,8 +52,8 @@ export function CatalogScreen() {
           </div>
           <Card className="trust-card">
             <Tag color="blue">Blockchain verified</Tag>
-            <h2>Quyền license có bằng chứng on-chain</h2>
-            <p>Tra cứu trạng thái, commitment và finality theo mã xác thực.</p>
+            <h2>License có bằng chứng on-chain</h2>
+            <p>Kiểm tra commitment, finality và trạng thái công khai.</p>
           </Card>
         </section>
 

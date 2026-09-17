@@ -57,8 +57,8 @@ const order: MobileOrderDetail = {
   planVersionSnapshot: 1,
   priceVndSnapshot: 990_000,
   productId: 'product-1',
-  productNameSnapshot: 'EmuKey Desktop',
-  providerNameSnapshot: 'EmuKey',
+  productNameSnapshot: 'Emukey Desktop',
+  providerNameSnapshot: 'Emukey',
   providerUserId: 'provider-1',
   termsHashSnapshot: `0x${'22'.repeat(32)}`,
   termsVersionSnapshot: 1,
@@ -70,7 +70,7 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
   it('renders the published catalog and opens checkout with the selected plan', async () => {
     listProductsMock.mockResolvedValue([
       {
-        name: 'EmuKey Desktop',
+        name: 'Emukey Desktop',
         plans: [{
           billingCycle: 'YEARLY',
           code: 'PRO',
@@ -88,7 +88,7 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
     const navigate = jest.fn();
     await render(<CatalogScreen navigation={{ navigate } as never} route={{} as never} />);
 
-    expect(await screen.findByText('EmuKey Desktop')).toBeOnTheScreen();
+    expect(await screen.findByText('Emukey Desktop')).toBeOnTheScreen();
     await act(async () => fireEvent.press(screen.getByText('Mua')));
     expect(navigate).toHaveBeenCalledWith('Checkout', expect.objectContaining({ planId: 'plan-1' }));
   });
@@ -111,7 +111,7 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
     getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản bản quyền', hash: order.termsHashSnapshot, version: 1 });
     acceptOrderTermsMock.mockResolvedValue({ ...order, orderStatus: 'WAITING_PAYMENT' });
     const navigation = { replace: jest.fn() };
-    const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'EmuKey Desktop' } };
+    const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
     await render(<CheckoutScreen navigation={navigation as never} route={route as never} />);
 
     await act(async () => fireEvent.press(screen.getByText('Tạo đơn hàng')));

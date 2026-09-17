@@ -89,7 +89,7 @@ describe('API platform contract', () => {
 
     const document = response.body as OpenAPIObject;
     expect(document.info).toMatchObject({
-      title: 'EmuKey API',
+      title: 'Emukey API',
       version: '1.0.0',
     });
     expect(document.paths).toHaveProperty('/api/v1/health/live');

@@ -33,7 +33,7 @@ describe('Customer hub', () => {
     render(<App initialEntries={['/buyer/profile']} />);
 
     fireEvent.change(await screen.findByLabelText('Tên hiển thị'), {
-      target: { value: 'Khách hàng EmuKey' },
+      target: { value: 'Khách hàng Emukey' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
 

@@ -53,7 +53,7 @@ export function AccountProfileScreen() {
     <>
       <PageHeader
         title="Hồ sơ tài khoản"
-        description="Quản lý thông tin liên hệ gắn với tài khoản EmuKey đang đăng nhập."
+        description="Quản lý thông tin liên hệ gắn với tài khoản Emukey đang đăng nhập."
         action={<Tag color={user.status === 'ACTIVE' ? 'green' : 'orange'}>{user.status}</Tag>}
       />
       <div className="workspace-two-column profile-layout">

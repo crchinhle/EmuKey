@@ -18,15 +18,15 @@ const authCopy: Record<AuthMode, { description: string; title: string }> = {
     title: 'Quên mật khẩu',
   },
   login: {
-    description: 'Đăng nhập để quản lý đơn hàng, license và tài khoản EmuKey.',
-    title: 'Đăng nhập',
+    description: 'Đăng nhập để quản lý đơn hàng, License và thiết bị.',
+    title: 'Chào mừng trở lại',
   },
   'licensing-action': {
     description: 'Đăng nhập bằng tài khoản người mua để tiếp tục thao tác bảo mật từ email.',
     title: 'Xác nhận thao tác License',
   },
   register: {
-    description: 'Tạo tài khoản người mua EmuKey. Bạn không cần tạo thêm khóa riêng cho tài khoản.',
+    description: 'Tạo tài khoản người mua Emukey. Bạn không cần tạo thêm khóa riêng cho tài khoản.',
     title: 'Đăng ký tài khoản',
   },
   reset: {
@@ -70,15 +70,18 @@ export function AuthScreen() {
     <main className="auth-screen">
       <section aria-labelledby="auth-story-title" className="auth-story">
         <Brand inverted />
-        <h1 id="auth-story-title">Một tài khoản cho mọi license</h1>
+        <h1 id="auth-story-title">Quản lý bản quyền phần mềm đa Provider bằng Blockchain</h1>
         <p>
-          Đơn hàng và license gắn với tài khoản EmuKey của bạn. Activation key vẫn
-          hoạt động như một bearer key, không có thêm khóa riêng theo tài khoản.
+          Thanh toán off-chain, quyền sử dụng được xác lập và kiểm chứng on-chain.
         </p>
-        <Button onClick={() => void navigate('/products')}>Xem sản phẩm</Button>
+        <ul className="benefit-list">
+          <li><span aria-hidden="true">✓</span>Quản lý License và thiết bị</li>
+          <li><span aria-hidden="true">✓</span>Theo dõi đơn hàng và thanh toán</li>
+          <li><span aria-hidden="true">✓</span>Xác minh công khai trên Blockchain</li>
+        </ul>
       </section>
       <section aria-label={copy.title} className="auth-area">
-        <div className="auth-card">
+        <div className={`auth-card auth-card--${mode}`}>
           {mode !== 'login' ? (
             <Button
               aria-label="Quay lại đăng nhập"
@@ -91,6 +94,16 @@ export function AuthScreen() {
           ) : null}
           <h2>{copy.title}</h2>
           <p>{copy.description}</p>
+          {mode === 'login' || mode === 'register' ? (
+            <div aria-label="Chế độ xác thực" className="auth-tabs">
+              {mode === 'login' ? <span>Đăng nhập</span> : (
+                <Button onClick={() => selectMode('login')} type="link">Đăng nhập</Button>
+              )}
+              {mode === 'register' ? <span>Đăng ký</span> : (
+                <Button onClick={() => selectMode('register')} type="link">Đăng ký</Button>
+              )}
+            </div>
+          ) : null}
           {mode === 'login' || mode === 'licensing-action' ? (
             <>
               {mode === 'licensing-action' && !verificationToken ? (
@@ -113,7 +126,7 @@ export function AuthScreen() {
                 }}
                 submitLabel={mode === 'licensing-action' ? 'Đăng nhập và tiếp tục' : 'Đăng nhập'}
               />
-              {mode === 'login' ? <Button block onClick={() => selectMode('register')} type="link">Đăng ký</Button> : null}
+              {mode === 'login' ? <small>Bảo mật phiên đăng nhập và giới hạn thử sai được bật.</small> : null}
             </>
           ) : null}
           {mode === 'register' ? (

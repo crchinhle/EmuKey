@@ -89,9 +89,9 @@ export class BrevoEmailDelivery implements EmailDeliveryPort {
       url.searchParams.set('token', token);
       const verificationUrl = url.toString();
       return {
-        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để xác minh tài khoản EmuKey:</p><p><a href="${escapeHtml(verificationUrl)}">Xác minh email</a></p><p>Liên kết có hiệu lực trong 24 giờ.</p>`,
-        subject: 'Xác minh email EmuKey',
-        textContent: `Chào bạn,\n\nMở liên kết sau để xác minh tài khoản EmuKey:\n${verificationUrl}\n\nLiên kết có hiệu lực trong 24 giờ.`,
+        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để xác minh tài khoản Emukey:</p><p><a href="${escapeHtml(verificationUrl)}">Xác minh email</a></p><p>Liên kết có hiệu lực trong 24 giờ.</p>`,
+        subject: 'Xác minh email Emukey',
+        textContent: `Chào bạn,\n\nMở liên kết sau để xác minh tài khoản Emukey:\n${verificationUrl}\n\nLiên kết có hiệu lực trong 24 giờ.`,
         token,
       };
     }
@@ -102,8 +102,8 @@ export class BrevoEmailDelivery implements EmailDeliveryPort {
       const verificationUrl = url.toString();
       const action = typeof input.data.action === 'string' ? input.data.action : 'licensing operation';
       return {
-        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để xác nhận thao tác ${escapeHtml(action)} trên giấy phép EmuKey:</p><p><a href="${escapeHtml(verificationUrl)}">Xác nhận thao tác</a></p><p>Mã xác nhận: <strong>${escapeHtml(token)}</strong></p><p>Mã xác nhận có hiệu lực trong 15 phút và chỉ sử dụng một lần.</p>`,
-        subject: 'Xác nhận thao tác giấy phép EmuKey',
+        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để xác nhận thao tác ${escapeHtml(action)} trên giấy phép Emukey:</p><p><a href="${escapeHtml(verificationUrl)}">Xác nhận thao tác</a></p><p>Mã xác nhận: <strong>${escapeHtml(token)}</strong></p><p>Mã xác nhận có hiệu lực trong 15 phút và chỉ sử dụng một lần.</p>`,
+        subject: 'Xác nhận thao tác giấy phép Emukey',
         textContent: `Chào bạn,\n\nMở liên kết sau để xác nhận thao tác ${action}:\n${verificationUrl}\n\nMã xác nhận: ${token}\n\nMã có hiệu lực trong 15 phút và chỉ sử dụng một lần.`,
         token,
       };
@@ -114,9 +114,9 @@ export class BrevoEmailDelivery implements EmailDeliveryPort {
       url.searchParams.set('token', token);
       const resetUrl = url.toString();
       return {
-        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để đặt lại mật khẩu EmuKey:</p><p><a href="${escapeHtml(resetUrl)}">Đặt lại mật khẩu</a></p><p>Mã đặt lại mật khẩu: <strong>${escapeHtml(token)}</strong></p><p>Liên kết và mã có hiệu lực trong 1 giờ.</p>`,
-        subject: 'Đặt lại mật khẩu EmuKey',
-        textContent: `Chào bạn,\n\nMở liên kết sau để đặt lại mật khẩu EmuKey:\n${resetUrl}\n\nMã đặt lại mật khẩu: ${token}\n\nLiên kết và mã có hiệu lực trong 1 giờ.`,
+        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để đặt lại mật khẩu Emukey:</p><p><a href="${escapeHtml(resetUrl)}">Đặt lại mật khẩu</a></p><p>Mã đặt lại mật khẩu: <strong>${escapeHtml(token)}</strong></p><p>Liên kết và mã có hiệu lực trong 1 giờ.</p>`,
+        subject: 'Đặt lại mật khẩu Emukey',
+        textContent: `Chào bạn,\n\nMở liên kết sau để đặt lại mật khẩu Emukey:\n${resetUrl}\n\nMã đặt lại mật khẩu: ${token}\n\nLiên kết và mã có hiệu lực trong 1 giờ.`,
         token,
       };
     }

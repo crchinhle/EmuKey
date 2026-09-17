@@ -81,10 +81,10 @@ export class SePayPaymentGateway implements PaymentGatewayPort {
     const checkoutFields = this.client.checkout.initOneTimePaymentFields({
       operation: 'PURCHASE',
       payment_method: 'BANK_TRANSFER',
-      order_invoice_number: input.attemptId,
+      order_invoice_number: input.checkoutReference,
       order_amount: input.amountVnd,
       currency: 'VND',
-      order_description: `EmuKey order ${input.orderId}`,
+      order_description: `Emukey order ${input.orderId}`,
       success_url: resultUrl(this.options.webAppUrl, input.orderId, 'success'),
       error_url: resultUrl(this.options.webAppUrl, input.orderId, 'error'),
       cancel_url: resultUrl(this.options.webAppUrl, input.orderId, 'cancel'),
@@ -98,7 +98,7 @@ export class SePayPaymentGateway implements PaymentGatewayPort {
         ]),
       ),
       checkoutMethod: 'POST',
-      checkoutReference: input.attemptId,
+      checkoutReference: input.checkoutReference,
       checkoutUrl: this.client.checkout.initCheckoutUrl(),
     });
   }

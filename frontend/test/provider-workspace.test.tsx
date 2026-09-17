@@ -12,7 +12,7 @@ describe('Provider workspace', () => {
     expect(
       screen.getByRole('heading', { name: 'Tổng quan Provider' }),
     ).toBeTruthy();
-    expect(screen.getByText('LicenseHub')).toBeTruthy();
+    expect(screen.getByText('Emukey').className).toContain('brand-wordmark');
     expect(screen.getByRole('link', { name: 'Hồ sơ' })).toBeTruthy();
     expect(
       screen.getByRole('alert', { name: 'Còn 2 bước để sẵn sàng publish' }),

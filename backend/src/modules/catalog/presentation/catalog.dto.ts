@@ -21,7 +21,7 @@ export class CreateProductDto {
   @Length(1, 255)
   code!: string;
 
-  @ApiProperty({ example: 'EmuKey Desktop' })
+  @ApiProperty({ example: 'Emukey Desktop' })
   @IsString()
   @Length(1, 255)
   name!: string;
@@ -38,7 +38,7 @@ export class CreateProductDto {
 }
 
 export class UpdateProductDto {
-  @ApiPropertyOptional({ example: 'EmuKey Desktop' })
+  @ApiPropertyOptional({ example: 'Emukey Desktop' })
   @IsOptional()
   @IsString()
   @Length(1, 255)

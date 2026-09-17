@@ -35,10 +35,29 @@ describe('validateEnvironment', () => {
 
     expect(result.PORT).toBe(3100);
     expect(result.OTEL_ENABLED).toBe(false);
+    expect(result.IPN_DELIVERY_GRACE_SECONDS).toBe(86_400);
+    expect(result.EVM_CONTRACT_ADDRESS).toBe(
+      '0x5fbdb2315678afecb367f032d93f642f64180aa3',
+    );
     expect(result.CORS_ORIGINS).toEqual([
       'http://localhost:5173',
       'http://localhost:8081',
     ]);
+  });
+
+  it('validates the payment IPN delivery grace policy', () => {
+    expect(
+      validateEnvironment({
+        ...validEnvironment,
+        IPN_DELIVERY_GRACE_SECONDS: '7200',
+      }).IPN_DELIVERY_GRACE_SECONDS,
+    ).toBe(7200);
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        IPN_DELIVERY_GRACE_SECONDS: '0',
+      }),
+    ).toThrow('IPN_DELIVERY_GRACE_SECONDS must be a positive safe integer');
   });
 
   it('fails fast when a durable dependency URL is missing', () => {
@@ -73,7 +92,7 @@ describe('validateEnvironment', () => {
       ...validEnvironment,
       BREVO_API_KEY: 'test-brevo-api-key',
       BREVO_SENDER_EMAIL: 'no-reply@example.com',
-      BREVO_SENDER_NAME: 'EmuKey',
+      BREVO_SENDER_NAME: 'Emukey',
       EMAIL_ADAPTER: 'brevo',
       WEB_APP_URL: 'http://localhost:5173',
     });
@@ -81,7 +100,7 @@ describe('validateEnvironment', () => {
     expect(result).toMatchObject({
       BREVO_API_KEY: 'test-brevo-api-key',
       BREVO_SENDER_EMAIL: 'no-reply@example.com',
-      BREVO_SENDER_NAME: 'EmuKey',
+      BREVO_SENDER_NAME: 'Emukey',
       EMAIL_ADAPTER: 'brevo',
       WEB_APP_URL: 'http://localhost:5173',
     });
@@ -153,7 +172,7 @@ describe('validateEnvironment', () => {
         EMAIL_ADAPTER: 'brevo',
         BREVO_API_KEY: 'test-brevo-api-key',
         BREVO_SENDER_EMAIL: 'no-reply@example.com',
-        BREVO_SENDER_NAME: 'EmuKey',
+        BREVO_SENDER_NAME: 'Emukey',
         WEB_APP_URL: 'https://app.example.com',
         PUSH_ADAPTER: 'expo',
         STORAGE_ADAPTER: 'cloudinary',

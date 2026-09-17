@@ -15,6 +15,8 @@ import type {
   NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { WebView } from 'react-native-webview';
+import { GreatVibes_400Regular } from '@expo-google-fonts/great-vibes/400Regular';
+import { useFonts } from 'expo-font';
 
 import {
   acceptOrderTerms,
@@ -91,7 +93,7 @@ export function LoginScreen({
   };
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <Text accessibilityRole="header" style={styles.brand}>EmuKey</Text>
+      <Text accessibilityRole="header" style={styles.brand}>Emukey</Text>
       <Text style={styles.subtitle}>Đăng nhập để quản lý đơn hàng và license của bạn</Text>
       <TextInput accessibilityLabel="Email" autoCapitalize="none" onChangeText={setEmail} style={styles.input} value={email} />
       <TextInput accessibilityLabel="Mật khẩu" onChangeText={setPassword} secureTextEntry style={styles.input} value={password} />
@@ -266,8 +268,8 @@ function OrdersScreen({ navigation }: NativeStackScreenProps<RootStackParamList,
   }, []);
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <Text accessibilityRole="header" style={styles.brand}>EmuKey</Text>
-      <Text style={styles.subtitle}>Đơn hàng gắn với tài khoản EmuKey đang đăng nhập</Text>
+      <Text accessibilityRole="header" style={styles.brand}>Emukey</Text>
+      <Text style={styles.subtitle}>Đơn hàng gắn với tài khoản Emukey đang đăng nhập</Text>
       <CustomerNavigation navigation={navigation} />
       <Button onPress={() => navigation.navigate('VerifyLicense')} title="Xác minh License công khai" />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -706,11 +708,12 @@ function OrderDetailScreen({ route }: NativeStackScreenProps<RootStackParamList,
 }
 
 export function EmuKeyMobileApp() {
+  const [fontsLoaded, fontError] = useFonts({ GreatVibes_400Regular });
   const [session, setSession] = useState<MobileSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [publicVerify, setPublicVerify] = useState(false);
   useEffect(() => { void restoreSession().then(setSession).finally(() => setLoading(false)); }, []);
-  if (loading) return <View style={styles.container}><Text>Đang khôi phục phiên đăng nhập...</Text></View>;
+  if ((!fontsLoaded && !fontError) || loading) return <View style={styles.container}><Text>Đang khôi phục phiên đăng nhập...</Text></View>;
   if (!session) {
     if (publicVerify) return <View style={styles.publicContainer}><VerifyLicenseScreen /><Button onPress={() => setPublicVerify(false)} title="Quay lại đăng nhập" /></View>;
     return <LoginScreen onAuthenticated={setSession} onVerify={() => setPublicVerify(true)} />;
@@ -740,7 +743,7 @@ const styles = StyleSheet.create({
   acceptanceSelected: { backgroundColor: '#fbf0d6', borderColor: '#a8792e' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   activationKey: { backgroundColor: '#e0f2fe', color: '#0c4a6e', fontFamily: 'monospace', padding: 10 },
-  brand: { color: '#1c1a17', fontSize: 32, fontWeight: '700' },
+  brand: { color: '#7a2e3a', fontFamily: 'GreatVibes_400Regular', fontSize: 42, lineHeight: 52 },
   card: { backgroundColor: '#fdfbf6', borderColor: '#a9977a', borderRadius: 12, borderWidth: 1, gap: 8, padding: 16 },
   cardTitle: { color: '#1c1a17', fontSize: 17, fontWeight: '700' },
   compareToggle: { borderColor: '#a9977a', borderRadius: 6, borderWidth: 1, minWidth: 72, padding: 9 },

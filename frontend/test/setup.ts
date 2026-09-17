@@ -131,8 +131,8 @@ const license = {
   plan: { commitment: `0x${'ab'.repeat(32)}`, name: 'Business', version: 1 },
   productName: 'SecureDesk Pro',
   provider: {
-    displayName: 'EmuKey Provider',
-    organizationName: 'EmuKey Software',
+    displayName: 'Emukey Provider',
+    organizationName: 'Emukey Software',
   },
   publicLicenseId: 'EMU-TEST-LICENSE',
   status: 'ACTIVE',

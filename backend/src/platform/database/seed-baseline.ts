@@ -21,24 +21,24 @@ interface SeedUser {
 
 const USERS: readonly SeedUser[] = [
   {
-    displayName: 'EmuKey System Admin',
+    displayName: 'Emukey System Admin',
     email: 'system.admin@example.test',
     id: '00000000-0000-4000-8000-000000000001',
     role: 'SYSTEM_ADMIN',
     status: 'ACTIVE',
   },
   {
-    displayName: 'EmuKey Provider Admin',
+    displayName: 'Emukey Provider Admin',
     email: 'provider.admin@example.test',
     id: '00000000-0000-4000-8000-000000000002',
-    organizationName: 'EmuKey Demo Provider',
+    organizationName: 'Emukey Demo Provider',
     providerChainAddress: '0x0000000000000000000000000000000000000002',
     providerChainNamespace: 'emukey-demo-provider',
     role: 'PROVIDER_ADMIN',
     status: 'ACTIVE',
   },
   {
-    displayName: 'EmuKey Support Staff',
+    displayName: 'Emukey Support Staff',
     email: 'support.staff@example.test',
     id: '00000000-0000-4000-8000-000000000003',
     role: 'SUPPORT_STAFF',
@@ -46,7 +46,7 @@ const USERS: readonly SeedUser[] = [
   },
   {
     customerType: 'INDIVIDUAL',
-    displayName: 'EmuKey Demo Customer',
+    displayName: 'Emukey Demo Customer',
     email: 'customer@example.test',
     emailVerifiedAt: '2026-09-08T00:00:00Z',
     id: '00000000-0000-4000-8000-000000000004',
@@ -111,7 +111,7 @@ async function seedCatalog(database: DatabaseClient): Promise<void> {
     ) VALUES (
       '00000000-0000-4000-8000-000000000200',
       '00000000-0000-4000-8000-000000000002',
-      'EMUKEY_DESKTOP', 'EmuKey Desktop',
+      'EMUKEY_DESKTOP', 'Emukey Desktop',
       'Deterministic local catalog data for development.',
       'https://picsum.photos/seed/emukey-desktop/1200/800',
       'PUBLISHED', '2026-09-08T00:00:00Z'
