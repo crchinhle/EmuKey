@@ -19,10 +19,10 @@ export class ActivationEnvelopeRecoveryService {
   ) {}
 
   async ensure(command: ChainCommandRecord): Promise<ChainCommandRecord> {
-    if (command.commandType !== 'ISSUE_LICENSE') return command;
-    const durable = await this.repository.getLicenseCommitment(
-      command.licenseId,
-    );
+    if (!['ISSUE_LICENSE', 'ROTATE_KEY'].includes(command.commandType)) return command;
+    const durable = command.commandType === 'ISSUE_LICENSE'
+      ? await this.repository.getLicenseCommitment(command.licenseId)
+      : await this.repository.getRotationCommitment(command.licenseId);
     if (!durable) throw new Error('ACTIVATION_LICENSE_NOT_RECOVERABLE');
     try {
       const envelope = await this.envelopes.read(command.commandId);
@@ -70,7 +70,7 @@ export class ActivationEnvelopeRecoveryService {
     }
     const secret: Hex = `0x${randomBytes(32).toString('hex')}`;
     const commitment = activationCommitment(secret);
-    const keyVersion = currentVersion + 1;
+    const keyVersion = currentVersion;
     const payload = {
       ...command.payload,
       activationCommitment: commitment,

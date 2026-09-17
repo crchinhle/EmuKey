@@ -107,6 +107,91 @@ describe('RpcChainIndexerService', () => {
     expect(checkpoints.release).not.toHaveBeenCalled();
   });
 
+  it('learns the provider log-range limit and scans the claimed range in chunks', async () => {
+    const checkpoints = {
+      claimRange: vi
+        .fn()
+        .mockResolvedValueOnce({ fromBlock: 100, toBlock: 124 })
+        .mockResolvedValueOnce({ fromBlock: 125, toBlock: 149 }),
+      commandContext: vi.fn(),
+      completeRange: vi.fn().mockResolvedValue(undefined),
+      eventIdentities: vi.fn().mockResolvedValue([]),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const rpc = {
+      blockHash: vi.fn().mockResolvedValue(`0x${'20'.repeat(32)}`),
+      contractEvents: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error('Free tier supports up to a 10 block range'),
+        )
+        .mockResolvedValue([]),
+      latestBlock: vi.fn().mockResolvedValue(200),
+    };
+    const service = new RpcChainIndexerService(
+      checkpoints,
+      { ingest: vi.fn(), markReorged: vi.fn() },
+      rpc,
+      {
+        batchSize: 25,
+        chainId: 31_337,
+        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+        deploymentBlock: 1,
+        network: 'hardhat',
+        requiredConfirmations: 2,
+      },
+    );
+
+    await expect(service.poll('worker-1')).resolves.toBe(0);
+    await expect(service.poll('worker-1')).resolves.toBe(0);
+
+    expect(rpc.contractEvents.mock.calls).toEqual([
+      [100, 124],
+      [100, 109],
+      [110, 119],
+      [120, 124],
+      [125, 134],
+      [135, 144],
+      [145, 149],
+    ]);
+    expect(checkpoints.completeRange).toHaveBeenCalledTimes(2);
+    expect(checkpoints.release).not.toHaveBeenCalled();
+  });
+
+  it('does not rescan the chain head repeatedly within the same worker process', async () => {
+    const checkpoints = {
+      claimRange: vi.fn().mockResolvedValue({ fromBlock: 197, toBlock: 200 }),
+      commandContext: vi.fn(),
+      completeRange: vi.fn().mockResolvedValue(undefined),
+      eventIdentities: vi.fn().mockResolvedValue([]),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const rpc = {
+      blockHash: vi.fn().mockResolvedValue(`0x${'20'.repeat(32)}`),
+      contractEvents: vi.fn().mockResolvedValue([]),
+      latestBlock: vi.fn().mockResolvedValue(200),
+    };
+    const service = new RpcChainIndexerService(
+      checkpoints,
+      { ingest: vi.fn(), markReorged: vi.fn() },
+      rpc,
+      {
+        batchSize: 25,
+        chainId: 31_337,
+        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+        deploymentBlock: 1,
+        network: 'hardhat',
+        requiredConfirmations: 2,
+      },
+    );
+
+    await expect(service.poll('worker-1')).resolves.toBe(0);
+    await expect(service.poll('worker-1')).resolves.toBeNull();
+
+    expect(checkpoints.claimRange).toHaveBeenCalledTimes(1);
+    expect(rpc.contractEvents).toHaveBeenCalledTimes(1);
+  });
+
   it('does not advance the durable cursor when RPC processing fails', async () => {
     const checkpoints = {
       claimRange: vi.fn().mockResolvedValue({ fromBlock: 10, toBlock: 20 }),

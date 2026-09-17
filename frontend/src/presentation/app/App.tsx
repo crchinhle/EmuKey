@@ -10,17 +10,21 @@ import {
 } from 'react-router-dom';
 
 import { AuthScreen } from '../screens/AuthScreen';
+import { AccountProfileScreen } from '../screens/AccountProfileScreen';
 import { BuyerCheckoutScreen } from '../screens/BuyerCheckoutScreen';
 import { BuyerHomeScreen } from '../screens/BuyerHomeScreen';
 import { BuyerAssistanceScreen } from '../screens/BuyerAssistanceScreen';
 import { BuyerLicenseHubScreen } from '../screens/BuyerLicenseHubScreen';
 import { BuyerOrdersScreen } from '../screens/BuyerOrdersScreen';
+import { BuyerRenewalScreen } from '../screens/BuyerRenewalScreen';
 import { CatalogScreen } from '../screens/CatalogScreen';
+import { ComparePlansScreen } from '../screens/ComparePlansScreen';
 import { PaymentStatusScreen } from '../screens/PaymentStatusScreen';
 import { ProductDetailScreen } from '../screens/ProductDetailScreen';
 import { PublicVerificationScreen } from '../screens/PublicVerificationScreen';
 import { AiKnowledgeScreen } from '../screens/AiKnowledgeScreen';
 import { ProviderCatalogScreen } from '../screens/ProviderCatalogScreen';
+import { ProviderLicensesScreen } from '../screens/ProviderLicensesScreen';
 import { ProviderDashboardScreen } from '../screens/ProviderDashboardScreen';
 import { ProviderOperationsScreen } from '../screens/ProviderOperationsScreen';
 import { SupportConsoleScreen } from '../screens/SupportConsoleScreen';
@@ -68,6 +72,7 @@ function AppRoutes() {
     <Routes>
       <Route element={<AuthScreen />} path="/auth" />
       <Route element={<CatalogScreen />} path="/products" />
+      <Route element={<ComparePlansScreen />} path="/compare" />
       <Route element={<ProductDetailScreen />} path="/products/:slug" />
       <Route element={<PublicVerificationScreen />} path="/verify" />
       <Route element={<ProtectedRoute roles={['CUSTOMER']}><RoleShell config={buyerShell} /></ProtectedRoute>} path="/buyer">
@@ -76,11 +81,15 @@ function AppRoutes() {
         <Route element={<PaymentStatusScreen />} path="orders/:id/payment" />
         <Route element={<BuyerOrdersScreen />} path="orders" />
         <Route element={<BuyerLicenseHubScreen />} path="licenses" />
+        <Route element={<BuyerRenewalScreen />} path="licenses/:licenseId/renew" />
+        <Route element={<AccountProfileScreen />} path="profile" />
         <Route element={<BuyerAssistanceScreen />} path="support" />
       </Route>
       <Route element={<ProtectedRoute roles={['PROVIDER_ADMIN']}><RoleShell config={providerShell} /></ProtectedRoute>} path="/provider">
         <Route index element={<ProviderDashboardScreen />} />
         <Route element={<ProviderCatalogScreen />} path="catalog" />
+        <Route element={<ProviderLicensesScreen />} path="licenses" />
+        <Route element={<AccountProfileScreen />} path="profile" />
         <Route element={<AiKnowledgeScreen />} path="knowledge" />
         <Route element={<ProviderOperationsScreen />} path="operations" />
       </Route>

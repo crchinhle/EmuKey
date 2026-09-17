@@ -307,8 +307,8 @@ INSERT INTO license_devices (
 )
 SELECT
   id, license_id,
-  'demo-device-' || substr(md5(id::text), 1, 20),
-  'demo-public-key-' || encode(digest(id::text, 'sha256'), 'hex'),
+  encode(digest(current_setting('emukey.seed_namespace') || ':device-ref:' || id::text, 'sha256'), 'hex'),
+  '0x' || substr(encode(digest(current_setting('emukey.seed_namespace') || ':device-key:' || id::text, 'sha256'), 'hex'), 1, 40),
   'ACTIVE', 1, now() - interval '12 hours'
 FROM _demo_devices
 ON CONFLICT (id) DO NOTHING;
@@ -434,7 +434,7 @@ INSERT INTO messages (
 )
 SELECT
   md5(current_setting('emukey.seed_namespace') || ':message:' || i)::uuid,
-  id, customer_user_id, 'BUYER',
+  id, customer_user_id, 'CUSTOMER',
   md5(current_setting('emukey.seed_namespace') || ':client-message:' || i)::uuid,
   1, 'Tôi cần hướng dẫn kích hoạt sản phẩm minh họa số ' || i || '.',
   jsonb_build_array(jsonb_build_object('seedNamespace', current_setting('emukey.seed_namespace')))
@@ -497,7 +497,7 @@ FROM (
   UNION ALL SELECT 'payment_attempts', count(*) FROM payment_attempts WHERE provider_reference LIKE 'DEMO-PAY-%'
   UNION ALL SELECT 'payment_transactions', count(*) FROM payment_transactions WHERE provider_event_id LIKE 'DEMO-EVENT-%'
   UNION ALL SELECT 'licenses', count(*) FROM licenses WHERE public_license_id LIKE 'EMU-DEMO-%'
-  UNION ALL SELECT 'license_devices', count(*) FROM license_devices WHERE device_ref LIKE 'demo-device-%'
+  UNION ALL SELECT 'license_devices', count(*) FROM license_devices d JOIN licenses l ON l.id=d.license_id WHERE l.public_license_id LIKE 'EMU-DEMO-%'
   UNION ALL SELECT 'chain_commands', count(*) FROM chain_commands WHERE payload ->> 'seedNamespace' = current_setting('emukey.seed_namespace')
   UNION ALL SELECT 'chain_events', count(*) FROM chain_events WHERE payload ->> 'seedNamespace' = current_setting('emukey.seed_namespace')
   UNION ALL SELECT 'knowledge_documents', count(*) FROM knowledge_documents WHERE logical_document_key LIKE 'demo-guide-%'

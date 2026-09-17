@@ -192,6 +192,28 @@ export type UpdatePlanDto = {
   };
 };
 
+export type BlockchainHealthDto = {
+  active_without_finality: number;
+  pending_events: number;
+  reorged_events: number;
+  unknown_commands: number;
+};
+
+export type BlockchainProjectionRepairDto = {
+  commandRepairs: number;
+  licenseIds: Array<string>;
+  licenseRepairs: number;
+  remainingMismatches: number;
+};
+
+export type BlockchainReconciliationDto = {
+  health: BlockchainHealthDto;
+  indexedEvents: number;
+  processed: boolean;
+  projection: BlockchainProjectionRepairDto;
+  reconciledCommandIds: Array<string>;
+};
+
 export type LicensePlanDto = {
   commitment: string;
   name: string;
@@ -222,6 +244,22 @@ export type LicenseProjectionDto = {
   status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'REVOKED';
   transactionHash?: string | null;
   updatedAt: string;
+};
+
+export type LicenseDeviceDto = {
+  id: string;
+  deviceRef: string;
+  status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'REVOKED';
+  bindingGeneration: number;
+  activatedAt?: {
+    [key: string]: unknown;
+  } | null;
+  revokedAt?: {
+    [key: string]: unknown;
+  } | null;
+  finality?: {
+    [key: string]: unknown;
+  } | null;
 };
 
 export type ActivationKeyDto = {
@@ -304,6 +342,10 @@ export type AcceptTermsDto = {
 export type CheckoutSessionDto = {
   amountVnd: number;
   attemptId: string;
+  checkoutFields: {
+    [key: string]: string;
+  };
+  checkoutMethod: 'POST';
   checkoutReference: string;
   checkoutUrl: string;
   expiresAt: string;
@@ -365,6 +407,134 @@ export type PaymentReceiptDto = {
   providerNameSnapshot: string;
   providerTransactionReference?: string | null;
   transactionId: string;
+};
+
+export type ActivationChallengeDto = {
+  licenseId: string;
+  deviceRef: string;
+  /**
+   * Set when requesting a challenge to revoke an existing device
+   */
+  deviceId?: string;
+};
+
+export type DeviceChallengeDto = {
+  challenge: string;
+  expiresAt: string;
+};
+
+export type ActivateDeviceDto = {
+  licenseId: string;
+  activationKey: string;
+  challenge: string;
+  deviceRef: string;
+  /**
+   * EVM address corresponding to the device signing key
+   */
+  devicePublicKey: string;
+  /**
+   * EIP-191 signature over the activation challenge
+   */
+  proof: string;
+};
+
+export type Phase6CommandDto = {
+  commandId: string;
+  status:
+    | 'PENDING'
+    | 'SUBMITTED'
+    | 'SUBMITTED_UNKNOWN'
+    | 'CONFIRMED'
+    | 'RETRYABLE_FAILED'
+    | 'DEAD_LETTER';
+  licenseId: string;
+  deviceId?: string | null;
+};
+
+export type LicensingActionVerificationDto = {
+  action: 'ROTATE_KEY' | 'REVOKE_DEVICE';
+  licenseId: string;
+};
+
+export type Phase6CommandStatusDto = {
+  commandId: string;
+  status:
+    | 'PENDING'
+    | 'SUBMITTED'
+    | 'SUBMITTED_UNKNOWN'
+    | 'CONFIRMED'
+    | 'RETRYABLE_FAILED'
+    | 'DEAD_LETTER';
+  licenseId: string;
+  deviceId?: string | null;
+  commandType:
+    | 'ISSUE_LICENSE'
+    | 'RENEW_LICENSE'
+    | 'SUSPEND_LICENSE'
+    | 'RESUME_LICENSE'
+    | 'REVOKE_LICENSE'
+    | 'ROTATE_KEY'
+    | 'ACTIVATE_DEVICE'
+    | 'REVOKE_DEVICE';
+  confirmedAt?: string | null;
+  transactionHash?: string | null;
+};
+
+export type RevokeDeviceDto = {
+  actionToken: string;
+  activationKey: string;
+  challenge: string;
+  /**
+   * EIP-191 signature over the revoke challenge
+   */
+  proof: string;
+};
+
+export type RotateActivationKeyDto = {
+  actionToken: string;
+  currentKey: string;
+};
+
+export type LicenseLifecycleDto = {
+  command: 'SUSPEND_LICENSE' | 'RESUME_LICENSE' | 'REVOKE_LICENSE';
+  reason?: string;
+};
+
+export type EntitlementRefreshDto = {
+  licenseId: string;
+  deviceId: string;
+  challenge: string;
+  /**
+   * EIP-191 device signature over the entitlement challenge
+   */
+  proof: string;
+};
+
+export type EntitlementDto = {
+  token: string;
+  expiresAt: string;
+  licenseId: string;
+  deviceId: string;
+  entitlementVersion: number;
+};
+
+export type EntitlementVerifyDto = {
+  /**
+   * Signed entitlement JWT returned by issue or refresh
+   */
+  token: string;
+};
+
+export type EntitlementValidationDto = {
+  valid: true;
+  expiresAt: string;
+  licenseId: string;
+  deviceId: string;
+  entitlementVersion: number;
+  keyVersion: number;
+  rights: {
+    [key: string]: unknown;
+  };
 };
 
 export type HealthControllerLiveData = {
@@ -927,8 +1097,11 @@ export type BlockchainOperationsControllerReconcileData = {
 };
 
 export type BlockchainOperationsControllerReconcileResponses = {
-  201: unknown;
+  200: BlockchainReconciliationDto;
 };
+
+export type BlockchainOperationsControllerReconcileResponse =
+  BlockchainOperationsControllerReconcileResponses[keyof BlockchainOperationsControllerReconcileResponses];
 
 export type LicenseControllerListData = {
   body?: never;
@@ -959,6 +1132,22 @@ export type LicenseControllerFindResponses = {
 
 export type LicenseControllerFindResponse =
   LicenseControllerFindResponses[keyof LicenseControllerFindResponses];
+
+export type LicenseControllerListDevicesData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{id}/devices';
+};
+
+export type LicenseControllerListDevicesResponses = {
+  200: Array<LicenseDeviceDto>;
+};
+
+export type LicenseControllerListDevicesResponse =
+  LicenseControllerListDevicesResponses[keyof LicenseControllerListDevicesResponses];
 
 export type LicenseControllerRetrieveData = {
   body?: never;
@@ -1115,7 +1304,7 @@ export type CommerceControllerCancelResponse =
 export type PaymentControllerIngestData = {
   body?: never;
   headers: {
-    'x-emukey-payment-signature': string;
+    'x-secret-key': string;
   };
   path?: never;
   query?: never;
@@ -1201,3 +1390,149 @@ export type PaymentControllerGetReceiptResponses = {
 
 export type PaymentControllerGetReceiptResponse =
   PaymentControllerGetReceiptResponses[keyof PaymentControllerGetReceiptResponses];
+
+export type LicensingControllerChallengeData = {
+  body: ActivationChallengeDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/activations/challenge';
+};
+
+export type LicensingControllerChallengeResponses = {
+  201: DeviceChallengeDto;
+};
+
+export type LicensingControllerChallengeResponse =
+  LicensingControllerChallengeResponses[keyof LicensingControllerChallengeResponses];
+
+export type LicensingControllerActivateData = {
+  body: ActivateDeviceDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/activations';
+};
+
+export type LicensingControllerActivateResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerActivateResponse =
+  LicensingControllerActivateResponses[keyof LicensingControllerActivateResponses];
+
+export type LicensingControllerRequestActionVerificationData = {
+  body: LicensingActionVerificationDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/licenses/action-verification';
+};
+
+export type LicensingControllerRequestActionVerificationResponses = {
+  201: unknown;
+};
+
+export type LicensingControllerCommandStatusData = {
+  body?: never;
+  path: {
+    commandId: string;
+  };
+  query?: never;
+  url: '/api/v1/commands/{commandId}';
+};
+
+export type LicensingControllerCommandStatusResponses = {
+  200: Phase6CommandStatusDto;
+};
+
+export type LicensingControllerCommandStatusResponse =
+  LicensingControllerCommandStatusResponses[keyof LicensingControllerCommandStatusResponses];
+
+export type LicensingControllerRevokeDeviceData = {
+  body: RevokeDeviceDto;
+  path: {
+    licenseId: string;
+    deviceId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/devices/{deviceId}/revoke';
+};
+
+export type LicensingControllerRevokeDeviceResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerRevokeDeviceResponse =
+  LicensingControllerRevokeDeviceResponses[keyof LicensingControllerRevokeDeviceResponses];
+
+export type LicensingControllerRotateData = {
+  body: RotateActivationKeyDto;
+  path: {
+    licenseId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/activation-key/rotate';
+};
+
+export type LicensingControllerRotateResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerRotateResponse =
+  LicensingControllerRotateResponses[keyof LicensingControllerRotateResponses];
+
+export type LicensingControllerLifecycleData = {
+  body: LicenseLifecycleDto;
+  path: {
+    licenseId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/lifecycle';
+};
+
+export type LicensingControllerLifecycleResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerLifecycleResponse =
+  LicensingControllerLifecycleResponses[keyof LicensingControllerLifecycleResponses];
+
+export type LicensingControllerIssueEntitlementData = {
+  body: EntitlementRefreshDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/entitlements/issue';
+};
+
+export type LicensingControllerIssueEntitlementResponses = {
+  201: EntitlementDto;
+};
+
+export type LicensingControllerIssueEntitlementResponse =
+  LicensingControllerIssueEntitlementResponses[keyof LicensingControllerIssueEntitlementResponses];
+
+export type LicensingControllerRefreshEntitlementData = {
+  body: EntitlementRefreshDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/entitlements/refresh';
+};
+
+export type LicensingControllerRefreshEntitlementResponses = {
+  201: EntitlementDto;
+};
+
+export type LicensingControllerRefreshEntitlementResponse =
+  LicensingControllerRefreshEntitlementResponses[keyof LicensingControllerRefreshEntitlementResponses];
+
+export type LicensingControllerVerifyEntitlementData = {
+  body: EntitlementVerifyDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/entitlements/verify';
+};
+
+export type LicensingControllerVerifyEntitlementResponses = {
+  200: EntitlementValidationDto;
+};
+
+export type LicensingControllerVerifyEntitlementResponse =
+  LicensingControllerVerifyEntitlementResponses[keyof LicensingControllerVerifyEntitlementResponses];

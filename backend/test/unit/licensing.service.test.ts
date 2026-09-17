@@ -1,0 +1,161 @@
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import type { Hex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { createHmac } from 'node:crypto';
+import { SignJWT } from 'jose';
+
+import { LicensingService } from '../../src/modules/licensing/licensing.service.js';
+import { activationCommitment } from '../../src/platform/crypto/license-crypto.js';
+
+const customer = {
+  role: 'CUSTOMER' as const,
+  sessionVersion: 1,
+  sub: '00000000-0000-4000-8000-000000000004',
+};
+const licenseId = '00000000-0000-4000-8000-000000000401';
+const secret: Hex = `0x${'11'.repeat(32)}`;
+const devicePrivateKey: Hex = `0x${'22'.repeat(32)}`;
+const deviceAddress = privateKeyToAccount(devicePrivateKey).address;
+
+function fixture() {
+  const challenge = 'emukey:test-device-challenge';
+  const redis = {
+    del: vi.fn(),
+    eval: vi.fn().mockResolvedValue(1),
+    get: vi.fn().mockResolvedValue(challenge),
+    set: vi.fn(),
+  };
+  const repository = {
+    createDeviceCommand: vi.fn().mockResolvedValue({
+      commandId: '00000000-0000-4000-8000-000000000901',
+      deviceId: '00000000-0000-4000-8000-000000000902',
+      licenseId,
+      status: 'PENDING',
+    }),
+    findSecurity: vi.fn().mockResolvedValue({
+      activationCommitment: activationCommitment(secret),
+      activationKeyVersion: 1,
+      customerUserId: customer.sub,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      id: licenseId,
+      maxActiveDevices: 2,
+      providerUserId: '00000000-0000-4000-8000-000000000002',
+      status: 'ACTIVE',
+    }),
+  };
+  const service = new LicensingService(
+    repository as never,
+    {} as never,
+    {} as never,
+    redis as never,
+    new TextEncoder().encode('test-secret'),
+    { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+  );
+  return { challenge, deviceAddress, redis, repository, service };
+}
+
+describe('LicensingService Phase 6 boundaries', () => {
+  it('rejects a bearer key that does not match the current commitment', async () => {
+    const { service } = fixture();
+
+    await expect(
+      service.activate(customer, {
+        activationKey: `0x${'33'.repeat(32)}`,
+        challenge: 'emukey:test-device-challenge',
+        devicePublicKey: deviceAddress,
+        deviceRef: 'opaque-device-1',
+        licenseId,
+        proof: `0x${'44'.repeat(65)}`,
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('verifies the bearer key and device signature before creating a pending command', async () => {
+    const { challenge, deviceAddress, repository, service } = fixture();
+    const proof = await privateKeyToAccount(devicePrivateKey).signMessage({ message: challenge });
+
+    await expect(
+      service.activate(customer, {
+        activationKey: secret,
+        challenge,
+        devicePublicKey: deviceAddress,
+        deviceRef: 'opaque-device-1',
+        licenseId,
+        proof,
+      }),
+    ).resolves.toMatchObject({ status: 'PENDING', licenseId });
+    expect(repository.createDeviceCommand).toHaveBeenCalledWith(
+      customer.sub,
+      licenseId,
+      createHmac('sha256', new TextEncoder().encode('test-secret')).update('device-ref:opaque-device-1').digest('hex'),
+      deviceAddress,
+      expect.any(String),
+      expect.objectContaining({ chainId: 31_337 }),
+    );
+  });
+
+  it('does not issue entitlement while the device is not chain-confirmed', async () => {
+    const projection = {
+      entitlementContext: vi.fn().mockResolvedValue({
+        deviceStatus: 'PENDING_ONCHAIN',
+        entitlementVersion: 1,
+        entitlements: { desktop: true },
+        expiresAt: new Date(Date.now() + 86_400_000),
+        finality: 'PENDING',
+        licenseFinality: 'CONFIRMED',
+        status: 'ACTIVE',
+      }),
+    };
+    const gated = new LicensingService(
+      {} as never,
+      projection as never,
+      {} as never,
+      {} as never,
+      new TextEncoder().encode('test-secret'),
+      { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+    );
+
+    await expect(gated.issueEntitlement(customer, { licenseId, deviceId: '00000000-0000-4000-8000-000000000902', challenge: 'challenge', proof: `0x${'44'.repeat(65)}` }))
+      .rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects a previously issued entitlement after its projection version changes', async () => {
+    const jwtSecret = new TextEncoder().encode('test-secret');
+    const projection = {
+      entitlementContext: vi.fn().mockResolvedValue({
+        deviceStatus: 'ACTIVE',
+        entitlementVersion: 3,
+        entitlements: { desktop: true },
+        expiresAt: new Date(Date.now() + 86_400_000),
+        finality: 'CONFIRMED',
+        keyVersion: 2,
+        licenseFinality: 'CONFIRMED',
+        status: 'ACTIVE',
+      }),
+    };
+    const service = new LicensingService(
+      {} as never,
+      projection as never,
+      {} as never,
+      {} as never,
+      jwtSecret,
+      { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+    );
+    const staleToken = await new SignJWT({
+      deviceId: '00000000-0000-4000-8000-000000000902',
+      entitlementVersion: 2,
+      keyVersion: 1,
+      licenseId,
+      rights: { desktop: true },
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer('emukey-licensing')
+      .setAudience('emukey-license-client')
+      .setExpirationTime('5m')
+      .sign(jwtSecret);
+
+    await expect(
+      service.verifyEntitlement(customer, { token: staleToken }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+});

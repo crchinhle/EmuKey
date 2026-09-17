@@ -75,6 +75,9 @@ function identity(transactionHash: string, logIndex: number): string {
 }
 
 export class RpcChainIndexerService implements ChainRpcIndexerPort {
+  private lastCompletedBlock: number | undefined;
+  private rpcBlockRangeLimit: number | undefined;
+
   constructor(
     private readonly checkpoints: Pick<
       ChainIndexerCheckpointRepository,
@@ -95,6 +98,12 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
   async poll(workerId: string): Promise<number | null> {
     const latestBlock = await this.rpc.latestBlock();
     if (latestBlock < this.options.deploymentBlock) return null;
+    if (
+      this.lastCompletedBlock !== undefined &&
+      latestBlock <= this.lastCompletedBlock
+    ) {
+      return null;
+    }
     const range = await this.checkpoints.claimRange(
       this.options,
       workerId,
@@ -106,7 +115,7 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
     if (!range) return null;
     try {
       const [logs, existing] = await Promise.all([
-        this.rpc.contractEvents(range.fromBlock, range.toBlock),
+        this.contractEvents(range.fromBlock, range.toBlock),
         this.checkpoints.eventIdentities(
           this.options,
           range.fromBlock,
@@ -134,11 +143,55 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
         range,
         await this.rpc.blockHash(range.toBlock),
       );
+      this.lastCompletedBlock = range.toBlock;
       return logs.length;
     } catch (error) {
       await this.checkpoints.release(this.options, workerId);
       throw error;
     }
+  }
+
+  private async contractEvents(
+    fromBlock: number,
+    toBlock: number,
+  ): Promise<RpcContractEvent[]> {
+    if (this.rpcBlockRangeLimit !== undefined) {
+      return this.contractEventsInChunks(
+        fromBlock,
+        toBlock,
+        this.rpcBlockRangeLimit,
+      );
+    }
+    try {
+      return await this.rpc.contractEvents(fromBlock, toBlock);
+    } catch (error) {
+      const limit = this.providerBlockRangeLimit(error);
+      const requestedSize = toBlock - fromBlock + 1;
+      if (limit === null || limit >= requestedSize) throw error;
+      this.rpcBlockRangeLimit = limit;
+      return this.contractEventsInChunks(fromBlock, toBlock, limit);
+    }
+  }
+
+  private async contractEventsInChunks(
+    fromBlock: number,
+    toBlock: number,
+    size: number,
+  ): Promise<RpcContractEvent[]> {
+    const logs: RpcContractEvent[] = [];
+    for (let chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += size) {
+      const chunkTo = Math.min(chunkFrom + size - 1, toBlock);
+      logs.push(...(await this.rpc.contractEvents(chunkFrom, chunkTo)));
+    }
+    return logs;
+  }
+
+  private providerBlockRangeLimit(error: unknown): number | null {
+    const message = error instanceof Error ? error.message : String(error);
+    const match = /up to (?:a )?(\d+) block range/i.exec(message);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }
 
   private async ingest(

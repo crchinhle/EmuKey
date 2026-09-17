@@ -68,6 +68,10 @@ export function CatalogScreen() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
+          <div className="catalog-compare-action">
+            <span>Cần chọn nhanh?</span>
+            <Link className="secondary-link" to="/compare">So sánh các gói</Link>
+          </div>
           <label>
             <span>Sắp xếp</span>
             <Select

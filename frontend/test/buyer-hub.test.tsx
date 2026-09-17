@@ -29,6 +29,17 @@ describe('Customer hub', () => {
     expect(screen.getByText('Đã sao chép activation key')).toBeTruthy();
   });
 
+  it('updates the authenticated Customer profile through the real profile endpoint', async () => {
+    render(<App initialEntries={['/buyer/profile']} />);
+
+    fireEvent.change(await screen.findByLabelText('Tên hiển thị'), {
+      target: { value: 'Khách hàng EmuKey' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thay đổi' }));
+
+    expect(await screen.findByText('Đã cập nhật hồ sơ.')).toBeTruthy();
+  });
+
   it('appends a local support message', () => {
     render(<App initialEntries={['/buyer/support']} />);
     fireEvent.change(screen.getByLabelText('Tin nhắn hỗ trợ'), {

@@ -1193,6 +1193,44 @@
         ]
       }
     },
+    "/api/v1/licenses/{id}/devices": {
+      "get": {
+        "operationId": "LicenseController_listDevices",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LicenseDeviceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licenses"
+        ]
+      }
+    },
     "/api/v1/licenses/{id}/activation-key/retrieve": {
       "post": {
         "operationId": "LicenseController_retrieve",
@@ -1713,6 +1751,394 @@
         "summary": "Get a receipt derived from durable matched payment evidence",
         "tags": [
           "payments"
+        ]
+      }
+    },
+    "/api/v1/activations/challenge": {
+      "post": {
+        "operationId": "LicensingController_challenge",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivationChallengeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceChallengeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/activations": {
+      "post": {
+        "operationId": "LicensingController_activate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivateDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Request a device activation command after off-chain proof verification",
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/action-verification": {
+      "post": {
+        "operationId": "LicensingController_requestActionVerification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicensingActionVerificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/commands/{commandId}": {
+      "get": {
+        "operationId": "LicensingController_commandStatus",
+        "parameters": [
+          {
+            "name": "commandId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/devices/{deviceId}/revoke": {
+      "post": {
+        "operationId": "LicensingController_revokeDevice",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/activation-key/rotate": {
+      "post": {
+        "operationId": "LicensingController_rotate",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateActivationKeyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/lifecycle": {
+      "post": {
+        "operationId": "LicensingController_lifecycle",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseLifecycleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/entitlements/issue": {
+      "post": {
+        "operationId": "LicensingController_issueEntitlement",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntitlementRefreshDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/entitlements/refresh": {
+      "post": {
+        "operationId": "LicensingController_refreshEntitlement",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntitlementRefreshDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/entitlements/verify": {
+      "post": {
+        "operationId": "LicensingController_verifyEntitlement",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntitlementVerifyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementValidationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
         ]
       }
     }
@@ -2598,6 +3024,47 @@
           "updatedAt"
         ]
       },
+      "LicenseDeviceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceRef": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_ONCHAIN",
+              "ACTIVE",
+              "REVOKED"
+            ]
+          },
+          "bindingGeneration": {
+            "type": "number"
+          },
+          "activatedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "revokedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "finality": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "deviceRef",
+          "status",
+          "bindingGeneration"
+        ]
+      },
       "ActivationKeyDto": {
         "type": "object",
         "properties": {
@@ -3133,6 +3600,367 @@
           "productNameSnapshot",
           "providerNameSnapshot",
           "transactionId"
+        ]
+      },
+      "ActivationChallengeDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Set when requesting a challenge to revoke an existing device"
+          }
+        },
+        "required": [
+          "licenseId",
+          "deviceRef"
+        ]
+      },
+      "DeviceChallengeDto": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "challenge",
+          "expiresAt"
+        ]
+      },
+      "ActivateDeviceDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "activationKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "deviceRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "devicePublicKey": {
+            "type": "string",
+            "description": "EVM address corresponding to the device signing key"
+          },
+          "proof": {
+            "type": "string",
+            "description": "EIP-191 signature over the activation challenge"
+          }
+        },
+        "required": [
+          "licenseId",
+          "activationKey",
+          "challenge",
+          "deviceRef",
+          "devicePublicKey",
+          "proof"
+        ]
+      },
+      "Phase6CommandDto": {
+        "type": "object",
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUBMITTED",
+              "SUBMITTED_UNKNOWN",
+              "CONFIRMED",
+              "RETRYABLE_FAILED",
+              "DEAD_LETTER"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "commandId",
+          "status",
+          "licenseId"
+        ]
+      },
+      "LicensingActionVerificationDto": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "ROTATE_KEY",
+              "REVOKE_DEVICE"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "action",
+          "licenseId"
+        ]
+      },
+      "Phase6CommandStatusDto": {
+        "type": "object",
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUBMITTED",
+              "SUBMITTED_UNKNOWN",
+              "CONFIRMED",
+              "RETRYABLE_FAILED",
+              "DEAD_LETTER"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "commandType": {
+            "type": "string",
+            "enum": [
+              "ISSUE_LICENSE",
+              "RENEW_LICENSE",
+              "SUSPEND_LICENSE",
+              "RESUME_LICENSE",
+              "REVOKE_LICENSE",
+              "ROTATE_KEY",
+              "ACTIVATE_DEVICE",
+              "REVOKE_DEVICE"
+            ]
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "nullable": true
+          }
+        },
+        "required": [
+          "commandId",
+          "status",
+          "licenseId",
+          "commandType"
+        ]
+      },
+      "RevokeDeviceDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 32
+          },
+          "activationKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string",
+            "description": "EIP-191 signature over the revoke challenge"
+          }
+        },
+        "required": [
+          "actionToken",
+          "activationKey",
+          "challenge",
+          "proof"
+        ]
+      },
+      "RotateActivationKeyDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 32
+          },
+          "currentKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          }
+        },
+        "required": [
+          "actionToken",
+          "currentKey"
+        ]
+      },
+      "LicenseLifecycleDto": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "SUSPEND_LICENSE",
+              "RESUME_LICENSE",
+              "REVOKE_LICENSE"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "EntitlementRefreshDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "challenge": {
+            "type": "string",
+            "minLength": 16
+          },
+          "proof": {
+            "type": "string",
+            "description": "EIP-191 device signature over the entitlement challenge"
+          }
+        },
+        "required": [
+          "licenseId",
+          "deviceId",
+          "challenge",
+          "proof"
+        ]
+      },
+      "EntitlementDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entitlementVersion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt",
+          "licenseId",
+          "deviceId",
+          "entitlementVersion"
+        ]
+      },
+      "EntitlementVerifyDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Signed entitlement JWT returned by issue or refresh"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "EntitlementValidationDto": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entitlementVersion": {
+            "type": "number"
+          },
+          "keyVersion": {
+            "type": "number"
+          },
+          "rights": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "valid",
+          "expiresAt",
+          "licenseId",
+          "deviceId",
+          "entitlementVersion",
+          "keyVersion",
+          "rights"
         ]
       }
     }

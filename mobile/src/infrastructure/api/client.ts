@@ -1,12 +1,28 @@
 import * as SecureStore from 'expo-secure-store';
 import type {
+  ActivationChallengeDto,
   ActivationKeyDto,
+  ActivateDeviceDto,
+  DeviceChallengeDto,
+  EntitlementDto,
+  EntitlementValidationDto,
+  CheckoutSessionDto,
+  ComparePlansResponseDto,
+  CreateOrderDto,
+  OrderTermsDto,
+  Phase6CommandDto,
+  Phase6CommandStatusDto,
+  ProfileDto,
+  PublicCatalogProductDto,
+  RevokeDeviceDto,
+  RotateActivationKeyDto,
   LicenseProjectionDto,
   OrderDto,
   PublicLicenseVerificationDto,
 } from './generated';
 
 const SESSION_KEY = 'emukey_mobile_session_v1';
+const ACTIVATION_KEY_PREFIX = 'emukey_activation_key_v1:';
 const API_URL =
   (globalThis as typeof globalThis & {
     process?: { env?: { EXPO_PUBLIC_API_URL?: string } };
@@ -15,14 +31,30 @@ const REQUEST_TIMEOUT_MS = 8_000;
 
 export type MobileOrderSummary = OrderDto;
 export type MobileOrderDetail = OrderDto;
+export type MobileProduct = PublicCatalogProductDto;
+export type MobilePlanComparison = ComparePlansResponseDto;
+export type MobileCheckoutSession = CheckoutSessionDto;
+export type MobileOrderTerms = OrderTermsDto;
 export type MobileLicense = LicenseProjectionDto;
 export type MobileLicenseVerification = PublicLicenseVerificationDto;
+export type MobileDevice = {
+  id: string;
+  deviceRef: string;
+  status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'REVOKED';
+  bindingGeneration: number;
+  activatedAt: string | null;
+  revokedAt: string | null;
+  finality: string | null;
+};
 export interface MobileUser {
   id: string;
   email: string;
   displayName: string;
   role: string;
   status: string;
+  phone?: string | null;
+  address?: string | null;
+  organizationName?: string | null;
 }
 export interface MobileSession {
   accessToken: string;
@@ -126,6 +158,78 @@ export async function getOrder(id: string): Promise<MobileOrderDetail> {
   return json(await request(`/orders/${encodeURIComponent(id)}`));
 }
 
+export async function getProfile(): Promise<MobileUser> {
+  return json(await request('/auth/profile'));
+}
+
+export async function updateProfile(input: ProfileDto): Promise<MobileUser> {
+  const profile = await json<MobileUser>(
+    await request('/auth/profile', { method: 'PUT', body: JSON.stringify(input) }),
+  );
+  if (activeSession) await saveSession({ ...activeSession, user: profile });
+  return profile;
+}
+
+export async function listProducts(): Promise<MobileProduct[]> {
+  return json(await request('/products', {}, false));
+}
+
+export async function comparePlans(ids: readonly string[]): Promise<MobilePlanComparison> {
+  return json(
+    await request(
+      `/plans/compare?ids=${encodeURIComponent(ids.join(','))}`,
+      {},
+      false,
+    ),
+  );
+}
+
+function idempotencyKey(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === 'x' ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+export async function createOrder(
+  input: CreateOrderDto,
+  licenseKey?: string,
+): Promise<MobileOrderDetail> {
+  return json(
+    await request('/orders', {
+      method: 'POST',
+      headers: {
+        'Idempotency-Key': idempotencyKey(),
+        ...(licenseKey ? { 'X-License-Key': licenseKey } : {}),
+      },
+      body: JSON.stringify(input),
+    }),
+  );
+}
+
+export async function getOrderTerms(id: string): Promise<MobileOrderTerms> {
+  return json(await request(`/orders/${encodeURIComponent(id)}/terms`));
+}
+
+export async function acceptOrderTerms(order: MobileOrderDetail): Promise<MobileOrderDetail> {
+  return json(
+    await request(`/orders/${encodeURIComponent(order.id)}/accept-terms`, {
+      method: 'POST',
+      body: JSON.stringify({
+        termsHash: order.termsHashSnapshot,
+        termsVersion: order.termsVersionSnapshot,
+      }),
+    }),
+  );
+}
+
+export async function createCheckout(id: string): Promise<MobileCheckoutSession> {
+  return json(
+    await request(`/orders/${encodeURIComponent(id)}/checkout`, { method: 'POST' }),
+  );
+}
+
 export async function listLicenses(): Promise<MobileLicense[]> {
   return json(await request('/licenses'));
 }
@@ -136,6 +240,59 @@ export async function retrieveActivationKey(id: string): Promise<ActivationKeyDt
       method: 'POST',
     }),
   );
+}
+
+export async function storeActivationKey(licenseId: string, key: string): Promise<void> {
+  await SecureStore.setItemAsync(`${ACTIVATION_KEY_PREFIX}${licenseId}`, key, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+}
+
+export async function loadActivationKey(licenseId: string): Promise<string | null> {
+  return SecureStore.getItemAsync(`${ACTIVATION_KEY_PREFIX}${licenseId}`);
+}
+
+export async function requestLicensingActionVerification(licenseId: string, action: 'ROTATE_KEY' | 'REVOKE_DEVICE'): Promise<{ accepted: boolean }> {
+  return json(await request('/licenses/action-verification', { method: 'POST', body: JSON.stringify({ action, licenseId }) }));
+}
+
+export async function getCommandStatus(commandId: string): Promise<Phase6CommandStatusDto> {
+  return json(await request(`/commands/${encodeURIComponent(commandId)}`));
+}
+
+export async function listDevices(licenseId: string): Promise<MobileDevice[]> {
+  return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices`));
+}
+
+export async function createActivationChallenge(input: ActivationChallengeDto): Promise<DeviceChallengeDto> {
+  return json(await request('/activations/challenge', { method: 'POST', body: JSON.stringify(input) }));
+}
+
+export async function activateDevice(input: ActivateDeviceDto): Promise<Phase6CommandDto> {
+  return json(await request('/activations', { method: 'POST', body: JSON.stringify(input) }));
+}
+
+export async function revokeDevice(licenseId: string, deviceId: string, input: RevokeDeviceDto): Promise<Phase6CommandDto> {
+  return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/revoke`, { method: 'POST', body: JSON.stringify(input) }));
+}
+
+export async function issueEntitlement(licenseId: string, deviceId: string, challenge: string, proof: string): Promise<EntitlementDto> {
+  return json(await request('/entitlements/issue', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }));
+}
+
+export async function rotateActivationKey(licenseId: string, input: RotateActivationKeyDto): Promise<Phase6CommandDto> {
+  return json(await request(`/licenses/${encodeURIComponent(licenseId)}/activation-key/rotate`, { method: 'POST', body: JSON.stringify(input) }));
+}
+
+export async function refreshEntitlement(licenseId: string, deviceId: string, challenge: string, proof: string): Promise<EntitlementDto> {
+  return json(await request('/entitlements/refresh', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }));
+}
+
+export async function verifyEntitlement(token: string): Promise<EntitlementValidationDto> {
+  return json(await request('/entitlements/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  }));
 }
 
 export async function verifyPublicLicense(

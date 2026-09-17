@@ -21,11 +21,13 @@ export class ChainCommandService {
     let command = await this.repository.claimNext(workerId);
     if (!command) return null;
     try {
-      if (command.commandType === 'ISSUE_LICENSE') {
+      if (command.commandType === 'ISSUE_LICENSE' || command.commandType === 'ROTATE_KEY') {
         if (this.recovery) command = await this.recovery.ensure(command);
         const [envelope, durable] = await Promise.all([
           this.envelopes.read(command.commandId),
-          this.repository.getLicenseCommitment(command.licenseId),
+          command.commandType === 'ISSUE_LICENSE'
+            ? this.repository.getLicenseCommitment(command.licenseId)
+            : this.repository.getRotationCommitment(command.licenseId),
         ]);
         if (
           !envelope ||

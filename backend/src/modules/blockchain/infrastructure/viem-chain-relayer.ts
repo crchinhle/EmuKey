@@ -3,7 +3,6 @@ import {
   defineChain,
   encodeFunctionData,
   getAddress,
-  http,
   keccak256,
   parseSignature,
   serializeTransaction,
@@ -21,6 +20,7 @@ import {
   type PreparedChainTransaction,
 } from '../application/ports/chain-relayer.port.js';
 import { licenseRegistryAbi } from './license-registry-contract.js';
+import { createViemRpcTransport } from '../../../platform/blockchain/viem-rpc-transport.js';
 
 export interface ChainDigestSigner {
   publicAddress(): Promise<Address>;
@@ -48,6 +48,7 @@ export interface ViemRelayerRpc {
 
 export interface ViemChainRelayerOptions {
   chainId: number;
+  fallbackRpcUrl?: string;
   network: string;
   rpc?: ViemRelayerRpc;
   rpcUrl: string;
@@ -161,6 +162,7 @@ export function encodeChainCommand(input: ChainCommandInput): Hex {
           commandId,
           licenseId,
           bytes32(requiredString(payload, 'deviceId'), 'deviceId'),
+          requiredInteger(payload, 'keyVersion'),
         ],
       });
     case 'REVOKE_DEVICE':
@@ -195,7 +197,7 @@ export class ViemChainRelayer implements ChainRelayerPort {
     });
     const client = createPublicClient({
       chain,
-      transport: http(options.rpcUrl),
+      transport: createViemRpcTransport(options.rpcUrl, options.fallbackRpcUrl),
     });
     this.rpc = {
       getChainId: () => client.getChainId(),

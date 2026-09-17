@@ -11,7 +11,7 @@ beforeEach(() => localStorage.clear());
 
 const publicProducts = [
   {
-    code: 'securedesk',
+    slug: 'securedesk',
     imageUrl: 'https://picsum.photos/seed/emukey-securedesk/1200/800',
     name: 'SecureDesk Pro',
     summary:
@@ -32,7 +32,7 @@ const publicProducts = [
     ],
   },
   {
-    code: 'cloudstudio-ai',
+    slug: 'cloudstudio-ai',
     name: 'CloudStudio AI',
     summary: 'Bộ công cụ sáng tạo có trợ lý AI theo ngữ cảnh.',
     plans: [
@@ -45,7 +45,7 @@ const publicProducts = [
     ],
   },
   {
-    code: 'dataguard-sdk',
+    slug: 'dataguard-sdk',
     name: 'DataGuard SDK',
     summary: 'SDK xác thực license cho ứng dụng và API.',
     plans: [
@@ -165,14 +165,30 @@ vi.stubGlobal(
     const method = init?.method?.toUpperCase() ?? 'GET';
 
     if (path === '/auth/refresh') return jsonResponse(undefined, 401);
+    if (path === '/auth/profile' && method === 'PUT') {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {};
+      return jsonResponse({
+        id: 'test-user',
+        email: 'test@example.com',
+        displayName: body.displayName ?? 'Test User',
+        phone: body.phone ?? null,
+        address: body.address ?? null,
+        organizationName: body.organizationName ?? null,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+    }
     if (path.startsWith('/auth/')) {
+      const authBody = typeof init?.body === 'string'
+        ? JSON.parse(init.body) as { email?: string }
+        : {};
       return jsonResponse({
         accessToken: 'test-access-token',
         user: {
           id: 'test-user',
-          email: 'test@example.com',
+          email: authBody.email ?? 'test@example.com',
           displayName: 'Test User',
-          role: 'PROVIDER_ADMIN',
+          role: authBody.email === 'customer@example.com' ? 'CUSTOMER' : 'PROVIDER_ADMIN',
           status: 'ACTIVE',
         },
       });
@@ -186,7 +202,7 @@ vi.stubGlobal(
     ) {
       const product = publicProducts.find(
         (item) =>
-          item.code === decodeURIComponent(path.split('/').at(-1) ?? ''),
+          item.slug === decodeURIComponent(path.split('/').at(-1) ?? ''),
       );
       return jsonResponse(product, product ? 200 : 404);
     }
@@ -194,6 +210,40 @@ vi.stubGlobal(
       return jsonResponse(providerProducts);
     if (method === 'GET' && path === '/plans')
       return jsonResponse(providerPlans);
+    if (method === 'GET' && path === '/plans/compare') {
+      const ids = new URL(url, 'http://localhost').searchParams.get('ids')?.split(',') ?? [];
+      const catalogPlans: Array<{ id: string; maxActiveDevices: number; name: string; priceVnd: number }> = [];
+      for (const product of publicProducts) {
+        for (const plan of product.plans) catalogPlans.push(plan);
+      }
+      const selected = publicProducts.flatMap((product) =>
+        product.plans
+          .filter((plan) => ids.includes(plan.id))
+          .map((plan) => ({
+            billingCycle: 'YEARLY',
+            id: plan.id,
+            name: plan.name,
+            productId: `${product.slug}-id`,
+            productName: product.name,
+            version: 1,
+          })),
+      );
+      return jsonResponse({
+        dimensions: [
+          {
+            key: 'priceVnd',
+            label: 'Giá (VND)',
+            values: Object.fromEntries(catalogPlans.filter((plan) => ids.includes(plan.id)).map((plan) => [plan.id, plan.priceVnd])),
+          },
+          {
+            key: 'maxActiveDevices',
+            label: 'Thiết bị tối đa',
+            values: Object.fromEntries(catalogPlans.filter((plan) => ids.includes(plan.id)).map((plan) => [plan.id, plan.maxActiveDevices])),
+          },
+        ],
+        plans: selected,
+      });
+    }
     if (method === 'GET' && path.endsWith('/terms'))
       return jsonResponse({
         content: '# EmuKey License Terms\n\nThis is the deterministic Terms snapshot.',
@@ -201,6 +251,24 @@ vi.stubGlobal(
         version: orders[0].termsVersionSnapshot,
       });
     if (method === 'GET' && path === '/orders') return jsonResponse(orders);
+    if (method === 'GET' && path === '/payments/history') {
+      return jsonResponse([
+        {
+          amountVnd: 2_082_500,
+          classification: 'MATCHED',
+          orderId: testOrderId,
+          orderNumber: 'ORD-2026-0218',
+          orderType: 'NEW_PURCHASE',
+          planNameSnapshot: 'Business',
+          productNameSnapshot: 'SecureDesk Pro',
+          providerEventId: 'sepay-event-1',
+          providerTransactionReference: 'SEPAY-TX-1',
+          receivedAt: '2026-09-30T00:00:00.000Z',
+          reviewStatus: null,
+          transactionId: 'payment-transaction-1',
+        },
+      ]);
+    }
     if (method === 'GET' && path.startsWith('/orders/'))
       return jsonResponse(orders[0]);
     if (method === 'POST' && path === '/orders')
@@ -212,8 +280,17 @@ vi.stubGlobal(
         {
           amountVnd: orders[0].priceVndSnapshot,
           attemptId: 'payment-attempt-1',
+          checkoutFields: {
+            currency: 'VND',
+            merchant: 'SP-TEST-EMUKEY',
+            operation: 'PURCHASE',
+            order_amount: String(orders[0].priceVndSnapshot),
+            order_invoice_number: 'EMU-TEST-CHECKOUT',
+            signature: 'sandbox-signature',
+          },
+          checkoutMethod: 'POST',
           checkoutReference: 'EMU-TEST-CHECKOUT',
-          checkoutUrl: 'http://localhost:3000/fake-checkout/payment-attempt-1',
+          checkoutUrl: 'https://pay-sandbox.sepay.vn/v1/checkout/init',
           expiresAt: orders[0].paymentDueAt,
           expiresWithOrder: true,
         },
@@ -223,6 +300,18 @@ vi.stubGlobal(
       return jsonResponse({ ...orders[0], orderStatus: 'CANCELLED' });
     }
     if (method === 'GET' && path === '/licenses') return jsonResponse([license]);
+    if (method === 'POST' && path.endsWith('/lifecycle')) return jsonResponse({ commandId: '00000000-0000-4000-8000-000000000902', deviceId: null, licenseId: license.id, status: 'PENDING' }, 201);
+    if (method === 'GET' && path === '/commands/00000000-0000-4000-8000-000000000902') {
+      return jsonResponse({
+        commandId: '00000000-0000-4000-8000-000000000902',
+        commandType: 'SUSPEND_LICENSE',
+        confirmedAt: '2026-09-15T00:00:00.000Z',
+        deviceId: null,
+        licenseId: license.id,
+        status: 'CONFIRMED',
+        transactionHash: '0x' + '34'.repeat(32),
+      });
+    }
     if (method === 'POST' && path.endsWith('/activation-key/retrieve')) {
       return jsonResponse(
         { activationKey: '0x' + '12'.repeat(32), keyVersion: 1 },

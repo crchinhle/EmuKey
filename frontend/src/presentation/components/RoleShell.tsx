@@ -11,6 +11,7 @@ export const buyerShell: RoleShellConfig = {
     { label: 'Tổng quan', to: '/buyer', end: true },
     { label: 'Đơn hàng', to: '/buyer/orders' },
     { label: 'License', to: '/buyer/licenses' },
+    { label: 'Hồ sơ', to: '/buyer/profile' },
     { label: 'Hỗ trợ', to: '/buyer/support' },
   ],
 };
@@ -20,8 +21,9 @@ export const providerShell: RoleShellConfig = {
   account: 'admin@securedesk.vn',
   items: [
     { label: 'Tổng quan', to: '/provider', end: true },
-    { label: 'Cài đặt', to: '/auth' },
+    { label: 'Hồ sơ', to: '/provider/profile' },
     { label: 'Danh mục', to: '/provider/catalog' },
+    { label: 'License', to: '/provider/licenses' },
     { label: 'AI Knowledge', to: '/provider/knowledge' },
     { label: 'Vận hành', to: '/provider/operations' },
   ],

@@ -342,6 +342,11 @@
         "internalType": "bytes32",
         "name": "deviceId",
         "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "keyVersion",
+        "type": "uint256"
       }
     ],
     "name": "activateDevice",

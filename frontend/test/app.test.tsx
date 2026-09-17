@@ -22,6 +22,18 @@ describe('EmuKey public web screens', () => {
     expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
   });
 
+  it('keeps a license action token through customer login and opens License Hub', async () => {
+    render(<App initialEntries={['/auth?mode=licensing-action&token=action-token-123']} />);
+
+    expect(screen.getByRole('heading', { name: 'Xác nhận thao tác License' })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'customer@example.com' } });
+    fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'Emu@1234' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập và tiếp tục' }));
+
+    expect(await screen.findByRole('heading', { name: 'License Hub' })).toBeTruthy();
+    expect(screen.getByLabelText('Email action token')).toHaveProperty('value', 'action-token-123');
+  });
+
   it('rejects a weak password for login', async () => {
     render(<App initialEntries={['/auth']} />);
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'provider@example.com' } });
@@ -90,5 +102,14 @@ describe('EmuKey public web screens', () => {
     expect(screen.getByRole('combobox', { name: 'Gói' })).toBeTruthy();
     expect(screen.getAllByText('25 thiết bị').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeTruthy();
+  });
+
+  it('compares published plans through the canonical comparison API', async () => {
+    render(<App initialEntries={['/compare?ids=securedesk-10,securedesk-25']} />);
+
+    expect(await screen.findByRole('heading', { name: 'So sánh gói bản quyền' })).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'Bảng so sánh gói' })).toBeTruthy();
+    expect(screen.getByText('1.266.500 ₫')).toBeTruthy();
+    expect(screen.getAllByText('25 thiết bị').length).toBeGreaterThan(0);
   });
 });

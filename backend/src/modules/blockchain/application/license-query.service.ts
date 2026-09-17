@@ -34,6 +34,11 @@ export class LicenseQueryService {
     return license;
   }
 
+  async listDevices(actor: AuthPrincipal, id: string) {
+    if (actor.role !== 'CUSTOMER') throw new ForbiddenException();
+    return this.repository.listCustomerDevices(actor.sub, id);
+  }
+
   async verify(publicId: string, requester: string) {
     const key = `public-license-verify:${requester}`;
     const count = await this.redis.incr(key);

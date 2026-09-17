@@ -1,10 +1,10 @@
-import { Input, Tabs } from 'antd';
+import { Alert, Empty, Input, Spin, Tabs } from 'antd';
 import { useMemo, useState } from 'react';
 
 import {
   jobs,
-  providerOrders,
 } from '../../infrastructure/workspace/mockWorkspace';
+import { usePaymentHistory } from '../../application/orders/orderQueries';
 import {
   FactList,
   PageHeader,
@@ -12,16 +12,17 @@ import {
 } from '../components/WorkspacePrimitives';
 
 export function ProviderOperationsScreen() {
+  const payments = usePaymentHistory();
   const [query, setQuery] = useState('');
   const normalized = query.trim().toLocaleLowerCase('vi');
   const visibleOrders = useMemo(
     () =>
-      providerOrders.filter((order) =>
-        `${order.id} ${order.buyerReference} ${order.product}`
+      (payments.data ?? []).filter((payment) =>
+        `${payment.orderNumber} ${payment.productNameSnapshot} ${payment.providerTransactionReference ?? ''}`
           .toLocaleLowerCase('vi')
           .includes(normalized),
       ),
-    [normalized],
+    [normalized, payments.data],
   );
   const visibleJobs = useMemo(
     () =>
@@ -49,21 +50,26 @@ export function ProviderOperationsScreen() {
           items={[
             {
               key: 'orders',
-              label: 'Đơn cần xử lý',
+              label: 'Đơn hàng & thanh toán',
               children: (
                 <div className="stack-list">
-                  {visibleOrders.map((order) => (
-                    <article key={order.id}>
+                  {payments.isPending ? <Spin aria-label="Đang tải thanh toán" /> : null}
+                  {payments.isError ? <Alert showIcon type="error" message="Không thể tải lịch sử thanh toán." /> : null}
+                  {!payments.isPending && !payments.isError && visibleOrders.length === 0 ? (
+                    <Empty description="Chưa có thanh toán phù hợp." />
+                  ) : null}
+                  {visibleOrders.map((payment) => (
+                    <article key={payment.transactionId}>
                       <div>
                         <strong>
-                          {order.id} · {order.buyerReference}
+                          {payment.orderNumber} · {payment.orderType === 'RENEWAL' ? 'Gia hạn' : 'Mua mới'}
                         </strong>
                         <small>
-                          {order.product} · {order.devices} thiết bị
+                          {payment.productNameSnapshot} · {payment.planNameSnapshot} · {payment.amountVnd.toLocaleString('vi-VN')} ₫
                         </small>
                       </div>
-                      <StatusChip tone="warning">
-                        {order.statusLabel}
+                      <StatusChip tone={payment.classification === 'MATCHED' ? 'success' : 'warning'}>
+                        {payment.classification}
                       </StatusChip>
                     </article>
                   ))}
@@ -89,13 +95,13 @@ export function ProviderOperationsScreen() {
             },
             {
               key: 'reconcile',
-              label: 'Đối soát',
+              label: 'Đối soát thanh toán',
               children: (
                 <FactList
                   facts={[
-                    { label: 'Giao dịch hôm nay', value: '24' },
-                    { label: 'Đã khớp', value: '23' },
-                    { label: 'Cần kiểm tra', value: '01' },
+                    { label: 'Tổng giao dịch', value: String(payments.data?.length ?? 0) },
+                    { label: 'Đã khớp', value: String(payments.data?.filter((payment) => payment.classification === 'MATCHED').length ?? 0) },
+                    { label: 'Cần kiểm tra', value: String(payments.data?.filter((payment) => payment.classification !== 'MATCHED').length ?? 0) },
                   ]}
                 />
               ),

@@ -80,6 +80,31 @@ describe('BrevoEmailDelivery', () => {
     expect(keys[2]).not.toBe(keys[0]);
   });
 
+  it('includes a usable one-time token and action link for license operations', async () => {
+    const sendTransacEmail = vi
+      .fn()
+      .mockResolvedValue({ messageId: '<license-action@brevo.test>' });
+    const delivery = new BrevoEmailDelivery(
+      { publicWebUrl: 'http://localhost:5173', sender },
+      { transactionalEmails: { sendTransacEmail } },
+    );
+
+    await delivery.deliver({
+      data: { action: 'ROTATE_KEY', token: 'license-action-token' },
+      eventKey: 'licensing-action-verification:customer@example.com:ROTATE_KEY',
+      template: 'licensing-action-verification-v1',
+      to: 'customer@example.com',
+    });
+
+    const request = sendTransacEmail.mock.calls[0]?.[0] as {
+      htmlContent: string;
+      textContent: string;
+    };
+    expect(request.htmlContent).toContain('mode=licensing-action&amp;token=license-action-token');
+    expect(request.htmlContent).toContain('<strong>license-action-token</strong>');
+    expect(request.textContent).toContain('Mã xác nhận: license-action-token');
+  });
+
   it('rejects unknown templates without calling Brevo', async () => {
     const sendTransacEmail = vi.fn();
     const delivery = new BrevoEmailDelivery(

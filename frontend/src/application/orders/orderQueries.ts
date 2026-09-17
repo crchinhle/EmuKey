@@ -5,6 +5,7 @@ import type {
   CreateOrderDto,
   OrderDto,
   OrderTermsDto,
+  PaymentHistoryDto,
 } from '../../infrastructure/api/generated';
 
 export type OrderSummary = OrderDto;
@@ -15,6 +16,13 @@ export function useOrders() {
   return useQuery({
     queryKey: ['orders'],
     queryFn: () => requestJson<OrderSummary[]>('/orders'),
+  });
+}
+
+export function usePaymentHistory() {
+  return useQuery({
+    queryKey: ['payments', 'history'],
+    queryFn: () => requestJson<PaymentHistoryDto[]>('/payments/history'),
   });
 }
 

@@ -95,7 +95,7 @@ export class ChainCommandRepository {
   }
 
   async claimSubmitted(workerId: string): Promise<ChainCommandRecord | null> {
-    return this.claimStatus(workerId, 'SUBMITTED');
+    return this.claimStatus(workerId, 'SUBMITTED', true);
   }
 
   async getLicenseCommitment(licenseId: string): Promise<{
@@ -119,13 +119,34 @@ export class ChainCommandRepository {
       : null;
   }
 
+  async getRotationCommitment(licenseId: string): Promise<{
+    commitment: string;
+    keyVersion: number;
+  } | null> {
+    const result = await this.pool.query<{
+      pending_activation_commitment: Buffer | null;
+      pending_activation_key_version: number | null;
+    }>(
+      `SELECT pending_activation_commitment, pending_activation_key_version
+       FROM licenses WHERE id = $1`,
+      [licenseId],
+    );
+    const row = result.rows[0];
+    return row?.pending_activation_commitment && row.pending_activation_key_version
+      ? {
+          commitment: `0x${row.pending_activation_commitment.toString('hex')}`,
+          keyVersion: Number(row.pending_activation_key_version),
+        }
+      : null;
+  }
+
   async findRecoverableIssue(
     commandId: string,
     licenseId: string,
   ): Promise<ChainCommandRecord | null> {
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT * FROM chain_commands
-       WHERE id = $1 AND license_id = $2 AND command_type = 'ISSUE_LICENSE'
+        WHERE id = $1 AND license_id = $2 AND command_type IN ('ISSUE_LICENSE', 'ROTATE_KEY')
          AND status IN ('PENDING', 'RETRYABLE_FAILED')
          AND transaction_hash IS NULL AND signed_transaction IS NULL`,
       [commandId, licenseId],
@@ -143,7 +164,7 @@ export class ChainCommandRepository {
     return this.transaction(async (client) => {
       const locked = await client.query<Record<string, unknown>>(
         `SELECT * FROM chain_commands
-         WHERE id = $1 AND license_id = $2 AND command_type = 'ISSUE_LICENSE'
+          WHERE id = $1 AND license_id = $2 AND command_type IN ('ISSUE_LICENSE', 'ROTATE_KEY')
            AND status IN ('PENDING', 'RETRYABLE_FAILED')
            AND transaction_hash IS NULL AND signed_transaction IS NULL
          FOR UPDATE`,
@@ -156,10 +177,13 @@ export class ChainCommandRepository {
       }
       await client.query(
         `UPDATE licenses
-         SET activation_commitment = decode($2, 'hex'),
-             activation_key_version = $3, updated_at = now()
-         WHERE id = $1 AND status = 'PENDING_ONCHAIN'`,
-        [command.licenseId, commitment.slice(2), keyVersion],
+          SET activation_commitment = CASE WHEN $4 = 'ISSUE_LICENSE' THEN decode($2, 'hex') ELSE activation_commitment END,
+              activation_key_version = CASE WHEN $4 = 'ISSUE_LICENSE' THEN $3 ELSE activation_key_version END,
+              pending_activation_commitment = CASE WHEN $4 = 'ROTATE_KEY' THEN decode($2, 'hex') ELSE NULL END,
+              pending_activation_key_version = CASE WHEN $4 = 'ROTATE_KEY' THEN $3 ELSE NULL END,
+              updated_at = now()
+          WHERE id = $1`,
+        [command.licenseId, commitment.slice(2), keyVersion, command.commandType],
       );
       const updated = await client.query<Record<string, unknown>>(
         `UPDATE chain_commands
@@ -419,17 +443,19 @@ export class ChainCommandRepository {
   private async claimStatus(
     workerId: string,
     status: ChainCommandStatus,
+    excludeSuccessfulReceipt = false,
   ): Promise<ChainCommandRecord | null> {
     return this.transaction(async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `WITH candidate AS (
            SELECT id FROM chain_commands WHERE status = $2
+             AND (NOT $3::boolean OR receipt_status IS DISTINCT FROM 'SUCCESS')
              AND (locked_at IS NULL OR locked_at < now() - interval '2 minutes')
            ORDER BY updated_at FOR UPDATE SKIP LOCKED LIMIT 1
          )
          UPDATE chain_commands c SET locked_by = $1, locked_at = now(), updated_at = now()
          FROM candidate WHERE c.id = candidate.id RETURNING c.*`,
-        [workerId, status],
+        [workerId, status, excludeSuccessfulReceipt],
       );
       return result.rows[0] ? mapCommand(result.rows[0]) : null;
     });

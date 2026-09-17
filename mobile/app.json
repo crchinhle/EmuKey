@@ -4,6 +4,9 @@
     "slug": "emukey",
     "version": "0.0.0",
     "scheme": "emukey",
+    "android": {
+      "package": "app.emukey.mobile"
+    },
     "orientation": "portrait",
     "newArchEnabled": true
   }

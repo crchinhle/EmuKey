@@ -17,6 +17,7 @@ export class BlockchainReconciliationService {
     private readonly projections: Pick<
       ChainEventRepository,
       'reconcileCanonicalProjections'
+      | 'deriveExpiredFromCanonicalChain'
     >,
     private readonly audit: AuditWriter,
   ) {}
@@ -51,6 +52,7 @@ export class BlockchainReconciliationService {
       indexedEvents += count;
     }
     const projection = await this.projections.reconcileCanonicalProjections();
+    const expiredLicenseIds = await this.projections.deriveExpiredFromCanonicalChain();
     const health = await this.pool.query<{
       active_without_finality: number;
       pending_events: number;
@@ -70,7 +72,8 @@ export class BlockchainReconciliationService {
       reconciledCommandIds.length > 0 ||
       indexedEvents > 0 ||
       projection.commandRepairs > 0 ||
-      projection.licenseRepairs > 0;
+      projection.licenseRepairs > 0 ||
+      expiredLicenseIds.length > 0;
     if (actor || processed) {
       const client = await this.pool.connect();
       try {
@@ -79,9 +82,11 @@ export class BlockchainReconciliationService {
           action: 'BLOCKCHAIN_RECONCILIATION_COMPLETED',
           ...(actor
             ? { actorRole: actor.role, actorUserId: actor.sub }
-            : { actorRole: 'SYSTEM_WORKER' }),
+            : {}),
           metadata: {
+            ...(!actor ? { source: 'SYSTEM_WORKER', workerId } : {}),
             indexedEvents,
+            expiredLicenseIds,
             projection,
             reconciledCommandIds,
             ...health.rows[0],
@@ -99,6 +104,7 @@ export class BlockchainReconciliationService {
     return {
       health: health.rows[0],
       indexedEvents,
+      expiredLicenseIds,
       processed,
       projection,
       reconciledCommandIds,

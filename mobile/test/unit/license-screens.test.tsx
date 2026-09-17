@@ -9,6 +9,7 @@ import {
 
 jest.mock('../../src/infrastructure/api/client', () => ({
   listLicenses: jest.fn(),
+  loadActivationKey: jest.fn().mockResolvedValue(null),
   retrieveActivationKey: jest.fn(),
   verifyPublicLicense: jest.fn(),
 }));

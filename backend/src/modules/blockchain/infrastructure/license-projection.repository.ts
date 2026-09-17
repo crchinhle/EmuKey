@@ -1,7 +1,9 @@
 import { Pool } from 'pg';
 
 const PRIVATE_COLUMNS = `
-  l.id, l.public_license_id, l.origin_order_id, l.status, l.period_start, l.expires_at,
+  l.id, l.public_license_id, l.origin_order_id,
+  CASE WHEN l.status='ACTIVE' AND l.expires_at <= now() THEN 'EXPIRED' ELSE l.status END AS status,
+  l.period_start, l.expires_at,
   l.max_active_devices, l.activation_key_version, l.entitlement_version,
   l.created_at, l.updated_at, p.name AS product_name, pl.name AS plan_name,
   pl.version AS plan_version, encode(l.plan_commitment,'hex') AS plan_commitment,
@@ -62,9 +64,34 @@ export class LicenseProjectionRepository {
     return result.rows[0] ? this.map(result.rows[0]) : null;
   }
 
+  async listCustomerDevices(customerUserId: string, licenseId: string) {
+    const result = await this.pool.query<Record<string, unknown>>(
+      `SELECT d.id, d.device_ref, d.status, d.activated_at, d.revoked_at,
+              d.binding_generation, d.last_applied_chain_event_id,
+              event.finality_status
+       FROM license_devices d
+       JOIN licenses l ON l.id=d.license_id
+       LEFT JOIN chain_events event ON event.id=d.last_applied_chain_event_id
+       WHERE d.license_id=$1 AND l.customer_user_id=$2
+       ORDER BY d.created_at, d.id`,
+      [licenseId, customerUserId],
+    );
+    return result.rows.map((row) => ({
+      activatedAt: row.activated_at,
+      bindingGeneration: Number(row.binding_generation),
+      deviceRef: String(row.device_ref),
+      finality: row.finality_status ?? null,
+      id: String(row.id),
+      revokedAt: row.revoked_at,
+      status: String(row.status),
+    }));
+  }
+
   async findPublic(publicId: string) {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT l.public_license_id, l.status, l.expires_at,
+      `SELECT l.public_license_id,
+          CASE WHEN l.status='ACTIVE' AND l.expires_at <= now() THEN 'EXPIRED' ELSE l.status END AS status,
+          l.expires_at,
          encode(l.plan_commitment,'hex') AS plan_commitment,
          p.name AS product_name, pl.name AS plan_name, pl.version AS plan_version,
          provider.display_name AS provider_display_name,
@@ -125,15 +152,47 @@ export class LicenseProjectionRepository {
       key_version: number;
       license_id: string;
     }>(
-      `SELECT cc.id AS command_id, l.id AS license_id,
-         ('0x' || encode(l.activation_commitment, 'hex')) AS commitment,
-         l.activation_key_version AS key_version
-       FROM licenses l JOIN chain_commands cc ON cc.license_id=l.id
-         AND cc.command_type='ISSUE_LICENSE' AND cc.status='CONFIRMED'
-       WHERE l.id=$1 AND l.status='ACTIVE' AND l.customer_user_id=$2`,
+       `SELECT cc.id AS command_id, l.id AS license_id,
+          ('0x' || encode(l.activation_commitment, 'hex')) AS commitment,
+          l.activation_key_version AS key_version
+        FROM licenses l JOIN chain_commands cc ON cc.license_id=l.id
+          AND cc.command_type IN ('ISSUE_LICENSE','ROTATE_KEY') AND cc.status='CONFIRMED'
+         WHERE l.id=$1 AND l.status='ACTIVE' AND l.expires_at > now() AND l.customer_user_id=$2
+         ORDER BY cc.confirmed_at DESC LIMIT 1`,
       [id, customerUserId],
     );
     return result.rows[0] ?? null;
+  }
+
+  async entitlementContext(customerUserId: string, licenseId: string, deviceId: string) {
+    const result = await this.pool.query<Record<string, unknown>>(
+      `SELECT l.status, l.expires_at, l.entitlement_version, l.activation_key_version,
+              d.status AS device_status, event.finality_status,
+              license_event.finality_status AS license_finality,
+              p.entitlements
+       FROM licenses l
+       JOIN license_devices d ON d.license_id=l.id AND d.id=$3
+       JOIN plans p ON p.id=l.plan_id
+       LEFT JOIN chain_events event ON event.id=d.last_applied_chain_event_id
+       LEFT JOIN chain_events license_event ON license_event.id=l.last_applied_chain_event_id
+       WHERE l.id=$1 AND l.customer_user_id=$2
+         AND event.finality_status='CONFIRMED'
+         AND license_event.finality_status='CONFIRMED'`,
+      [licenseId, customerUserId, deviceId],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          deviceStatus: String(row.device_status),
+          entitlementVersion: Number(row.entitlement_version),
+          entitlements: (row.entitlements ?? {}) as Record<string, unknown>,
+           expiresAt: new Date(String(row.expires_at)),
+           finality: String(row.finality_status),
+           licenseFinality: String(row.license_finality),
+           keyVersion: Number(row.activation_key_version),
+          status: String(row.status),
+        }
+      : null;
   }
 
   private map(row: Record<string, unknown>) {

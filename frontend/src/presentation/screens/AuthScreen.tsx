@@ -21,6 +21,10 @@ const authCopy: Record<AuthMode, { description: string; title: string }> = {
     description: 'Đăng nhập để quản lý đơn hàng, license và tài khoản EmuKey.',
     title: 'Đăng nhập',
   },
+  'licensing-action': {
+    description: 'Đăng nhập bằng tài khoản người mua để tiếp tục thao tác bảo mật từ email.',
+    title: 'Xác nhận thao tác License',
+  },
   register: {
     description: 'Tạo tài khoản người mua EmuKey. Bạn không cần tạo thêm khóa riêng cho tài khoản.',
     title: 'Đăng ký tài khoản',
@@ -36,11 +40,11 @@ const authCopy: Record<AuthMode, { description: string; title: string }> = {
 };
 
 function resolveAuthMode(value: string | null): AuthMode {
-  return value === 'forgot' || value === 'register' || value === 'reset' || value === 'verify' ? value : 'login';
+  return value === 'forgot' || value === 'licensing-action' || value === 'register' || value === 'reset' || value === 'verify' ? value : 'login';
 }
 
 export function AuthScreen() {
-  const { forgotPassword, login, register, resendVerification, resetPassword, verifyEmail } = useAuth();
+  const { forgotPassword, login, register, resendVerification, resetPassword, user, verifyEmail } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = resolveAuthMode(searchParams.get('mode'));
@@ -53,6 +57,11 @@ export function AuthScreen() {
       .then(() => setVerification('verified'))
       .catch(() => setVerification('failed'));
   }, [mode, verification, verificationToken, verifyEmail]);
+  useEffect(() => {
+    if (mode === 'licensing-action' && verificationToken && user?.role === 'CUSTOMER') {
+      void navigate(`/buyer/licenses?actionToken=${encodeURIComponent(verificationToken)}`, { replace: true });
+    }
+  }, [mode, navigate, user?.role, verificationToken]);
   const copy = authCopy[mode];
   const selectMode = (nextMode: AuthMode) =>
     setSearchParams(nextMode === 'login' ? {} : { mode: nextMode });
@@ -82,22 +91,29 @@ export function AuthScreen() {
           ) : null}
           <h2>{copy.title}</h2>
           <p>{copy.description}</p>
-          {mode === 'login' ? (
+          {mode === 'login' || mode === 'licensing-action' ? (
             <>
+              {mode === 'licensing-action' && !verificationToken ? (
+                <Alert showIcon title="Liên kết xác nhận không hợp lệ." type="error" />
+              ) : null}
               <LoginForm
                 onForgotPassword={() => selectMode('forgot')}
                 onLogin={login}
-                onSuccess={(user) => void navigate(
-                  user.role === 'CUSTOMER'
-                    ? '/buyer'
-                    : user.role === 'PROVIDER_ADMIN'
-                      ? '/provider'
-                      : user.role === 'SUPPORT_STAFF'
-                        ? '/support'
-                        : '/system/console',
-                )}
+                onSuccess={(user) => {
+                  const destination = mode === 'licensing-action' && user.role === 'CUSTOMER' && verificationToken
+                    ? `/buyer/licenses?actionToken=${encodeURIComponent(verificationToken)}`
+                    : user.role === 'CUSTOMER'
+                      ? '/buyer'
+                      : user.role === 'PROVIDER_ADMIN'
+                        ? '/provider'
+                        : user.role === 'SUPPORT_STAFF'
+                          ? '/support'
+                          : '/system/console';
+                  void navigate(destination, { replace: mode === 'licensing-action' });
+                }}
+                submitLabel={mode === 'licensing-action' ? 'Đăng nhập và tiếp tục' : 'Đăng nhập'}
               />
-              <Button block onClick={() => selectMode('register')} type="link">Đăng ký</Button>
+              {mode === 'login' ? <Button block onClick={() => selectMode('register')} type="link">Đăng ký</Button> : null}
             </>
           ) : null}
           {mode === 'register' ? (

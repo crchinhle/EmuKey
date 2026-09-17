@@ -24,6 +24,12 @@ const EXPECTED_TABLES = [
 const EXPECTED_EXTENSIONS = ['citext', 'pgcrypto', 'vector'] as const;
 
 const EXPECTED_CRITICAL_CONSTRAINTS = {
+  ck_license_devices_ref:
+    "CHECK (device_ref::text ~ '^[0-9a-f]{64}$'::text)",
+  ck_license_devices_signer_address:
+    "CHECK (device_signer_address::text ~ '^0x[0-9a-f]{40}$'::text)",
+  ck_licenses_pending_activation:
+    "CHECK (pending_activation_commitment IS NULL AND pending_activation_key_version IS NULL AND pending_activation_command_id IS NULL OR status::text <> 'PENDING_ONCHAIN'::text AND pending_activation_commitment IS NOT NULL AND pending_activation_key_version = (activation_key_version + 1) AND pending_activation_command_id IS NOT NULL AND octet_length(pending_activation_commitment) = 32)",
   fk_conversations_customer:
     'FOREIGN KEY (customer_user_id, customer_role) REFERENCES users(id, role) ON DELETE RESTRICT',
   fk_chain_commands_issue_order_license:
@@ -37,15 +43,15 @@ const EXPECTED_CRITICAL_CONSTRAINTS = {
   fk_chain_events_command_subject:
     'FOREIGN KEY (chain_command_id, provider_user_id, license_id) REFERENCES chain_commands(id, provider_user_id, license_id) ON DELETE RESTRICT',
   fk_license_devices_last_chain_event:
-    'FOREIGN KEY (last_applied_chain_event_id, id, license_id) REFERENCES chain_events(id, license_device_id, license_id) ON DELETE RESTRICT',
+    'FOREIGN KEY (last_applied_chain_event_id, id, license_id) REFERENCES chain_events(confirmed_device_event_id, license_device_id, license_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED',
   fk_licenses_last_chain_event:
-    'FOREIGN KEY (last_applied_chain_event_id, id) REFERENCES chain_events(id, license_id) ON DELETE RESTRICT',
+    'FOREIGN KEY (last_applied_chain_event_id, id) REFERENCES chain_events(confirmed_license_event_id, license_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED',
   fk_licenses_plan:
     'FOREIGN KEY (plan_id, product_id, provider_user_id, plan_commitment) REFERENCES plans(id, product_id, provider_user_id, plan_commitment) ON DELETE RESTRICT',
   fk_orders_plan:
     'FOREIGN KEY (plan_id, product_id, provider_user_id, plan_commitment_snapshot) REFERENCES plans(id, product_id, provider_user_id, plan_commitment) ON DELETE RESTRICT',
   fk_orders_target_license:
-    'FOREIGN KEY (target_license_id, provider_user_id, customer_user_id) REFERENCES licenses(id, provider_user_id, customer_user_id) ON DELETE RESTRICT',
+    'FOREIGN KEY (target_license_id, provider_user_id, customer_user_id, product_id, plan_id, plan_commitment_snapshot) REFERENCES licenses(id, provider_user_id, customer_user_id, product_id, plan_id, plan_commitment) ON DELETE RESTRICT',
   fk_payment_transactions_attempt_order:
     'FOREIGN KEY (payment_attempt_id, order_id) REFERENCES payment_attempts(id, order_id) ON DELETE RESTRICT',
 } as const;
@@ -58,13 +64,21 @@ const EXPECTED_CRITICAL_INDEXES = {
   ix_chain_events_finality:
     'CREATE INDEX ix_chain_events_finality ON public.chain_events USING btree (network, chain_id, contract_address, finality_status, block_number)',
   uq_chain_commands_tx_hash:
-    'CREATE UNIQUE INDEX uq_chain_commands_tx_hash ON public.chain_commands USING btree (network, chain_id, transaction_hash) WHERE (transaction_hash IS NOT NULL)',
+    'CREATE UNIQUE INDEX uq_chain_commands_tx_hash ON public.chain_commands USING btree (network, chain_id, lower((transaction_hash)::text)) WHERE (transaction_hash IS NOT NULL)',
   uq_chain_commands_relayer_nonce:
-    'CREATE UNIQUE INDEX uq_chain_commands_relayer_nonce ON public.chain_commands USING btree (network, chain_id, relayer_address, nonce) WHERE ((relayer_address IS NOT NULL) AND (nonce IS NOT NULL))',
+    "CREATE UNIQUE INDEX uq_chain_commands_relayer_nonce ON public.chain_commands USING btree (network, chain_id, lower((relayer_address)::text), nonce) WHERE ((relayer_address IS NOT NULL) AND (nonce IS NOT NULL) AND (NOT (((status)::text = ANY ((ARRAY['ABANDONED'::character varying, 'SUPERSEDED'::character varying])::text[])) AND ((resolution_evidence_type)::text = 'NONCE_RESERVATION_RELEASED'::text))))",
+  uq_chain_commands_one_forward_mutation:
+    "CREATE UNIQUE INDEX uq_chain_commands_one_forward_mutation ON public.chain_commands USING btree (license_id) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUBMITTED'::character varying, 'RETRYABLE_FAILED'::character varying])::text[]))",
+  uq_chain_commands_current_issue_order:
+    "CREATE UNIQUE INDEX uq_chain_commands_current_issue_order ON public.chain_commands USING btree (issue_order_id) WHERE ((issue_order_id IS NOT NULL) AND ((status)::text <> ALL ((ARRAY['ABANDONED'::character varying, 'SUPERSEDED'::character varying])::text[])))",
+  uq_chain_commands_current_renewal_order:
+    "CREATE UNIQUE INDEX uq_chain_commands_current_renewal_order ON public.chain_commands USING btree (renewal_order_id) WHERE ((renewal_order_id IS NOT NULL) AND ((status)::text <> ALL ((ARRAY['ABANDONED'::character varying, 'SUPERSEDED'::character varying])::text[])))",
   uq_knowledge_documents_one_current:
     'CREATE UNIQUE INDEX uq_knowledge_documents_one_current ON public.knowledge_documents USING btree (provider_user_id, logical_document_key) WHERE is_current',
+  uq_orders_one_open_renewal:
+    "CREATE UNIQUE INDEX uq_orders_one_open_renewal ON public.orders USING btree (target_license_id) WHERE (((order_type)::text = 'RENEWAL'::text) AND ((order_status)::text = ANY ((ARRAY['WAITING_TERMS_ACCEPTANCE'::character varying, 'WAITING_PAYMENT'::character varying])::text[])))",
   uq_users_provider_chain_address:
-    'CREATE UNIQUE INDEX uq_users_provider_chain_address ON public.users USING btree (provider_chain_address) WHERE (provider_chain_address IS NOT NULL)',
+    'CREATE UNIQUE INDEX uq_users_provider_chain_address ON public.users USING btree (lower((provider_chain_address)::text)) WHERE (provider_chain_address IS NOT NULL)',
   uq_users_provider_chain_namespace:
     'CREATE UNIQUE INDEX uq_users_provider_chain_namespace ON public.users USING btree (provider_chain_namespace) WHERE (provider_chain_namespace IS NOT NULL)',
 } as const;
@@ -84,6 +98,30 @@ const EXPECTED_CRITICAL_COLUMNS = {
   },
   'licenses.customer_user_id': {
     dataType: 'uuid',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'NO',
+  },
+  'licenses.pending_activation_commitment': {
+    dataType: 'bytea',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'YES',
+  },
+  'licenses.pending_activation_key_version': {
+    dataType: 'integer',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'YES',
+  },
+  'licenses.pending_activation_command_id': {
+    dataType: 'uuid',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'YES',
+  },
+  'license_devices.device_signer_address': {
+    dataType: 'character varying',
     expression: null,
     isGenerated: 'NEVER',
     isNullable: 'NO',

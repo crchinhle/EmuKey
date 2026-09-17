@@ -116,7 +116,7 @@ contract LicenseRegistry is AccessControl {
     {
         _consume(commandId);
         LicenseData storage license = _existing(licenseId);
-        if (license.status != LicenseStatus.ACTIVE) revert InvalidState();
+        if (license.status != LicenseStatus.ACTIVE || license.expiresAt <= block.timestamp) revert InvalidState();
         license.status = LicenseStatus.SUSPENDED;
         emit LicenseStatusChanged(commandId, licenseId, LicenseStatus.SUSPENDED);
     }
@@ -155,12 +155,23 @@ contract LicenseRegistry is AccessControl {
         emit ActivationKeyRotated(commandId, licenseId, newCommitment, newVersion);
     }
 
-    function activateDevice(bytes16 commandId, bytes16 licenseId, bytes32 deviceId)
+    function activateDevice(
+        bytes16 commandId,
+        bytes16 licenseId,
+        bytes32 deviceId,
+        uint256 keyVersion
+    )
         external onlyRole(RELAYER_ROLE)
     {
         _consume(commandId);
         LicenseData storage license = _existing(licenseId);
-        if (license.status != LicenseStatus.ACTIVE || license.expiresAt <= block.timestamp || activeDevice[licenseId][deviceId] || license.activeDevices >= license.maxActiveDevices) revert InvalidState();
+        if (
+            license.status != LicenseStatus.ACTIVE ||
+            license.expiresAt <= block.timestamp ||
+            keyVersion != license.activationKeyVersion ||
+            activeDevice[licenseId][deviceId] ||
+            license.activeDevices >= license.maxActiveDevices
+        ) revert InvalidState();
         activeDevice[licenseId][deviceId] = true;
         license.activeDevices += 1;
         emit DeviceStatusChanged(commandId, licenseId, deviceId, true);

@@ -54,6 +54,7 @@ export interface PlatformEnvironment {
   EVM_DEPLOYMENT_BLOCK?: number;
   EVM_INDEXER_BATCH_SIZE?: number;
   EVM_RPC_HTTP_URL?: string;
+  EVM_RPC_FALLBACK_HTTP_URL?: string;
   EVM_RELAYER_PRIVATE_KEY?: string;
   STORAGE_ADAPTER: string;
   ACTIVATION_ENVELOPE_ADAPTER: string;
@@ -246,6 +247,13 @@ export function validateEnvironment(
   }
   result.EVM_RPC_HTTP_URL = requiredString(environment, 'EVM_RPC_HTTP_URL');
   assertHttpUrl(result.EVM_RPC_HTTP_URL, 'EVM_RPC_HTTP_URL');
+  if (
+    typeof environment.EVM_RPC_FALLBACK_HTTP_URL === 'string' &&
+    environment.EVM_RPC_FALLBACK_HTTP_URL.trim() !== ''
+  ) {
+    result.EVM_RPC_FALLBACK_HTTP_URL = environment.EVM_RPC_FALLBACK_HTTP_URL.trim();
+    assertHttpUrl(result.EVM_RPC_FALLBACK_HTTP_URL, 'EVM_RPC_FALLBACK_HTTP_URL');
+  }
   result.EVM_DEPLOYMENT_BLOCK = parseNonNegativeInteger(
     requiredString(environment, 'EVM_DEPLOYMENT_BLOCK'),
     'EVM_DEPLOYMENT_BLOCK',

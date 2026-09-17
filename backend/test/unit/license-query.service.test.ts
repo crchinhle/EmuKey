@@ -60,4 +60,32 @@ describe('LicenseQueryService boundaries', () => {
       service.retrieveActivation(customer, licenseId),
     ).rejects.toMatchObject({ status: 404 });
   });
+
+  it('lists devices only for the authenticated customer license owner', async () => {
+    const repository = {
+      listCustomerDevices: vi.fn().mockResolvedValue([
+        {
+          activatedAt: null,
+          bindingGeneration: 1,
+          deviceRef: 'device-1',
+          finality: 'CONFIRMED',
+          id: '00000000-0000-4000-8000-000000000902',
+          revokedAt: null,
+          status: 'ACTIVE',
+        },
+      ]),
+    } as unknown as Mocked<LicenseProjectionRepository>;
+    const service = new LicenseQueryService(
+      repository,
+      {} as Mocked<ActivationEnvelopePort>,
+      {} as Redis,
+    );
+
+    await expect(service.listDevices(customer, '00000000-0000-4000-8000-000000000401'))
+      .resolves.toHaveLength(1);
+    expect(repository.listCustomerDevices.mock.calls[0]).toEqual([
+      customer.sub,
+      '00000000-0000-4000-8000-000000000401',
+    ]);
+  });
 });

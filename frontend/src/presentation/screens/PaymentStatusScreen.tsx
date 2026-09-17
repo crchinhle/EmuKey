@@ -1,5 +1,5 @@
-import { Alert, Button, QRCode, Spin } from 'antd';
-import { useParams } from 'react-router-dom';
+import { Alert, Button, Spin } from 'antd';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import {
   useOrder,
@@ -15,6 +15,7 @@ import {
 
 export function PaymentStatusScreen() {
   const { id = '' } = useParams();
+  const [searchParams] = useSearchParams();
   const order = useOrder(id);
   const checkout = useOrderMutations().checkout;
   if (order.isPending) return <Spin />;
@@ -36,7 +37,35 @@ export function PaymentStatusScreen() {
             <h2>Chuyển khoản qua SePay</h2>
             <StatusChip tone="warning">{current.orderStatus}</StatusChip>
           </header>
-          {!payment ? (
+          {searchParams.get('sepay') === 'success' &&
+          current.orderStatus !== 'PAYMENT_ACCEPTED' ? (
+            <Alert
+              showIcon
+              type="info"
+              message="SePay đã chuyển bạn về EmuKey. Hệ thống đang chờ IPN để xác minh giao dịch."
+            />
+          ) : null}
+          {searchParams.get('sepay') === 'error' ? (
+            <Alert
+              showIcon
+              type="error"
+              message="SePay báo giao dịch không thành công. Bạn có thể tạo lại yêu cầu thanh toán."
+            />
+          ) : null}
+          {searchParams.get('sepay') === 'cancel' ? (
+            <Alert
+              showIcon
+              type="warning"
+              message="Bạn đã hủy thanh toán trên SePay. Đơn hàng vẫn được giữ đến thời hạn thanh toán."
+            />
+          ) : null}
+          {current.orderStatus === 'PAYMENT_ACCEPTED' ? (
+            <Alert
+              showIcon
+              type="success"
+              message="Thanh toán đã được backend xác nhận từ IPN hợp lệ."
+            />
+          ) : !payment ? (
             <Button
               type="primary"
               loading={checkout.isPending}
@@ -46,10 +75,6 @@ export function PaymentStatusScreen() {
             </Button>
           ) : (
             <>
-              <QRCode
-                type="svg"
-                value={payment.checkoutUrl}
-              />
               <FactList
                 facts={[
                   { label: 'Mã thanh toán', value: payment.checkoutReference },
@@ -60,6 +85,20 @@ export function PaymentStatusScreen() {
                   },
                 ]}
               />
+              <form
+                action={payment.checkoutUrl}
+                data-testid="sepay-checkout-form"
+                method="post"
+              >
+                {Object.entries(payment.checkoutFields).map(([name, value]) => (
+                  <input key={name} name={name} type="hidden" value={value} />
+                ))}
+                <Button htmlType="submit" type="primary">
+                  {payment.checkoutUrl.includes('sandbox')
+                    ? 'Thanh toán trên SePay Sandbox'
+                    : 'Thanh toán trên SePay'}
+                </Button>
+              </form>
               <Alert
                 showIcon
                 type="info"

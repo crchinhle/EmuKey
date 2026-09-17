@@ -96,6 +96,19 @@ export class BrevoEmailDelivery implements EmailDeliveryPort {
       };
     }
 
+    if (input.template === 'licensing-action-verification-v1') {
+      url.searchParams.set('mode', 'licensing-action');
+      url.searchParams.set('token', token);
+      const verificationUrl = url.toString();
+      const action = typeof input.data.action === 'string' ? input.data.action : 'licensing operation';
+      return {
+        htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để xác nhận thao tác ${escapeHtml(action)} trên giấy phép EmuKey:</p><p><a href="${escapeHtml(verificationUrl)}">Xác nhận thao tác</a></p><p>Mã xác nhận: <strong>${escapeHtml(token)}</strong></p><p>Mã xác nhận có hiệu lực trong 15 phút và chỉ sử dụng một lần.</p>`,
+        subject: 'Xác nhận thao tác giấy phép EmuKey',
+        textContent: `Chào bạn,\n\nMở liên kết sau để xác nhận thao tác ${action}:\n${verificationUrl}\n\nMã xác nhận: ${token}\n\nMã có hiệu lực trong 15 phút và chỉ sử dụng một lần.`,
+        token,
+      };
+    }
+
     if (input.template === 'identity-password-reset-v1') {
       url.searchParams.set('mode', 'reset');
       url.searchParams.set('token', token);
