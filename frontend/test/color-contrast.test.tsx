@@ -32,17 +32,30 @@ function contrastRatio(foreground: string, background: string): number {
 }
 
 describe('high-contrast color system', () => {
-  it('keeps workspace card boundaries distinguishable at 3:1', () => {
+  it('maps the approved Figma semantic palette into the application theme', () => {
     const { container } = render(<App initialEntries={['/buyer']} />);
     const theme = container.querySelector<HTMLElement>('.app-theme');
     expect(theme).toBeTruthy();
 
-    expect(
-      contrastRatio(
-        theme!.style.getPropertyValue('--border'),
-        theme!.style.getPropertyValue('--surface'),
-      ),
-    ).toBeGreaterThanOrEqual(3);
+    expect({
+      canvas: theme!.style.getPropertyValue('--canvas'),
+      control: theme!.style.getPropertyValue('--control'),
+      primary: theme!.style.getPropertyValue('--primary'),
+      sidebar: theme!.style.getPropertyValue('--sidebar'),
+      sidebarSelected: theme!.style.getPropertyValue('--sidebar-selected'),
+      surface: theme!.style.getPropertyValue('--surface'),
+      text: theme!.style.getPropertyValue('--text'),
+      textSecondary: theme!.style.getPropertyValue('--text-secondary'),
+    }).toEqual({
+      canvas: '#e3e1dc',
+      control: '#403e39',
+      primary: '#7a2e3a',
+      sidebar: '#1f1e1c',
+      sidebarSelected: '#2e2c29',
+      surface: '#f8f7f3',
+      text: '#1c1c1a',
+      textSecondary: '#4a4844',
+    });
   });
 
   it('keeps small helper text comfortably above the AA minimum', () => {

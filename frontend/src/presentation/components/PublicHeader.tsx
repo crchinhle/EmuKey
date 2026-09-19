@@ -9,7 +9,7 @@ export function PublicHeader() {
 
   return (
     <header className="public-header">
-      <Brand />
+      <Brand inverted />
       <nav aria-label="Điều hướng chính" className="public-nav">
         <Link
           className={location.pathname.startsWith('/products') ? 'active' : ''}
@@ -31,7 +31,7 @@ export function PublicHeader() {
             void navigate('/auth');
           }}
         >
-          Đăng nhập quản trị
+          Đăng nhập
         </Button>
         <Button
           onClick={() => {

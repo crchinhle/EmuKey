@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 export type CustomerType = 'BUSINESS' | 'INDIVIDUAL' | 'STUDENT';
 export type AuthUser = { id: string; email: string; displayName: string; role: string; status: string; customerType?: CustomerType | null; emailVerifiedAt?: string | null; phone?: string | null; address?: string | null; organizationName?: string | null };
 export type RegisterInput = { customerType: CustomerType; displayName: string; email: string; password: string };
+export type ProfileInput = { displayName: string; phone?: string; address?: string; organizationName?: string };
 const API_URL = (import.meta.env as Record<string, string | undefined>).VITE_API_URL ?? '/api/v1';
 const REQUEST_TIMEOUT_MS = 3000;
 let accessToken: string | null = null;
@@ -67,7 +68,7 @@ export function describeApiError(error: unknown, fallback: string): string {
   if (error.status === 409) return error.message || 'Thao tác xung đột với trạng thái hiện tại.';
   return error.message || fallback;
 }
-type AuthValue = { user: AuthUser | null; loading: boolean; login: (email: string, password: string) => Promise<AuthUser>; register: (input: RegisterInput) => Promise<void>; verifyEmail: (token: string) => Promise<void>; resendVerification: (email: string) => Promise<void>; forgotPassword: (email: string) => Promise<void>; resetPassword: (token: string, password: string) => Promise<void>; logout: () => Promise<void>; setUser: (user: AuthUser | null) => void };
+type AuthValue = { user: AuthUser | null; loading: boolean; login: (email: string, password: string) => Promise<AuthUser>; register: (input: RegisterInput) => Promise<void>; verifyEmail: (token: string) => Promise<void>; resendVerification: (email: string) => Promise<void>; forgotPassword: (email: string) => Promise<void>; resetPassword: (token: string, password: string) => Promise<void>; updateProfile: (input: ProfileInput) => Promise<AuthUser>; logout: () => Promise<void>; setUser: (user: AuthUser | null) => void };
 const Context = createContext<AuthValue | null>(null);
 interface AuthProviderProps {
   readonly children: ReactNode;
@@ -106,8 +107,16 @@ export function AuthProvider({ children, initialUser, skipBootstrap = false }: A
   const resendVerification = (email: string) => post('/auth/resend-verification', { email: email.trim() });
   const forgotPassword = (email: string) => post('/auth/forgot-password', { email });
   const resetPassword = (token: string, password: string) => post('/auth/reset-password', { token, password });
+  const updateProfile = async (input: ProfileInput) => {
+    const updated = await requestJson<AuthUser>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    });
+    setUser(updated);
+    return updated;
+  };
   const logout = async () => { await api('/auth/logout', { method: 'POST' }, false); accessToken = null; setUser(null); };
-  return <Context.Provider value={{ user, loading, login, register, verifyEmail, resendVerification, forgotPassword, resetPassword, logout, setUser }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ user, loading, login, register, verifyEmail, resendVerification, forgotPassword, resetPassword, updateProfile, logout, setUser }}>{children}</Context.Provider>;
 }
 export function useAuth() { const value = useContext(Context); if (!value) throw new Error('AuthProvider is required'); return value; }
 export function useOptionalAuth() { return useContext(Context); }

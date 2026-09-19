@@ -26,7 +26,7 @@ import { CurrentUser, Roles } from '../../identity-access/security.decorators.js
 import { AuthGuard, RolesGuard } from '../../identity-access/security.guards.js';
 import { CommerceService } from '../application/commerce.service.js';
 import {
-  AcceptTermsDto,
+  AcceptServiceTermsDto,
   CheckoutSessionDto,
   CreateOrderDto,
   OrderDto,
@@ -76,26 +76,26 @@ export class CommerceController {
     return this.service.findOrder(actor, id);
   }
 
-  @Get(':id/terms')
-  @ApiOperation({ summary: 'Get the exact Terms artefact snapshotted by an order' })
+  @Get(':id/service-terms')
+  @ApiOperation({ summary: 'Get the platform Service Terms content' })
   @ApiOkResponse({ type: OrderTermsDto })
   @ApiNotFoundResponse()
-  terms(
+  serviceTerms(
     @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.service.getOrderTerms(actor, id);
+    return this.service.getServiceTerms(actor, id);
   }
 
-  @Post(':id/accept-terms')
+  @Post(':id/accept-service-terms')
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({ type: OrderDto })
-  acceptTerms(
+  acceptServiceTerms(
     @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AcceptTermsDto,
+    @Body() dto: AcceptServiceTermsDto,
   ) {
-    return this.service.acceptTerms(actor, id, dto);
+    return this.service.acceptServiceTerms(actor, id, dto);
   }
 
   @Post(':id/checkout')
@@ -130,7 +130,7 @@ export class PaymentController {
   @ApiOkResponse({ type: PaymentIngestResultDto })
   ingest(
     @Body() payload: unknown,
-    @Headers('x-emukey-payment-signature') signature?: string,
+    @Headers('x-secret-key') signature?: string,
   ) {
     return this.service.ingestIpn(payload, signature);
   }

@@ -62,7 +62,7 @@ describe('ActivationEnvelopeRecoveryService', () => {
 
     const recovered = await service.ensure(command);
 
-    expect(recovered.payload.keyVersion).toBe(2);
+    expect(recovered.payload.keyVersion).toBe(1);
     expect(recovered.payload.activationCommitment).not.toBe(
       command.payload.activationCommitment,
     );

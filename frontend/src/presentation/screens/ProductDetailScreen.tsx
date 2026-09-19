@@ -91,7 +91,13 @@ export function ProductDetailScreen() {
               <p>{selectedPlan.devices} thiết bị được công bố</p>
             </div>
             <div className="plan-actions">
-              <Button>So sánh gói</Button>
+              <Button
+                onClick={() => void navigate(
+                  `/compare?ids=${encodeURIComponent(product.plans.slice(0, 4).map((plan) => plan.id).join(','))}`,
+                )}
+              >
+                So sánh gói
+              </Button>
               <Button
                 type="primary"
                 onClick={() =>

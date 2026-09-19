@@ -7,7 +7,6 @@ import { keccak256, stringToHex } from 'viem';
 
 type Vector = {
   entitlements: { hash: `0x${string}` };
-  terms: { hash: `0x${string}` };
   plan: {
     providerChainAddress: `0x${string}`;
     productId: string;
@@ -22,7 +21,7 @@ type Vector = {
 
 const vector = JSON.parse(
   await readFile(
-    new URL('../test-vectors/crypto-v1.json', import.meta.url),
+    new URL('../test-vectors/crypto-v2.json', import.meta.url),
     'utf8',
   ),
 ) as Vector;
@@ -48,8 +47,7 @@ describe('LicenseRegistry', async () => {
       BigInt(vector.plan.planVersion),
       BigInt(vector.plan.durationMonths),
       BigInt(vector.plan.maxActiveDevices),
-      vector.entitlements.hash,
-      vector.terms.hash,
+       vector.entitlements.hash,
     ]);
     assert.equal(planCommitment, vector.plan.commitment);
   });
@@ -190,12 +188,22 @@ describe('LicenseRegistry', async () => {
       bytes16('00000000-0000-4000-8000-000000000503'),
       licenseId,
       keccak256(stringToHex('device-a')),
+      1n,
     ]);
     await assert.rejects(
       registry.write.activateDevice([
         bytes16('00000000-0000-4000-8000-000000000504'),
         licenseId,
+        keccak256(stringToHex('device-a-stale-key')),
+        2n,
+      ]),
+    );
+    await assert.rejects(
+      registry.write.activateDevice([
+        bytes16('00000000-0000-4000-8000-000000000506'),
+        licenseId,
         keccak256(stringToHex('device-b')),
+        1n,
       ]),
     );
     await registry.write.suspendLicense([
@@ -221,6 +229,49 @@ describe('LicenseRegistry', async () => {
         bytes16('00000000-0000-4000-8000-000000000509'),
         licenseId,
         now + 172_800n,
+      ]),
+    );
+  });
+
+  it('renews an expired license and rejects stale lifecycle transitions', async () => {
+    const registry = await deploy();
+    const publicClient = await viem.getPublicClient();
+    const currentBlock = await publicClient.getBlock();
+    const now = currentBlock.timestamp;
+    const licenseId = bytes16('00000000-0000-4000-8000-000000000403');
+    const expiry = now + 10n;
+    await registry.write.issueLicense([
+      bytes16('00000000-0000-4000-8000-000000000510'), licenseId,
+      vector.plan.providerChainAddress, bytes16(vector.plan.productId),
+      bytes16(vector.plan.planId), 1n, vector.plan.commitment,
+      vector.activation.commitment, 1n, 2n, expiry,
+    ]);
+    await publicClient.request({
+      method: 'evm_setNextBlockTimestamp',
+      params: [Number(expiry + 1n)],
+    });
+    await publicClient.request({ method: 'evm_mine', params: [] });
+    await assert.rejects(
+      registry.write.suspendLicense([
+        bytes16('00000000-0000-4000-8000-000000000511'), licenseId,
+      ]),
+    );
+    await registry.write.renewLicense([
+      bytes16('00000000-0000-4000-8000-000000000512'), licenseId, expiry + 86_400n,
+    ]);
+    assert.equal(await registry.read.effectiveStatus([licenseId]), 1);
+    await registry.write.suspendLicense([
+      bytes16('00000000-0000-4000-8000-000000000513'), licenseId,
+    ]);
+    await registry.write.resumeLicense([
+      bytes16('00000000-0000-4000-8000-000000000514'), licenseId,
+    ]);
+    await registry.write.revokeLicense([
+      bytes16('00000000-0000-4000-8000-000000000515'), licenseId,
+    ]);
+    await assert.rejects(
+      registry.write.resumeLicense([
+        bytes16('00000000-0000-4000-8000-000000000516'), licenseId,
       ]),
     );
   });

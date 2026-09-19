@@ -42,7 +42,6 @@ const testEnvironment = {
   STORAGE_ADAPTER: 'local',
   ACTIVATION_ENVELOPE_ADAPTER: 'redis',
   ACTIVATION_ENVELOPE_KEY: '00'.repeat(32),
-  TERMS_VERSION: '1',
 };
 
 describe('API platform contract', () => {
@@ -89,7 +88,7 @@ describe('API platform contract', () => {
 
     const document = response.body as OpenAPIObject;
     expect(document.info).toMatchObject({
-      title: 'EmuKey API',
+      title: 'Emukey API',
       version: '1.0.0',
     });
     expect(document.paths).toHaveProperty('/api/v1/health/live');
@@ -129,7 +128,7 @@ describe('API platform contract', () => {
     ]) {
       expect(document.components?.schemas).toHaveProperty(schema);
     }
-    expect(document.paths).toHaveProperty('/api/v1/orders/{id}/terms');
+    expect(document.paths).toHaveProperty('/api/v1/orders/{id}/service-terms');
     expect(document.paths).toHaveProperty('/api/v1/payments/history');
     expect(document.paths).toHaveProperty('/api/v1/payments/{id}/receipt');
   });

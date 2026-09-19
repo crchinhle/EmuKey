@@ -43,6 +43,16 @@ export class ActivationKeyDto {
   @ApiProperty() keyVersion!: number;
 }
 
+export class LicenseDeviceDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty() deviceRef!: string;
+  @ApiProperty({ enum: ['PENDING_ONCHAIN', 'ACTIVE', 'REVOKED'] }) status!: string;
+  @ApiProperty() bindingGeneration!: number;
+  @ApiPropertyOptional({ nullable: true }) activatedAt!: string | null;
+  @ApiPropertyOptional({ nullable: true }) revokedAt!: string | null;
+  @ApiPropertyOptional({ nullable: true }) finality!: string | null;
+}
+
 export class PublicLicenseVerificationDto {
   @ApiPropertyOptional({ nullable: true, type: Number }) blockNumber?:
     number | null;

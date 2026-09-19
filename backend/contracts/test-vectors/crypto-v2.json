@@ -1,9 +1,5 @@
 {
-  "version": 1,
-  "terms": {
-    "normalized": "# EmuKey License Terms v1\n\nThis version is a deterministic local and test baseline. Production deployment requires an approved Terms artefact whose hash is configured explicitly.\n",
-    "hash": "0x09256bf873c9f75a404c6e5f3e20c05bcce83e58930cd2d16f688a2966eff0ae"
-  },
+  "version": 2,
   "entitlements": {
     "value": {
       "desktop": true,
@@ -19,7 +15,7 @@
     "planVersion": 1,
     "durationMonths": 12,
     "maxActiveDevices": 3,
-    "commitment": "0x4decb57d3ad403ef64f8885ee6b0b397151399084412a1c71711c3435980bdb4"
+    "commitment": "0xc0dae0bf0aed78df9c36143a470ebcf9f5b1ea1d61f2ad7cb91f0c4a2c55790e"
   },
   "activation": {
     "secret": "0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",

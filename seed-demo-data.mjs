@@ -165,22 +165,21 @@ SELECT
   CASE WHEN product.i % 2 = 0 THEN 12 ELSE 1 END AS duration_months,
   (99000 + product.i * 25000)::bigint AS price_vnd,
   ((product.i - 1) % 5) + 1 AS max_active_devices,
-  digest(current_setting('emukey.seed_namespace') || ':terms:' || product.i, 'sha256') AS terms_hash,
-  digest(current_setting('emukey.seed_namespace') || ':plan-commitment:' || product.i, 'sha256') AS plan_commitment
+   digest(current_setting('emukey.seed_namespace') || ':plan-commitment:' || product.i, 'sha256') AS plan_commitment
 FROM _demo_products AS product
 JOIN _demo_providers AS provider ON provider.i = product.provider_index;
 
 INSERT INTO plans (
   id, product_id, provider_user_id, code, version, name, billing_cycle,
-  duration_months, price_vnd, max_active_devices, entitlements,
-  terms_version, terms_hash, plan_commitment, status, published_at
+   duration_months, price_vnd, max_active_devices, entitlements,
+   plan_commitment, status, published_at
 )
 SELECT
   id, product_id, provider_user_id, code, 1,
   CASE WHEN billing_cycle = 'YEARLY' THEN 'Gói năm' ELSE 'Gói tháng' END,
   billing_cycle, duration_months, price_vnd, max_active_devices,
-  jsonb_build_object('desktop', true, 'cloudSync', i % 2 = 0, 'demoSeed', current_setting('emukey.seed_namespace')),
-  1, terms_hash, plan_commitment, 'PUBLISHED', now() - make_interval(days => 40 - i)
+   jsonb_build_object('desktop', true, 'cloudSync', i % 2 = 0, 'demoSeed', current_setting('emukey.seed_namespace')),
+   plan_commitment, 'PUBLISHED', now() - make_interval(days => 40 - i)
 FROM _demo_plans
 ON CONFLICT (id) DO NOTHING;
 
@@ -196,8 +195,7 @@ SELECT
   plan.billing_cycle,
   plan.duration_months,
   plan.price_vnd,
-  plan.max_active_devices,
-  plan.terms_hash,
+   plan.max_active_devices,
   plan.plan_commitment,
   product.name AS product_name,
   provider_name.organization_name AS provider_name
@@ -212,8 +210,8 @@ INSERT INTO orders (
   product_name_snapshot, plan_name_snapshot, plan_version_snapshot,
   price_vnd_snapshot, currency, billing_cycle_snapshot,
   duration_months_snapshot, max_active_devices_snapshot,
-  entitlements_snapshot, terms_version_snapshot, terms_hash_snapshot,
-  plan_commitment_snapshot, payment_due_at, terms_accepted_at, payment_accepted_at
+   entitlements_snapshot,
+   plan_commitment_snapshot, payment_due_at
 )
 SELECT
   id, 'DEMO-' || upper(substr(md5(id::text), 1, 16)), idempotency_key,
@@ -221,10 +219,18 @@ SELECT
   'NEW_PURCHASE', 'PAYMENT_ACCEPTED', provider_name, product_name,
   CASE WHEN billing_cycle = 'YEARLY' THEN 'Gói năm' ELSE 'Gói tháng' END,
   1, price_vnd, 'VND', billing_cycle, duration_months, max_active_devices,
-  jsonb_build_object('desktop', true, 'demoSeed', current_setting('emukey.seed_namespace')),
-  1, terms_hash, plan_commitment, now() + interval '7 days', now() - interval '2 days', now() - interval '1 day'
+   jsonb_build_object('desktop', true, 'demoSeed', current_setting('emukey.seed_namespace')),
+    plan_commitment, now() + interval '7 days'
 FROM _demo_orders
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE orders
+SET order_status = 'WAITING_PAYMENT'
+WHERE order_number LIKE 'DEMO-%' AND order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE';
+
+UPDATE orders
+SET order_status = 'PAYMENT_ACCEPTED'
+WHERE order_number LIKE 'DEMO-%' AND order_status = 'WAITING_PAYMENT';
 
 CREATE TEMP TABLE _demo_attempts ON COMMIT DROP AS
 SELECT
@@ -307,8 +313,8 @@ INSERT INTO license_devices (
 )
 SELECT
   id, license_id,
-  'demo-device-' || substr(md5(id::text), 1, 20),
-  'demo-public-key-' || encode(digest(id::text, 'sha256'), 'hex'),
+  encode(digest(current_setting('emukey.seed_namespace') || ':device-ref:' || id::text, 'sha256'), 'hex'),
+  '0x' || substr(encode(digest(current_setting('emukey.seed_namespace') || ':device-key:' || id::text, 'sha256'), 'hex'), 1, 40),
   'ACTIVE', 1, now() - interval '12 hours'
 FROM _demo_devices
 ON CONFLICT (id) DO NOTHING;
@@ -434,7 +440,7 @@ INSERT INTO messages (
 )
 SELECT
   md5(current_setting('emukey.seed_namespace') || ':message:' || i)::uuid,
-  id, customer_user_id, 'BUYER',
+  id, customer_user_id, 'CUSTOMER',
   md5(current_setting('emukey.seed_namespace') || ':client-message:' || i)::uuid,
   1, 'Tôi cần hướng dẫn kích hoạt sản phẩm minh họa số ' || i || '.',
   jsonb_build_array(jsonb_build_object('seedNamespace', current_setting('emukey.seed_namespace')))
@@ -497,7 +503,7 @@ FROM (
   UNION ALL SELECT 'payment_attempts', count(*) FROM payment_attempts WHERE provider_reference LIKE 'DEMO-PAY-%'
   UNION ALL SELECT 'payment_transactions', count(*) FROM payment_transactions WHERE provider_event_id LIKE 'DEMO-EVENT-%'
   UNION ALL SELECT 'licenses', count(*) FROM licenses WHERE public_license_id LIKE 'EMU-DEMO-%'
-  UNION ALL SELECT 'license_devices', count(*) FROM license_devices WHERE device_ref LIKE 'demo-device-%'
+  UNION ALL SELECT 'license_devices', count(*) FROM license_devices d JOIN licenses l ON l.id=d.license_id WHERE l.public_license_id LIKE 'EMU-DEMO-%'
   UNION ALL SELECT 'chain_commands', count(*) FROM chain_commands WHERE payload ->> 'seedNamespace' = current_setting('emukey.seed_namespace')
   UNION ALL SELECT 'chain_events', count(*) FROM chain_events WHERE payload ->> 'seedNamespace' = current_setting('emukey.seed_namespace')
   UNION ALL SELECT 'knowledge_documents', count(*) FROM knowledge_documents WHERE logical_document_key LIKE 'demo-guide-%'

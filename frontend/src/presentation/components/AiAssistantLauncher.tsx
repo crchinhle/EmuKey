@@ -11,12 +11,12 @@ export function AiAssistantLauncher() {
     <Popover
       content={
         <section
-          aria-label="Trợ lý AI EmuKey"
+          aria-label="Trợ lý AI Emukey"
           className="ai-assistant-panel"
           id={assistantPanelId}
         >
           <Tag color="purple">AI</Tag>
-          <h2>Trợ lý AI EmuKey</h2>
+          <h2>Trợ lý AI Emukey</h2>
           <p>Hỏi về số thiết bị, thời hạn và quyền sử dụng phù hợp.</p>
           <p className="inline-message" role="status">
             Gợi ý mẫu: Gói Business phù hợp với nhóm từ 11–50 thiết bị.

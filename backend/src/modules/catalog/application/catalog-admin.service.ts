@@ -4,7 +4,6 @@ import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { CreatePlanDto, CreateProductDto, UpdatePlanDto, UpdateProductDto } from '../presentation/catalog.dto.js';
 import { CatalogAdminRepository, type PlanInput, type ProductInput } from '../infrastructure/catalog-admin.repository.js';
 import { canonicalizeEntitlements } from '../../../platform/crypto/license-crypto.js';
-import { TermsLoader } from '../../../platform/terms/terms-loader.js';
 
 function publicProduct(value: Awaited<ReturnType<CatalogAdminRepository['findProduct']>>) {
   if (!value) throw new NotFoundException({ code: 'PRODUCT_NOT_FOUND', message: 'Product not found.' });
@@ -37,8 +36,6 @@ function publicPlan(value: Awaited<ReturnType<CatalogAdminRepository['findPlan']
     productId: value.productId,
     publishedAt: value.publishedAt,
     status: value.status,
-    termsHash: value.termsHash,
-    termsVersion: value.termsVersion,
     updatedAt: value.updatedAt,
     version: value.version,
   };
@@ -73,8 +70,6 @@ function validatePlanValues(input: { billingCycle: string; durationMonths: numbe
 export class CatalogAdminService {
   constructor(
     private readonly repository: CatalogAdminRepository,
-    private readonly terms = new TermsLoader(),
-    private readonly termsVersion = 1,
   ) {}
 
   async listProducts(actor: AuthPrincipal) { return (await this.repository.listProducts(actor)).map((product) => publicProduct(product)); }
@@ -112,8 +107,7 @@ export class CatalogAdminService {
     validatePlanValues(dto);
     const input: Required<PlanInput> = { billingCycle: dto.billingCycle, code: dto.code.trim(), durationMonths: dto.durationMonths, entitlements: validateEntitlements(dto.entitlements), maxActiveDevices: dto.maxActiveDevices, name: dto.name.trim(), priceVnd: dto.priceVnd, productId: dto.productId };
     if (!input.code || !input.name) throw new BadRequestException({ code: 'INVALID_PLAN', message: 'Plan code and name are required.' });
-    const terms = await this.terms.load(this.termsVersion);
-    try { return publicPlan(await this.repository.createPlan(actor, input, terms)); } catch (error) { this.translateUnique(error, 'PLAN_CODE_CONFLICT'); this.translate(error, 'PRODUCT_NOT_FOUND'); throw error; }
+    try { return publicPlan(await this.repository.createPlan(actor, input)); } catch (error) { this.translateUnique(error, 'PLAN_CODE_CONFLICT'); this.translate(error, 'PRODUCT_NOT_FOUND'); throw error; }
   }
 
   async updatePlan(actor: AuthPrincipal, id: string, dto: UpdatePlanDto) {

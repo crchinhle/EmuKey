@@ -141,9 +141,8 @@ describe('provider-scoped catalog lifecycle', () => {
     await service.publishProduct(providerA, product.id);
     const published = await service.publishPlan(providerA, first.id);
 
-    expect(published).toMatchObject({ status: 'PUBLISHED', termsVersion: 1, version: 1 });
+    expect(published).toMatchObject({ status: 'PUBLISHED', version: 1 });
     expect(published.planCommitment).toBe(updatedDraft.planCommitment);
-    expect(published.termsHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(published.planCommitment).toMatch(/^0x[0-9a-f]{64}$/);
     await expect(
       service.updatePlan(providerA, first.id, { priceVnd: 1 }),

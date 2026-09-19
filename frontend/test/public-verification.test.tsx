@@ -11,7 +11,7 @@ describe('public verification', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Xác minh' }));
     expect(await screen.findByText('Đã tìm thấy License')).toBeTruthy();
     expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
-    expect(await screen.findByText('EmuKey Software')).toBeTruthy();
+    expect(await screen.findByText('Emukey Software')).toBeTruthy();
     expect(screen.queryByText('Công ty TNHH Minh An')).toBeNull();
   });
 

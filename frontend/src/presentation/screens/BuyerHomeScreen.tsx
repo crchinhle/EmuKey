@@ -2,10 +2,7 @@ import { Button } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
 import { useLicenses } from '../../application/licenses/licenseQueries';
-import {
-  buyerMetrics,
-  orders,
-} from '../../infrastructure/workspace/mockWorkspace';
+import { useOrders } from '../../application/orders/orderQueries';
 import {
   MetricCard,
   PageHeader,
@@ -16,7 +13,9 @@ import {
 export function BuyerHomeScreen() {
   const navigate = useNavigate();
   const licenseQuery = useLicenses();
+  const ordersQuery = useOrders();
   const licenses = licenseQuery.data ?? [];
+  const orders = ordersQuery.data ?? [];
 
   return (
     <div className="workspace-screen">
@@ -29,9 +28,9 @@ export function BuyerHomeScreen() {
         className="metric-grid metric-grid--three"
         aria-label="Chỉ số tài khoản"
       >
-        {buyerMetrics.map((metric) => (
-          <MetricCard key={metric.label} metric={metric} />
-        ))}
+        <MetricCard metric={{ label: 'License', value: String(licenses.length), helper: 'Dữ liệu tài khoản thật', tone: 'success' }} />
+        <MetricCard metric={{ label: 'Đơn hàng', value: String(orders.length), helper: 'Dữ liệu tài khoản thật', tone: 'commerce' }} />
+        <MetricCard metric={{ label: 'Trạng thái', value: licenseQuery.isError || ordersQuery.isError ? 'Lỗi' : 'Sẵn sàng', helper: 'Không hiển thị số liệu giả', tone: licenseQuery.isError || ordersQuery.isError ? 'error' : 'info' }} />
       </section>
       <div className="workspace-two-column">
         <div>
@@ -74,9 +73,9 @@ export function BuyerHomeScreen() {
                   key={order.id}
                   onClick={() => void navigate('/buyer/orders')}
                 >
-                  <strong>{order.id}</strong>
-                  <span>{order.product}</span>
-                  <span>{formatMoney(order.total)}</span>
+                  <strong>{order.orderNumber}</strong>
+                  <span>{order.productNameSnapshot}</span>
+                  <span>{formatMoney(order.priceVndSnapshot)}</span>
                 </button>
               ))}
             </div>
@@ -91,10 +90,10 @@ export function BuyerHomeScreen() {
                 void navigate('/buyer/orders/ORD-2026-0218/payment')
               }
             >
-              Thanh toán đơn ORD-2026-0218<small>Mở chi tiết để tiếp tục</small>
+              {orders.find((order) => order.orderStatus === 'WAITING_PAYMENT') ? 'Tiếp tục thanh toán đơn đang chờ' : 'Không có thanh toán cần xử lý'}<small>Dữ liệu từ API đơn hàng</small>
             </button>
             <button className="text-action">
-              Xác nhận thiết bị mới<small>Mô phỏng hành động</small>
+              Quản lý thiết bị<small>Mở trung tâm License</small>
             </button>
           </section>
           <section className="workspace-card section-card support-callout">

@@ -63,9 +63,11 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./backend/.env
+    restart: unless-stopped
     environment: &backend-environment
       PORT: 3000
       REDIS_URL: redis://redis:6379
+      EVM_RPC_FALLBACK_HTTP_URL: ${EVM_RPC_FALLBACK_HTTP_URL:-https://ethereum-sepolia-rpc.publicnode.com}
     depends_on:
       redis:
         condition: service_healthy
@@ -90,6 +92,7 @@ services:
     command: ["node", "dist/entrypoints/worker/main.js"]
     env_file:
       - ./backend/.env
+    restart: unless-stopped
     environment: *backend-environment
     depends_on:
       redis:

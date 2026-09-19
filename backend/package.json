@@ -25,6 +25,13 @@
     "build": "tsc -p tsconfig.build.json",
     "contracts:verify": "corepack pnpm --dir contracts build && corepack pnpm --dir contracts test && corepack pnpm --dir contracts abi:export",
     "delivery:check": "node scripts/validate-delivery.mjs"
+    ,"test:external": "node --env-file-if-exists=.env scripts/verify-external.mjs"
+    ,"test:external:sepay": "node --env-file-if-exists=.env scripts/verify-external.mjs --provider=SEPAY"
+    ,"test:external:brevo": "node --env-file-if-exists=.env scripts/verify-external.mjs --provider=BREVO"
+    ,"test:external:gemini": "node --env-file-if-exists=.env scripts/verify-external.mjs --provider=GEMINI"
+    ,"test:external:fcm": "node --env-file-if-exists=.env scripts/verify-external.mjs --provider=FCM"
+    ,"test:external:cloudinary": "node --env-file-if-exists=.env scripts/verify-external.mjs --provider=CLOUDINARY"
+    ,"test:external:sepolia": "node --env-file-if-exists=.env scripts/verify-external.mjs --provider=SEPOLIA"
   },
   "dependencies": {
     "@getbrevo/brevo": "6.0.3",
@@ -50,10 +57,12 @@
     "ioredis": "5.11.1",
     "jose": "6.2.10",
     "nestjs-pino": "5.1.0",
+    "pdf-parse": "2.4.5",
     "pg": "8.23.0",
     "pino": "10.3.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
+    "sepay-pg-node": "1.0.0",
     "socket.io": "4.8.3",
     "viem": "2.56.3"
   },

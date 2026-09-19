@@ -7,13 +7,11 @@ interface BrandProps {
 export function Brand({ inverted = false }: BrandProps) {
   return (
     <Link
-      aria-label="EmuKey - Trang sản phẩm"
-      className={
-        inverted ? 'brand brand--script brand--inverted' : 'brand brand--script'
-      }
+      aria-label="Emukey - Trang sản phẩm"
+      className={inverted ? 'brand brand--inverted' : 'brand'}
       to="/products"
     >
-      EmuKey
+      <span className="brand-wordmark">Emukey</span>
     </Link>
   );
 }

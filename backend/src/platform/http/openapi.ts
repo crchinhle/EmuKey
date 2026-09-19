@@ -4,8 +4,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ApiErrorEnvelopeDto } from './api-error.dto.js';
 
 const OPENAPI_CONFIG = new DocumentBuilder()
-  .setTitle('EmuKey API')
-  .setDescription('Versioned API for the EmuKey license platform')
+  .setTitle('Emukey API')
+  .setDescription('Versioned API for the Emukey license platform')
   .setVersion('1.0.0')
   .addBearerAuth()
   .build();

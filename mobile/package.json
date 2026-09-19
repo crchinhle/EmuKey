@@ -8,6 +8,7 @@
   "type": "module",
   "scripts": {
     "build": "expo export --platform android --output-dir dist",
+    "e2e:maestro": "maestro test e2e/phase6-license-flow.yaml",
     "lint": "eslint .",
     "openapi:check": "node scripts/generate-openapi.mjs --check",
     "openapi:generate": "node scripts/generate-openapi.mjs",
@@ -16,17 +17,23 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@expo-google-fonts/great-vibes": "0.4.1",
+    "@noble/curves": "1.9.1",
+    "@noble/hashes": "1.8.0",
     "@react-navigation/native": "7.3.18",
     "@react-navigation/native-stack": "7.18.10",
-    "expo": "~57.0.22",
+    "expo": "~57.0.23",
+    "expo-crypto": "~57.0.3",
     "expo-device": "~57.0.2",
-    "expo-notifications": "~57.0.18",
+    "expo-font": "~57.0.4",
+    "expo-notifications": "~57.0.19",
     "expo-secure-store": "~57.0.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "5.7.0",
-    "react-native-screens": "4.26.0"
+    "react-native-screens": "4.26.0",
+    "react-native-webview": "13.16.1"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

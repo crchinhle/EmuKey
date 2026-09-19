@@ -21,7 +21,7 @@ export class CreateProductDto {
   @Length(1, 255)
   code!: string;
 
-  @ApiProperty({ example: 'EmuKey Desktop' })
+  @ApiProperty({ example: 'Emukey Desktop' })
   @IsString()
   @Length(1, 255)
   name!: string;
@@ -38,7 +38,7 @@ export class CreateProductDto {
 }
 
 export class UpdateProductDto {
-  @ApiPropertyOptional({ example: 'EmuKey Desktop' })
+  @ApiPropertyOptional({ example: 'Emukey Desktop' })
   @IsOptional()
   @IsString()
   @Length(1, 255)
@@ -170,8 +170,6 @@ export class AdminPlanDto {
   publishedAt!: string | null;
   @ApiProperty({ enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] })
   status!: 'ARCHIVED' | 'DRAFT' | 'PUBLISHED';
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' }) termsHash!: string;
-  @ApiProperty() termsVersion!: number;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
   @ApiProperty() version!: number;
 }
