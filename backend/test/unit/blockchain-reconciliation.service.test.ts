@@ -32,6 +32,7 @@ function fixture() {
       .mockResolvedValue(null),
   };
   const indexer = {
+    canonicalTime: vi.fn().mockResolvedValue(new Date('2026-09-17T00:00:00.000Z')),
     poll: vi.fn().mockResolvedValueOnce(2).mockResolvedValue(null),
   };
   const projections = {
@@ -90,6 +91,9 @@ describe('BlockchainReconciliationService', () => {
 
     expect(setup.indexer.poll).toHaveBeenCalledTimes(2);
     expect(setup.projections.reconcileCanonicalProjections).toHaveBeenCalled();
+    expect(setup.projections.deriveExpiredFromCanonicalChain).toHaveBeenCalledWith(
+      new Date('2026-09-17T00:00:00.000Z'),
+    );
     expect(setup.audit.write).toHaveBeenCalledWith(
       setup.client,
       expect.objectContaining({

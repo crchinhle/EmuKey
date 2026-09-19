@@ -9,6 +9,8 @@ import {
   useIssueEntitlement,
   useRefreshEntitlement,
   useRevokeDevice,
+  useRemoteRevokeDevice,
+  useRecoverActivationKey,
   useRotateActivationKey,
   useLicenses,
   usePhase6Command,
@@ -30,6 +32,8 @@ export function BuyerLicenseHubScreen() {
   const challenge = useActivationChallenge();
   const activation = useActivateDevice();
   const revoke = useRevokeDevice();
+  const remoteRevoke = useRemoteRevokeDevice();
+  const recovery = useRecoverActivationKey();
   const rotate = useRotateActivationKey();
   const entitlement = useIssueEntitlement();
   const entitlementRefresh = useRefreshEntitlement();
@@ -42,9 +46,13 @@ export function BuyerLicenseHubScreen() {
   const [devicePublicKey, setDevicePublicKey] = useState('');
   const [deviceProof, setDeviceProof] = useState('');
   const [deviceChallenge, setDeviceChallenge] = useState('');
+  const [entitlementChallenge, setEntitlementChallenge] = useState('');
+  const [entitlementChallengePurpose, setEntitlementChallengePurpose] = useState<'ISSUE_ENTITLEMENT' | 'REFRESH_ENTITLEMENT' | null>(null);
   const [revokeChallenge, setRevokeChallenge] = useState('');
   const [revokeProof, setRevokeProof] = useState('');
   const [actionToken, setActionToken] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [remoteDeviceId, setRemoteDeviceId] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
   const [entitlementToken, setEntitlementToken] = useState('');
   const [activeCommand, setActiveCommand] = useState<{
@@ -106,6 +114,8 @@ export function BuyerLicenseHubScreen() {
           setActivationKey(null);
           setActivationKeyForRotation('');
           setDeviceChallenge('');
+          setEntitlementChallenge('');
+          setEntitlementChallengePurpose(null);
           setDeviceProof('');
           setRevokeChallenge('');
            setRevokeProof('');
@@ -113,7 +123,9 @@ export function BuyerLicenseHubScreen() {
           retrieval.reset();
           challenge.reset();
           activation.reset();
-          revoke.reset();
+           revoke.reset();
+           remoteRevoke.reset();
+           recovery.reset();
           rotate.reset();
           entitlement.reset();
           entitlementRefresh.reset();
@@ -212,6 +224,22 @@ export function BuyerLicenseHubScreen() {
               message="Key không còn khả dụng hoặc đã được nhận trước đó."
             />
           ) : null}
+          <Input.Password
+            aria-label="Mật khẩu xác thực lại Phase 6"
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            placeholder="Mật khẩu hiện tại cho recovery hoặc remote revoke"
+            value={currentPassword}
+          />
+          <Button
+            disabled={!actionToken || !currentPassword || selected.status !== 'ACTIVE'}
+            loading={recovery.isPending}
+            onClick={() => recovery.mutate(
+              { input: { actionToken, currentPassword }, licenseId: selected.id },
+              { onSuccess: (command) => setActiveCommand({ commandId: command.commandId, commandType: 'ROTATE_KEY', licenseId: command.licenseId }) },
+            )}
+          >
+            Khôi phục activation key đã mất
+          </Button>
           <div className="workspace-card phase6-device-card">
             <h3>Kích hoạt thiết bị</h3>
             <div aria-label="Danh sách thiết bị">
@@ -230,12 +258,30 @@ export function BuyerLicenseHubScreen() {
                       loading={challenge.isPending}
                       onClick={() => {
                         challenge.mutate(
-                          { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id },
+                          { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id, purpose: 'SELF_REVOKE_DEVICE' },
                           { onSuccess: (value) => setRevokeChallenge(value.challenge) },
                         );
                       }}
                     >
                       Tạo challenge thu hồi
+                    </Button>
+                  ) : null}
+                  {device.status === 'ACTIVE' ? (
+                    <Button onClick={() => setRemoteDeviceId(device.id)}>
+                      Báo mất thiết bị và thu hồi từ xa
+                    </Button>
+                  ) : null}
+                  {remoteDeviceId === device.id ? (
+                    <Button
+                      disabled={!actionToken || !currentPassword}
+                      loading={remoteRevoke.isPending}
+                      onClick={() => remoteRevoke.mutate({
+                        deviceId: device.id,
+                        input: { actionToken, currentPassword },
+                        licenseId: selected.id,
+                      }, { onSuccess: (command) => setActiveCommand({ commandId: command.commandId, commandType: 'REVOKE_DEVICE', licenseId: command.licenseId }) })}
+                    >
+                      Xác nhận thu hồi từ xa
                     </Button>
                   ) : null}
                   {device.status === 'ACTIVE' && revokeChallenge ? (
@@ -265,19 +311,19 @@ export function BuyerLicenseHubScreen() {
                     <>
                     <Button
                       loading={entitlement.isPending}
-                      disabled={!deviceChallenge || !deviceProof}
+                      disabled={!entitlementChallenge || entitlementChallengePurpose !== 'ISSUE_ENTITLEMENT' || !deviceProof}
                       onClick={() => entitlement.mutate(
-                        { challenge: deviceChallenge, deviceId: device.id, licenseId: selected.id, proof: deviceProof },
+                        { challenge: entitlementChallenge, deviceId: device.id, licenseId: selected.id, proof: deviceProof },
                         { onSuccess: (value) => setEntitlementToken(value.token) },
                       )}
                     >
                       Cấp entitlement
                     </Button>
                     <Button
-                      disabled={!deviceChallenge || !deviceProof}
+                      disabled={!entitlementChallenge || entitlementChallengePurpose !== 'REFRESH_ENTITLEMENT' || !deviceProof}
                       loading={entitlementRefresh.isPending}
                       onClick={() => entitlementRefresh.mutate(
-                        { challenge: deviceChallenge, deviceId: device.id, licenseId: selected.id, proof: deviceProof },
+                        { challenge: entitlementChallenge, deviceId: device.id, licenseId: selected.id, proof: deviceProof },
                         { onSuccess: (value) => setEntitlementToken(value.token) },
                       )}
                     >
@@ -285,17 +331,30 @@ export function BuyerLicenseHubScreen() {
                     </Button>
                     <Button
                       loading={challenge.isPending}
-                      onClick={() => challenge.mutate({ deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id }, { onSuccess: (value) => setDeviceChallenge(value.challenge) })}
+                      onClick={() => challenge.mutate(
+                        { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id, purpose: 'ISSUE_ENTITLEMENT' },
+                        { onSuccess: (value) => { setEntitlementChallenge(value.challenge); setEntitlementChallengePurpose('ISSUE_ENTITLEMENT'); } },
+                      )}
                     >
-                      Tạo challenge entitlement
+                      Challenge cấp entitlement
                     </Button>
+                    <Button
+                      loading={challenge.isPending}
+                      onClick={() => challenge.mutate(
+                        { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id, purpose: 'REFRESH_ENTITLEMENT' },
+                        { onSuccess: (value) => { setEntitlementChallenge(value.challenge); setEntitlementChallengePurpose('REFRESH_ENTITLEMENT'); } },
+                      )}
+                    >
+                      Challenge làm mới entitlement
+                    </Button>
+                    {entitlementChallenge ? <code>{entitlementChallenge}</code> : null}
                     </>
                   ) : null}
                 </div>
               ))}
             </div>
             {revokeChallenge ? <Input aria-label="Email action token thu hồi" onChange={(event) => setActionToken(event.target.value)} placeholder="Token xác nhận đã nhận qua email" value={actionToken} /> : null}
-            {revokeChallenge ? <Button onClick={() => actionVerification.mutate({ action: 'REVOKE_DEVICE', licenseId: selected.id })}>Gửi email xác nhận thu hồi</Button> : null}
+            {revokeChallenge ? <Button onClick={() => { const deviceId = devices.data?.find((device) => device.deviceRef === deviceRef)?.id; if (deviceId) actionVerification.mutate({ action: 'REVOKE_DEVICE', deviceId, licenseId: selected.id }); }}>Gửi email xác nhận thu hồi</Button> : null}
             <Input
               aria-label="Mã tham chiếu thiết bị"
               onChange={(event) => setDeviceRef(event.target.value)}
@@ -313,7 +372,7 @@ export function BuyerLicenseHubScreen() {
               loading={challenge.isPending}
               onClick={() =>
                 challenge.mutate(
-                  { deviceRef, licenseId: selected.id },
+                  { deviceRef, licenseId: selected.id, purpose: 'ACTIVATE_DEVICE' },
                   { onSuccess: (value) => setDeviceChallenge(value.challenge) },
                 )
               }
@@ -419,8 +478,10 @@ export function BuyerLicenseHubScreen() {
             >
               Đổi activation key
             </Button>
-            <Button onClick={() => actionVerification.mutate({ action: 'ROTATE_KEY', licenseId: selected.id })}>Gửi email xác nhận đổi key</Button>
-            {revokeChallenge ? <Button onClick={() => actionVerification.mutate({ action: 'REVOKE_DEVICE', licenseId: selected.id })}>Gửi email xác nhận thu hồi</Button> : null}
+             <Button onClick={() => actionVerification.mutate({ action: 'ROTATE_KEY', licenseId: selected.id })}>Gửi email xác nhận đổi key</Button>
+             <Button onClick={() => actionVerification.mutate({ action: 'KEY_RECOVERY', licenseId: selected.id })}>Gửi email xác nhận khôi phục key</Button>
+             {revokeChallenge ? <Button onClick={() => { const deviceId = devices.data?.find((device) => device.deviceRef === deviceRef)?.id; if (deviceId) actionVerification.mutate({ action: 'REVOKE_DEVICE', deviceId, licenseId: selected.id }); }}>Gửi email xác nhận thu hồi</Button> : null}
+             {remoteDeviceId ? <Button onClick={() => actionVerification.mutate({ action: 'REMOTE_REVOKE_DEVICE', deviceId: remoteDeviceId, licenseId: selected.id })}>Gửi email xác nhận thu hồi từ xa</Button> : null}
             {actionVerification.isSuccess ? <Alert type="success" message="Đã gửi email xác nhận thao tác. Token có hiệu lực trong 15 phút." /> : null}
             {actionVerification.error ? <Alert type="warning" message="Không thể gửi email xác nhận thao tác." /> : null}
             {rotate.data ? <Alert type="info" message={`Rotate command: ${rotate.data.status}`} /> : null}

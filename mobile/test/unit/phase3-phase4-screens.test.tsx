@@ -7,7 +7,7 @@ import {
   ProfileScreen,
 } from '../../src/presentation/EmuKeyMobileApp';
 import {
-  acceptOrderTerms,
+  acceptServiceTerms,
   createOrder,
   createCheckout,
   getOrder,
@@ -19,7 +19,7 @@ import {
 } from '../../src/infrastructure/api/client';
 
 jest.mock('../../src/infrastructure/api/client', () => ({
-  acceptOrderTerms: jest.fn(),
+  acceptServiceTerms: jest.fn(),
   createOrder: jest.fn(),
   createCheckout: jest.fn(),
   getOrder: jest.fn(),
@@ -36,7 +36,7 @@ const createOrderMock = createOrder as jest.MockedFunction<typeof createOrder>;
 const createCheckoutMock = createCheckout as jest.MockedFunction<typeof createCheckout>;
 const getOrderMock = getOrder as jest.MockedFunction<typeof getOrder>;
 const getOrderTermsMock = getOrderTerms as jest.MockedFunction<typeof getOrderTerms>;
-const acceptOrderTermsMock = acceptOrderTerms as jest.MockedFunction<typeof acceptOrderTerms>;
+const acceptServiceTermsMock = acceptServiceTerms as jest.MockedFunction<typeof acceptServiceTerms>;
 
 const order: MobileOrderDetail = {
   billingCycleSnapshot: 'YEARLY',
@@ -48,7 +48,7 @@ const order: MobileOrderDetail = {
   id: 'order-1',
   maxActiveDevicesSnapshot: 2,
   orderNumber: 'ORD-MOBILE-1',
-  orderStatus: 'WAITING_TERMS_ACCEPTANCE',
+  orderStatus: 'WAITING_SERVICE_TERMS_ACCEPTANCE',
   orderType: 'NEW_PURCHASE',
   paymentDueAt: '2026-09-16T00:00:00.000Z',
   planCommitmentSnapshot: `0x${'11'.repeat(32)}`,
@@ -60,8 +60,6 @@ const order: MobileOrderDetail = {
   productNameSnapshot: 'Emukey Desktop',
   providerNameSnapshot: 'Emukey',
   providerUserId: 'provider-1',
-  termsHashSnapshot: `0x${'22'.repeat(32)}`,
-  termsVersionSnapshot: 1,
 };
 
 describe('mobile Phase 3 and Phase 4 screens', () => {
@@ -108,14 +106,14 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
 
   it('creates a server order before showing the Terms acceptance step', async () => {
     createOrderMock.mockResolvedValue(order);
-    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản bản quyền', hash: order.termsHashSnapshot, version: 1 });
-    acceptOrderTermsMock.mockResolvedValue({ ...order, orderStatus: 'WAITING_PAYMENT' });
+    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản dịch vụ' });
+    acceptServiceTermsMock.mockResolvedValue({ ...order, orderStatus: 'WAITING_PAYMENT' });
     const navigation = { replace: jest.fn() };
     const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
     await render(<CheckoutScreen navigation={navigation as never} route={route as never} />);
 
     await act(async () => fireEvent.press(screen.getByText('Tạo đơn hàng')));
-    expect(await screen.findByText('Điều khoản bản quyền')).toBeOnTheScreen();
+    expect(await screen.findByText('Điều khoản dịch vụ')).toBeOnTheScreen();
     expect(createOrderMock).toHaveBeenCalledWith({ planId: 'plan-1' });
   });
 

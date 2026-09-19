@@ -4,6 +4,7 @@ import { Pool, type PoolClient } from 'pg';
 import { keccak256, stringToHex, type Hex } from 'viem';
 
 import { AuditWriter } from '../../../platform/audit/audit-writer.js';
+import { NotificationRepository } from '../../operations/infrastructure/notification.repository.js';
 import { canonicalizeEntitlements } from '../../../platform/crypto/license-crypto.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { VerifiedPaymentEvent } from '../application/ports/payment-gateway.port.js';
@@ -33,9 +34,7 @@ export interface OrderRecord {
   providerUserId: string;
   publicLicenseId: string | null;
   targetLicenseId: string | null;
-  termsAcceptedAt: Date | null;
-  termsHashSnapshot: Hex;
-  termsVersionSnapshot: number;
+  serviceTermsAcceptedAt: Date | null;
 }
 
 export interface CheckoutPreparation {
@@ -153,9 +152,7 @@ function mapOrder(row: Record<string, unknown>): OrderRecord {
       typeof row.public_license_id === 'string' ? row.public_license_id : null,
     targetLicenseId:
       typeof row.target_license_id === 'string' ? row.target_license_id : null,
-    termsAcceptedAt: optionalDate(row.terms_accepted_at),
-    termsHashSnapshot: hex(row.terms_hash_snapshot),
-    termsVersionSnapshot: Number(row.terms_version_snapshot),
+    serviceTermsAcceptedAt: optionalDate(row.service_terms_accepted_at),
   };
 }
 
@@ -181,6 +178,7 @@ export class CommerceRepository {
     private readonly pool: Pool,
     private readonly audit = new AuditWriter(),
     private readonly ipnDeliveryGraceSeconds = 86_400,
+    private readonly notifications = new NotificationRepository(pool),
   ) {
     if (
       !Number.isSafeInteger(ipnDeliveryGraceSeconds) ||
@@ -262,15 +260,14 @@ export class CommerceRepository {
            order_type, provider_name_snapshot, product_name_snapshot,
            plan_name_snapshot, plan_version_snapshot, price_vnd_snapshot,
            billing_cycle_snapshot, duration_months_snapshot,
-           max_active_devices_snapshot, entitlements_snapshot,
-           terms_version_snapshot, terms_hash_snapshot,
-           plan_commitment_snapshot, payment_due_at, ipn_accept_until)
+            max_active_devices_snapshot, entitlements_snapshot,
+            plan_commitment_snapshot, payment_due_at, ipn_accept_until)
          VALUES
           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-           $13, $14, $15, $16, $17, $18, $19, decode($20, 'hex'),
-           decode($21, 'hex'), statement_timestamp() + interval '30 minutes',
-           statement_timestamp() + interval '30 minutes' +
-             ($22::integer * interval '1 second'))
+            $13, $14, $15, $16, $17, $18, decode($19, 'hex'),
+            statement_timestamp() + interval '30 minutes',
+            statement_timestamp() + interval '30 minutes' +
+              ($20::integer * interval '1 second'))
          RETURNING *`,
         [
           id,
@@ -290,10 +287,8 @@ export class CommerceRepository {
           plan.billing_cycle,
           plan.duration_months,
           plan.max_active_devices,
-          JSON.stringify(plan.entitlements),
-          plan.terms_version,
-          hex(plan.terms_hash).slice(2),
-          hex(plan.plan_commitment).slice(2),
+            JSON.stringify(plan.entitlements),
+            hex(plan.plan_commitment).slice(2),
           this.ipnDeliveryGraceSeconds,
         ],
       );
@@ -334,12 +329,7 @@ export class CommerceRepository {
     return result.rows.map(mapOrder);
   }
 
-  async acceptTerms(
-    customerUserId: string,
-    id: string,
-    version: number,
-    hash: Hex,
-  ): Promise<OrderRecord> {
+  async acceptServiceTerms(customerUserId: string, id: string): Promise<OrderRecord> {
     return this.withTransaction(async (client) => {
       const current = await client.query<Record<string, unknown>>(
         'SELECT * FROM orders WHERE id = $1 AND customer_user_id = $2 FOR UPDATE',
@@ -348,15 +338,13 @@ export class CommerceRepository {
       if (!current.rows[0]) throw new Error('ORDER_NOT_FOUND');
       const order = mapOrder(current.rows[0]);
       if (
-        order.orderStatus !== 'WAITING_TERMS_ACCEPTANCE' ||
-        order.termsVersionSnapshot !== version ||
-        order.termsHashSnapshot.toLowerCase() !== hash.toLowerCase()
+        order.orderStatus !== 'WAITING_SERVICE_TERMS_ACCEPTANCE'
       ) {
         throw new Error('ORDER_TERMS_MISMATCH');
       }
       const result = await client.query<Record<string, unknown>>(
         `UPDATE orders
-         SET order_status = 'WAITING_PAYMENT', terms_accepted_at = now(),
+         SET order_status = 'WAITING_PAYMENT', service_terms_accepted_at = statement_timestamp(),
              updated_at = now()
          WHERE id = $1
          RETURNING *`,
@@ -367,7 +355,7 @@ export class CommerceRepository {
         action: 'ORDER_TERMS_ACCEPTED',
         actorRole: 'CUSTOMER',
         actorUserId: customerUserId,
-        metadata: { termsHash: hash, termsVersion: version },
+        metadata: { accepted: true },
         targetId: id,
         targetType: 'ORDER',
       });
@@ -383,7 +371,7 @@ export class CommerceRepository {
       );
       if (!current.rows[0]) throw new Error('ORDER_NOT_FOUND');
       if (
-        !['WAITING_TERMS_ACCEPTANCE', 'WAITING_PAYMENT'].includes(
+        !['WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT'].includes(
           String(current.rows[0].order_status),
         )
       ) {
@@ -603,8 +591,8 @@ export class CommerceRepository {
         ['PENDING', 'EXPIRED', 'SUPERSEDED'].includes(
           String(row.payment_attempt_status),
         ) &&
-        row.terms_accepted_at !== null &&
-        occurredAt >= date(row.terms_accepted_at).getTime() &&
+        row.service_terms_accepted_at !== null &&
+        occurredAt >= date(row.service_terms_accepted_at).getTime() &&
         occurredAt >= date(row.payment_attempt_created_at).getTime() &&
         occurredAt < date(row.payment_attempt_expires_at).getTime() &&
         occurredAt < date(row.payment_due_at).getTime() &&
@@ -808,6 +796,17 @@ export class CommerceRepository {
         metadata: { classification: 'MATCHED', orderType: row.order_type },
         targetId: orderId,
         targetType: 'ORDER',
+      });
+      await this.notifications.enqueueInTransaction(client, {
+        channel: 'IN_APP',
+        content: row.order_type === 'NEW_PURCHASE'
+          ? 'Thanh toán đã được chấp nhận; license đang chờ blockchain finality.'
+          : 'Thanh toán gia hạn đã được chấp nhận; license đang chờ blockchain finality.',
+        data: { commandId: issuance.commandId, licenseId, orderId },
+        eventKey: `payment:${transactionId}:accepted`,
+        title: 'Thanh toán đã được chấp nhận',
+        type: 'PAYMENT_ACCEPTED',
+        userId: String(row.customer_user_id),
       });
       return {
         activationRequired: row.order_type === 'NEW_PURCHASE',

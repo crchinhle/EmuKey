@@ -24,6 +24,8 @@ import {
   Phase6CommandDto,
   Phase6CommandStatusDto,
   RevokeDeviceDto,
+  RemoteRevokeDeviceDto,
+  ActivationKeyRecoveryDto,
   RotateActivationKeyDto,
   LicensingActionVerificationDto,
 } from './licensing.dto.js';
@@ -40,7 +42,7 @@ export class LicensingController {
   @Roles('CUSTOMER')
   @ApiCreatedResponse({ type: DeviceChallengeDto })
   challenge(@CurrentUser() actor: AuthPrincipal, @Body() dto: ActivationChallengeDto) {
-    return this.service.challenge(actor, dto.licenseId, dto.deviceRef, dto.deviceId);
+    return this.service.challenge(actor, dto);
   }
 
   @Post('activations')
@@ -76,6 +78,18 @@ export class LicensingController {
     return this.service.revokeDevice(actor, licenseId, deviceId, dto);
   }
 
+  @Post('licenses/:licenseId/devices/:deviceId/remote-revoke')
+  @Roles('CUSTOMER')
+  @ApiCreatedResponse({ type: Phase6CommandDto })
+  remoteRevokeDevice(
+    @CurrentUser() actor: AuthPrincipal,
+    @Param('licenseId', ParseUUIDPipe) licenseId: string,
+    @Param('deviceId', ParseUUIDPipe) deviceId: string,
+    @Body() dto: RemoteRevokeDeviceDto,
+  ) {
+    return this.service.remoteRevokeDevice(actor, licenseId, deviceId, dto);
+  }
+
   @Post('licenses/:licenseId/activation-key/rotate')
   @Roles('CUSTOMER')
   @ApiCreatedResponse({ type: Phase6CommandDto })
@@ -85,6 +99,17 @@ export class LicensingController {
     @Body() dto: RotateActivationKeyDto,
   ) {
     return this.service.rotate(actor, licenseId, dto);
+  }
+
+  @Post('licenses/:licenseId/activation-key/recover')
+  @Roles('CUSTOMER')
+  @ApiCreatedResponse({ type: Phase6CommandDto })
+  recoverActivationKey(
+    @CurrentUser() actor: AuthPrincipal,
+    @Param('licenseId', ParseUUIDPipe) licenseId: string,
+    @Body() dto: ActivationKeyRecoveryDto,
+  ) {
+    return this.service.recoverActivationKey(actor, licenseId, dto);
   }
 
   @Post('licenses/:licenseId/lifecycle')

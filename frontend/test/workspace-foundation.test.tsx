@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { filterOrders } from '../src/application/workspace/workspaceSelectors';
-import { orders } from '../src/infrastructure/workspace/mockWorkspace';
 import {
   buyerShell,
   RoleShell,
@@ -13,6 +12,7 @@ afterEach(cleanup);
 
 describe('workspace foundation', () => {
   it('filters orders without mutating the mock array', () => {
+    const orders = [{ id: 'ORD-2026-0218', buyerReference: 'buyer', product: 'product', plan: 'plan', devices: 1, total: 1, status: 'awaiting-payment' as const, statusLabel: 'Chờ thanh toán' }];
     const before = [...orders];
 
     expect(

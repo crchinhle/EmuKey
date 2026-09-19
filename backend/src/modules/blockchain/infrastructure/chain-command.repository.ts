@@ -12,7 +12,9 @@ export type ChainCommandStatus =
   | 'SUBMITTED_UNKNOWN'
   | 'CONFIRMED'
   | 'RETRYABLE_FAILED'
-  | 'DEAD_LETTER';
+  | 'DEAD_LETTER'
+  | 'ABANDONED'
+  | 'SUPERSEDED';
 
 export interface ChainCommandRecord {
   attemptCount: number;
@@ -90,6 +92,114 @@ export class ChainCommandRepository {
     });
   }
 
+  async markPending(id: string, workerId: string): Promise<void> {
+    await this.transaction(async (client) => {
+      const result = await client.query(
+        `UPDATE chain_commands
+         SET status='PENDING', next_attempt_at=NULL, locked_by=$2, locked_at=now(),
+             last_error=NULL, updated_at=now()
+         WHERE id=$1 AND status='RETRYABLE_FAILED' AND locked_by=$2
+         RETURNING id`,
+        [id, workerId],
+      );
+      if (result.rows[0]) {
+        await this.audit.write(client, {
+          action: 'CHAIN_COMMAND_REOPENED_FOR_RETRY',
+          targetId: id,
+          targetType: 'CHAIN_COMMAND',
+        });
+      } else {
+        throw new Error('CHAIN_RETRY_CLAIM_LOST');
+      }
+    });
+  }
+
+  async recoverDeadLetter(
+    commandId: string,
+    mode: 'REQUEUE_NO_SUBMISSION' | 'RECONCILE_SAME_RAW' | 'ABANDON_REVERTED' | 'ABANDON_NO_EFFECT',
+    reason: string,
+    evidence?: Record<string, unknown>,
+    actor?: { userId: string; role: string },
+  ): Promise<ChainCommandRecord> {
+    return this.transaction(async (client) => {
+      const locked = await client.query<Record<string, unknown>>(
+        `SELECT * FROM chain_commands WHERE id=$1 FOR UPDATE`,
+        [commandId],
+      );
+      const current = locked.rows[0] ? mapCommand(locked.rows[0]) : null;
+      if (!current) throw new Error('CHAIN_COMMAND_NOT_FOUND');
+      if (current.status !== 'DEAD_LETTER') throw new Error('CHAIN_COMMAND_NOT_DEAD_LETTER');
+      const detail = await client.query<Record<string, unknown>>(
+        `SELECT receipt_status, signed_transaction, transaction_hash, nonce,
+                relayer_address, resolution_evidence_type
+         FROM chain_commands WHERE id=$1`,
+        [commandId],
+      );
+      const row = detail.rows[0]!;
+      const hasRaw = row.signed_transaction !== null || row.transaction_hash !== null;
+      let query: string;
+      let values: unknown[];
+      if (mode === 'REQUEUE_NO_SUBMISSION') {
+        if (hasRaw || row.nonce !== null) throw new Error('DEAD_LETTER_SUBMISSION_EVIDENCE_EXISTS');
+        query = `UPDATE chain_commands
+                 SET status='PENDING', next_attempt_at=NULL, last_error=NULL,
+                     locked_by=NULL, locked_at=NULL, updated_at=now()
+                 WHERE id=$1 AND status='DEAD_LETTER' RETURNING *`;
+        values = [commandId];
+      } else if (mode === 'RECONCILE_SAME_RAW') {
+        if (row.signed_transaction === null || row.transaction_hash === null) {
+          throw new Error('DEAD_LETTER_RAW_EVIDENCE_REQUIRED');
+        }
+        if (row.receipt_status === 'REVERTED') throw new Error('DEAD_LETTER_REVERTED_IS_FINAL');
+        query = `UPDATE chain_commands
+                 SET status='SUBMITTED_UNKNOWN', locked_by=NULL, locked_at=NULL,
+                     last_error='MANUAL_SAME_RAW_RECONCILIATION', updated_at=now()
+                 WHERE id=$1 AND status='DEAD_LETTER' RETURNING *`;
+        values = [commandId];
+      } else if (mode === 'ABANDON_REVERTED') {
+        if (row.receipt_status !== 'REVERTED') throw new Error('DEAD_LETTER_REVERTED_RECEIPT_REQUIRED');
+        query = `UPDATE chain_commands
+                 SET status='ABANDONED', resolution_reason=$2,
+                     resolution_evidence_type='RECEIPT_REVERTED',
+                     resolution_evidence=jsonb_build_object(
+                       'rpcSource', $3::text,
+                       'checkedAt', to_char(statement_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+                     locked_by=NULL, locked_at=NULL, updated_at=now()
+                 WHERE id=$1 AND status='DEAD_LETTER' RETURNING *`;
+        values = [commandId, reason, typeof evidence?.rpcSource === 'string' ? evidence.rpcSource : 'manual-operator'];
+      } else {
+        if (!hasRaw || row.receipt_status !== null) throw new Error('DEAD_LETTER_NO_EFFECT_EVIDENCE_INVALID');
+        const noEffect = evidence ?? {};
+        for (const key of ['rpcSource', 'finalizedBlockNumber', 'finalizedBlockHash', 'observedNonce', 'consumingTransactionHash']) {
+          if (noEffect[key] === undefined) throw new Error('DEAD_LETTER_NO_EFFECT_EVIDENCE_REQUIRED');
+        }
+        if (noEffect.contractStateNoEffect !== true) throw new Error('DEAD_LETTER_NO_EFFECT_PROOF_REQUIRED');
+        query = `UPDATE chain_commands
+                 SET status='ABANDONED', resolution_reason=$2,
+                     resolution_evidence_type='RAW_TX_IRREVOCABLE_NO_EFFECT',
+                     resolution_evidence=$3::jsonb,
+                     locked_by=NULL, locked_at=NULL, updated_at=now()
+                 WHERE id=$1 AND status='DEAD_LETTER' RETURNING *`;
+        values = [
+          commandId,
+          reason,
+          JSON.stringify({ ...noEffect, checkedAt: noEffect.checkedAt ?? new Date().toISOString() }),
+        ];
+      }
+      const updated = await client.query<Record<string, unknown>>(query, values);
+      if (!updated.rows[0]) throw new Error('CHAIN_COMMAND_RECOVERY_CONFLICT');
+      await this.audit.write(client, {
+        action: 'CHAIN_COMMAND_DEAD_LETTER_RECOVERED',
+        ...(actor ? { actorRole: actor.role, actorUserId: actor.userId } : {}),
+        metadata: { mode, evidenceType: mode === 'ABANDON_REVERTED' ? 'RECEIPT_REVERTED' : mode === 'ABANDON_NO_EFFECT' ? 'RAW_TX_IRREVOCABLE_NO_EFFECT' : null },
+        reason,
+        targetId: commandId,
+        targetType: 'CHAIN_COMMAND',
+      });
+      return mapCommand(updated.rows[0]);
+    });
+  }
+
   async claimUnknown(workerId: string): Promise<ChainCommandRecord | null> {
     return this.claimStatus(workerId, 'SUBMITTED_UNKNOWN');
   }
@@ -147,7 +257,7 @@ export class ChainCommandRepository {
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT * FROM chain_commands
         WHERE id = $1 AND license_id = $2 AND command_type IN ('ISSUE_LICENSE', 'ROTATE_KEY')
-         AND status IN ('PENDING', 'RETRYABLE_FAILED')
+          AND status IN ('PENDING', 'RETRYABLE_FAILED', 'DEAD_LETTER')
          AND transaction_hash IS NULL AND signed_transaction IS NULL`,
       [commandId, licenseId],
     );
@@ -165,7 +275,7 @@ export class ChainCommandRepository {
       const locked = await client.query<Record<string, unknown>>(
         `SELECT * FROM chain_commands
           WHERE id = $1 AND license_id = $2 AND command_type IN ('ISSUE_LICENSE', 'ROTATE_KEY')
-           AND status IN ('PENDING', 'RETRYABLE_FAILED')
+           AND status IN ('PENDING', 'RETRYABLE_FAILED', 'DEAD_LETTER')
            AND transaction_hash IS NULL AND signed_transaction IS NULL
          FOR UPDATE`,
         [command.commandId, command.licenseId],

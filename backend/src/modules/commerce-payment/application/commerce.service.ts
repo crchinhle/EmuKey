@@ -6,7 +6,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { keccak256, stringToHex, type Hex } from 'viem';
@@ -18,12 +17,9 @@ import {
   canonicalizeEntitlements,
 } from '../../../platform/crypto/license-crypto.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
-import type {
-  AcceptTermsDto,
-  CreateOrderDto,
-} from '../presentation/commerce.dto.js';
+import type { AcceptServiceTermsDto, CreateOrderDto } from '../presentation/commerce.dto.js';
 import type { PaymentGatewayPort } from './ports/payment-gateway.port.js';
-import { TermsLoader } from '../../../platform/terms/terms-loader.js';
+import { ServiceTermsContent } from '../../../platform/terms/service-terms-content.js';
 import {
   CommerceRepository,
   type ChainConfiguration,
@@ -40,7 +36,7 @@ export class CommerceService {
     private readonly envelopes: ActivationEnvelopePort,
     private readonly envelopeRecovery: ActivationEnvelopeRecoveryService,
     private readonly chain: ChainConfiguration,
-    private readonly terms = new TermsLoader(),
+    private readonly serviceTerms = new ServiceTermsContent(),
   ) {}
 
   async createOrder(
@@ -88,33 +84,18 @@ export class CommerceService {
     return order;
   }
 
-  async getOrderTerms(actor: AuthPrincipal, id: string) {
+  async getServiceTerms(actor: AuthPrincipal, id: string) {
     this.requireCustomer(actor);
     const order = await this.repository.findOrder(actor.sub, id);
     if (!order) this.notFound();
-    try {
-      const terms = await this.terms.load(order.termsVersionSnapshot);
-      if (terms.hash.toLowerCase() !== order.termsHashSnapshot.toLowerCase()) {
-        throw new Error('TERMS_ARTEFACT_MISMATCH');
-      }
-      return terms;
-    } catch {
-      throw new ServiceUnavailableException({
-        code: 'TERMS_ARTEFACT_UNAVAILABLE',
-        message: 'The exact Terms snapshot is temporarily unavailable.',
-      });
-    }
+    return { content: await this.serviceTerms.loadServiceTerms() };
   }
 
-  async acceptTerms(actor: AuthPrincipal, id: string, dto: AcceptTermsDto) {
+  async acceptServiceTerms(actor: AuthPrincipal, id: string, dto: AcceptServiceTermsDto) {
     this.requireCustomer(actor);
+    if (dto.accepted !== true) throw new BadRequestException('Service Terms must be accepted explicitly.');
     try {
-      return await this.repository.acceptTerms(
-        actor.sub,
-        id,
-        dto.termsVersion,
-        dto.termsHash,
-      );
+      return await this.repository.acceptServiceTerms(actor.sub, id);
     } catch (error) {
       this.translate(error);
       throw error;

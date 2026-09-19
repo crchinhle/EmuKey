@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  ValidateIf,
   Matches,
   MaxLength,
   MinLength,
@@ -65,6 +66,30 @@ export class RevokeDeviceDto {
   proof!: `0x${string}`;
 }
 
+export class RemoteRevokeDeviceDto {
+  @ApiProperty({ minLength: 32 })
+  @IsString()
+  @MinLength(32)
+  actionToken!: string;
+
+  @ApiProperty({ minLength: 1 })
+  @IsString()
+  @MinLength(1)
+  currentPassword!: string;
+}
+
+export class ActivationKeyRecoveryDto {
+  @ApiProperty({ minLength: 32 })
+  @IsString()
+  @MinLength(32)
+  actionToken!: string;
+
+  @ApiProperty({ minLength: 1 })
+  @IsString()
+  @MinLength(1)
+  currentPassword!: string;
+}
+
 export class RotateActivationKeyDto {
   @ApiProperty({ minLength: 32 })
   @IsString()
@@ -78,19 +103,28 @@ export class RotateActivationKeyDto {
 }
 
 export class LicensingActionVerificationDto {
-  @ApiProperty({ enum: ['ROTATE_KEY', 'REVOKE_DEVICE'] })
-  @IsIn(['ROTATE_KEY', 'REVOKE_DEVICE'])
-  action!: 'ROTATE_KEY' | 'REVOKE_DEVICE';
+  @ApiProperty({ enum: ['ROTATE_KEY', 'REVOKE_DEVICE', 'REMOTE_REVOKE_DEVICE', 'KEY_RECOVERY'] })
+  @IsIn(['ROTATE_KEY', 'REVOKE_DEVICE', 'REMOTE_REVOKE_DEVICE', 'KEY_RECOVERY'])
+  action!: 'ROTATE_KEY' | 'REVOKE_DEVICE' | 'REMOTE_REVOKE_DEVICE' | 'KEY_RECOVERY';
 
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   licenseId!: string;
+
+  @ApiPropertyOptional({ format: 'uuid', description: 'Required for device-scoped revoke actions' })
+  @ValidateIf((value: LicensingActionVerificationDto) => value.action === 'REVOKE_DEVICE' || value.action === 'REMOTE_REVOKE_DEVICE')
+  @IsUUID()
+  deviceId?: string;
 }
 
 export class ActivationChallengeDto {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   licenseId!: string;
+
+  @ApiProperty({ enum: ['ACTIVATE_DEVICE', 'SELF_REVOKE_DEVICE', 'ISSUE_ENTITLEMENT', 'REFRESH_ENTITLEMENT'] })
+  @IsIn(['ACTIVATE_DEVICE', 'SELF_REVOKE_DEVICE', 'ISSUE_ENTITLEMENT', 'REFRESH_ENTITLEMENT'])
+  purpose!: 'ACTIVATE_DEVICE' | 'SELF_REVOKE_DEVICE' | 'ISSUE_ENTITLEMENT' | 'REFRESH_ENTITLEMENT';
 
   @ApiProperty({ minLength: 1, maxLength: 128 })
   @IsString()
@@ -189,13 +223,22 @@ export class DeviceChallengeDto {
 
   @ApiProperty({ format: 'date-time' })
   expiresAt!: string;
+
+  @ApiProperty()
+  bindingGeneration!: number;
+
+  @ApiProperty()
+  keyVersion!: number;
+
+  @ApiProperty({ enum: ['ACTIVATE_DEVICE', 'SELF_REVOKE_DEVICE', 'ISSUE_ENTITLEMENT', 'REFRESH_ENTITLEMENT'] })
+  purpose!: string;
 }
 
 export class Phase6CommandDto {
   @ApiProperty({ format: 'uuid' })
   commandId!: string;
 
-  @ApiProperty({ enum: ['PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN', 'CONFIRMED', 'RETRYABLE_FAILED', 'DEAD_LETTER'] })
+  @ApiProperty({ enum: ['PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN', 'CONFIRMED', 'RETRYABLE_FAILED', 'DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'] })
   status!: string;
 
   @ApiProperty({ format: 'uuid' })

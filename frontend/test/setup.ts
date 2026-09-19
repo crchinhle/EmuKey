@@ -109,8 +109,6 @@ const orders = [
     productNameSnapshot: 'SecureDesk Pro',
     orderStatus: 'WAITING_PAYMENT',
     priceVndSnapshot: 2_082_500,
-    termsHashSnapshot: `0x${'ef'.repeat(32)}`,
-    termsVersionSnapshot: 1,
     paymentDueAt: '2026-10-02T00:00:00.000Z',
     createdAt: '2026-09-30T00:00:00.000Z',
   },
@@ -139,6 +137,25 @@ const license = {
   transactionHash: `0x${'cd'.repeat(32)}`,
   updatedAt: '2026-09-08T00:00:00.000Z',
 } as const;
+
+const assistanceConversation = {
+  assignedSupportUserId: null,
+  contextId: null,
+  contextType: 'GENERAL',
+  customerUserId: 'test-user',
+  id: '00000000-0000-4000-8000-000000000701',
+  status: 'AI_ACTIVE',
+  title: 'Hội thoại hỗ trợ',
+};
+
+const assistanceMessages: Array<{
+  clientMessageId: string;
+  content: string;
+  conversationId: string;
+  id: string;
+  senderType: 'CUSTOMER' | 'SUPPORT' | 'AI';
+  serverSequence: number;
+}> = [];
 
 function jsonResponse(body: unknown, status = 200) {
   return Promise.resolve({
@@ -177,6 +194,36 @@ vi.stubGlobal(
         role: 'CUSTOMER',
         status: 'ACTIVE',
       });
+    }
+    if (method === 'GET' && path === '/conversations') {
+      return jsonResponse([assistanceConversation]);
+    }
+    if (method === 'GET' && path === `/conversations/${assistanceConversation.id}`) {
+      return jsonResponse(assistanceConversation);
+    }
+    if (method === 'GET' && path === `/conversations/${assistanceConversation.id}/messages`) {
+      return jsonResponse(assistanceMessages);
+    }
+    if (method === 'POST' && path === `/conversations/${assistanceConversation.id}/messages`) {
+      const body = typeof init?.body === 'string'
+        ? JSON.parse(init.body) as { clientMessageId: string; content: string }
+        : { clientMessageId: crypto.randomUUID(), content: '' };
+      const message = {
+        clientMessageId: body.clientMessageId,
+        content: body.content,
+        conversationId: assistanceConversation.id,
+        id: `message-${assistanceMessages.length + 1}`,
+        senderType: 'CUSTOMER' as const,
+        serverSequence: assistanceMessages.length + 1,
+      };
+      assistanceMessages.push(message);
+      return jsonResponse(message, 201);
+    }
+    if (method === 'POST' && path === '/conversations') {
+      return jsonResponse(assistanceConversation, 201);
+    }
+    if (method === 'POST' && path.endsWith('/ai-ask')) {
+      return jsonResponse({ answer: 'Không đủ nguồn chính thức để trả lời câu hỏi này.', citedSourceIds: [], grounded: false });
     }
     if (path.startsWith('/auth/')) {
       const authBody = typeof init?.body === 'string'
@@ -244,12 +291,8 @@ vi.stubGlobal(
         plans: selected,
       });
     }
-    if (method === 'GET' && path.endsWith('/terms'))
-      return jsonResponse({
-        content: '# EmuKey License Terms\n\nThis is the deterministic Terms snapshot.',
-        hash: orders[0].termsHashSnapshot,
-        version: orders[0].termsVersionSnapshot,
-      });
+    if (method === 'GET' && path.endsWith('/service-terms'))
+      return jsonResponse({ content: '# EmuKey Service Terms\n\nThese are the platform Service Terms.' });
     if (method === 'GET' && path === '/orders') return jsonResponse(orders);
     if (method === 'GET' && path === '/payments/history') {
       return jsonResponse([
@@ -273,7 +316,7 @@ vi.stubGlobal(
       return jsonResponse(orders[0]);
     if (method === 'POST' && path === '/orders')
       return jsonResponse(orders[0], 201);
-    if (method === 'POST' && path.endsWith('/accept-terms'))
+    if (method === 'POST' && path.endsWith('/accept-service-terms'))
       return jsonResponse({ ...orders[0], orderStatus: 'WAITING_PAYMENT' });
     if (method === 'POST' && path.endsWith('/checkout'))
       return jsonResponse(

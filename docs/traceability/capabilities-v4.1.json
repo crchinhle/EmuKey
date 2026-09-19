@@ -31,7 +31,7 @@
     "publicBlockchainVerification": "BC-05",
     "projectionReconcile": "BC-04"
   },
-  "cryptoVectorOwner": "backend/contracts/test-vectors/crypto-v1.json",
+  "cryptoVectorOwner": "backend/contracts/test-vectors/crypto-v2.json",
   "capabilities": [
     {
       "id": "AUTH-01",
@@ -137,10 +137,10 @@
       "id": "COM-02",
       "phase": 4,
       "actor": "CUSTOMER",
-      "owner": "commerce-payment/accept-terms",
-      "api": "POST /orders/:id/accept-terms",
+      "owner": "commerce-payment/accept-service-terms",
+      "api": "POST /orders/:id/accept-service-terms",
       "tables": ["orders", "audit_logs"],
-      "transaction": "lock owned order and accept exact terms snapshot once",
+      "transaction": "lock owned order and record one DB-stamped Service Terms acceptance once",
       "testOwner": "backend/test/integration/commerce/commerce-flow.integration.test.ts"
     },
     {

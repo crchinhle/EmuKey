@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 
 import { AuditWriter } from '../../platform/audit/audit-writer.js';
-import { TermsLoader } from '../../platform/terms/terms-loader.js';
+import { ServiceTermsContent } from '../../platform/terms/service-terms-content.js';
 import {
   ACTIVATION_ENVELOPE,
   type ActivationEnvelopePort,
@@ -11,6 +11,8 @@ import {
 import { BlockchainModule } from '../blockchain/blockchain.module.js';
 import { ActivationEnvelopeRecoveryService } from '../blockchain/application/activation-envelope-recovery.service.js';
 import { IdentityModule } from '../identity-access/identity.module.js';
+import { NotificationRepository } from '../operations/infrastructure/notification.repository.js';
+import { OperationsModule } from '../operations/operations.module.js';
 import { CommerceService } from './application/commerce.service.js';
 import {
   PAYMENT_GATEWAY,
@@ -30,21 +32,23 @@ import {
 const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
 
 @Module({
-  imports: [IdentityModule, BlockchainModule],
+  imports: [IdentityModule, BlockchainModule, OperationsModule],
   controllers: [CommerceController, PaymentController],
   providers: [
     {
       provide: CommerceRepository,
-      inject: [Pool, AuditWriter, ConfigService],
+      inject: [Pool, AuditWriter, ConfigService, NotificationRepository],
       useFactory: (
         pool: Pool,
         audit: AuditWriter,
         config: ConfigService,
+        notifications: NotificationRepository,
       ) =>
         new CommerceRepository(
           pool,
           audit,
           config.getOrThrow<number>('IPN_DELIVERY_GRACE_SECONDS'),
+          notifications,
         ),
     },
     {
@@ -85,7 +89,7 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
         ACTIVATION_ENVELOPE,
         ActivationEnvelopeRecoveryService,
         CHAIN_CONFIGURATION,
-        TermsLoader,
+        ServiceTermsContent,
       ],
       useFactory: (
         repository: CommerceRepository,
@@ -93,7 +97,7 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
         envelopes: ActivationEnvelopePort,
         recovery: ActivationEnvelopeRecoveryService,
         chain: ChainConfiguration,
-        terms: TermsLoader,
+         serviceTerms: ServiceTermsContent,
       ) =>
         new CommerceService(
           repository,
@@ -101,7 +105,7 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
           envelopes,
           recovery,
           chain,
-          terms,
+           serviceTerms,
         ),
     },
   ],

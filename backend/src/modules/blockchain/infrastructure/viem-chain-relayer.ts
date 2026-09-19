@@ -211,10 +211,11 @@ export class ViemChainRelayer implements ChainRelayerPort {
 
   async getSubmissionContext(input: ChainCommandInput) {
     this.assertInputNetwork(input);
-    const [relayerAddress, rpcChainId] = await Promise.all([
+    const [signerAddress, rpcChainId] = await Promise.all([
       this.options.signer.publicAddress(),
       this.rpc.getChainId(),
     ]);
+    const relayerAddress = signerAddress.toLowerCase() as Address;
     if (rpcChainId !== this.options.chainId) {
       throw new Error('CHAIN_RPC_CHAIN_ID_MISMATCH');
     }
@@ -232,7 +233,7 @@ export class ViemChainRelayer implements ChainRelayerPort {
     nonce: number,
   ): Promise<PreparedChainTransaction> {
     this.assertInputNetwork(input);
-    const relayerAddress = await this.options.signer.publicAddress();
+    const relayerAddress = (await this.options.signer.publicAddress()).toLowerCase() as Address;
     const to = getAddress(input.contractAddress);
     const data = encodeChainCommand(input);
     const [fees, estimatedGas] = await Promise.all([

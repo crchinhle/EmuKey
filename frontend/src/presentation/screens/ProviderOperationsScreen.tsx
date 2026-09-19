@@ -1,9 +1,6 @@
 import { Alert, Empty, Input, Spin, Tabs } from 'antd';
 import { useMemo, useState } from 'react';
 
-import {
-  jobs,
-} from '../../infrastructure/workspace/mockWorkspace';
 import { usePaymentHistory } from '../../application/orders/orderQueries';
 import {
   FactList,
@@ -23,13 +20,6 @@ export function ProviderOperationsScreen() {
           .includes(normalized),
       ),
     [normalized, payments.data],
-  );
-  const visibleJobs = useMemo(
-    () =>
-      jobs.filter((job) =>
-        job.name.toLocaleLowerCase('vi').includes(normalized),
-      ),
-    [normalized],
   );
   return (
     <>
@@ -81,15 +71,7 @@ export function ProviderOperationsScreen() {
               label: 'Integration jobs',
               children: (
                 <div className="stack-list">
-                  {visibleJobs.map((job) => (
-                    <article key={job.id}>
-                      <div>
-                        <strong>{job.name}</strong>
-                        <small>{job.helper}</small>
-                      </div>
-                      <StatusChip tone={job.tone}>{job.status}</StatusChip>
-                    </article>
-                  ))}
+                  <Empty description="Job integration chưa có API Phase 1-7 cho Provider; đã ẩn dữ liệu giả." />
                 </div>
               ),
             },

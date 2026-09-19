@@ -2,7 +2,6 @@ import { hash } from 'argon2';
 import type { Client } from 'pg';
 
 import { planCommitment } from '../crypto/license-crypto.js';
-import { TermsLoader } from '../terms/terms-loader.js';
 
 type DatabaseClient = Pick<Client, 'query'>;
 
@@ -82,7 +81,6 @@ async function seedUsers(database: DatabaseClient, passwordHash: string): Promis
 }
 
 async function seedCatalog(database: DatabaseClient): Promise<void> {
-  const terms = await new TermsLoader().load(1);
   const productId = '00000000-0000-4000-8000-000000000200';
   const providerChainAddress = '0x0000000000000000000000000000000000000002';
   const monthlyCommitment = planCommitment({
@@ -93,7 +91,6 @@ async function seedCatalog(database: DatabaseClient): Promise<void> {
     planVersion: 1,
     productId,
     providerChainAddress,
-    termsHash: terms.hash,
   });
   const yearlyCommitment = planCommitment({
     durationMonths: 12,
@@ -103,7 +100,6 @@ async function seedCatalog(database: DatabaseClient): Promise<void> {
     planVersion: 1,
     productId,
     providerChainAddress,
-    termsHash: terms.hash,
   });
   await database.query(
     `INSERT INTO products (
@@ -120,30 +116,27 @@ async function seedCatalog(database: DatabaseClient): Promise<void> {
   await database.query(
     `INSERT INTO plans (
       id, product_id, provider_user_id, code, version, name, billing_cycle,
-      duration_months, price_vnd, max_active_devices, entitlements,
-      terms_version, terms_hash, plan_commitment, status, published_at
+       duration_months, price_vnd, max_active_devices, entitlements,
+       plan_commitment, status, published_at
     ) VALUES
       (
         '00000000-0000-4000-8000-000000000301',
         '00000000-0000-4000-8000-000000000200',
         '00000000-0000-4000-8000-000000000002',
         'MONTHLY', 1, 'Monthly plan', 'MONTHLY', 1, 120000, 2,
-        '{"desktop": true}'::jsonb, 1, decode($1, 'hex'),
-        decode($2, 'hex'), 'PUBLISHED', '2026-09-08T00:00:00Z'
+         '{"desktop": true}'::jsonb, decode($1, 'hex'), 'PUBLISHED', '2026-09-08T00:00:00Z'
       ),
       (
         '00000000-0000-4000-8000-000000000302',
         '00000000-0000-4000-8000-000000000200',
         '00000000-0000-4000-8000-000000000002',
         'YEARLY', 1, 'Yearly plan', 'YEARLY', 12, 1200000, 3,
-        '{"desktop": true}'::jsonb, 1, decode($1, 'hex'),
-        decode($3, 'hex'), 'PUBLISHED', '2026-09-08T00:00:00Z'
+       '{"desktop": true}'::jsonb, decode($2, 'hex'), 'PUBLISHED', '2026-09-08T00:00:00Z'
       )
     ON CONFLICT (product_id, code, version) DO NOTHING`,
     [
-      terms.hash.slice(2),
-      monthlyCommitment.slice(2),
-      yearlyCommitment.slice(2),
+       monthlyCommitment.slice(2),
+       yearlyCommitment.slice(2),
     ],
   );
 }

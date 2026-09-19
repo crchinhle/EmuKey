@@ -6,7 +6,7 @@ import { App } from '../src/presentation/app/App';
 afterEach(cleanup);
 
 describe('Provider workspace', () => {
-  it('renders the updated Figma provider dashboard hierarchy', () => {
+  it('renders the provider dashboard without fabricated aggregates', () => {
     render(<App initialEntries={['/provider']} />);
 
     expect(
@@ -14,20 +14,10 @@ describe('Provider workspace', () => {
     ).toBeTruthy();
     expect(screen.getByText('Emukey').className).toContain('brand-wordmark');
     expect(screen.getByRole('link', { name: 'Hồ sơ' })).toBeTruthy();
-    expect(
-      screen.getByRole('alert', { name: 'Còn 2 bước để sẵn sàng publish' }),
-    ).toBeTruthy();
-    expect(screen.getByText('128,4 triệu ₫')).toBeTruthy();
-    expect(screen.getByText('ORD-0221')).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { name: 'Hàng đợi cần xử lý' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { name: 'Blockchain status' }),
-    ).toBeTruthy();
+    expect(screen.getByText(/chưa có canonical Phase 1-7 API/i)).toBeTruthy();
   });
 
-  it('adds an allowed knowledge file to the local list', () => {
+  it('does not display a local-only knowledge file as uploaded', () => {
     render(<App initialEntries={['/provider/knowledge']} />);
 
     const file = new File(['demo'], 'huong-dan-demo.pdf', {
@@ -36,7 +26,7 @@ describe('Provider workspace', () => {
     fireEvent.change(screen.getByLabelText('Chọn tài liệu kiến thức'), {
       target: { files: [file] },
     });
-    expect(screen.getByText('huong-dan-demo.pdf')).toBeTruthy();
+    expect(screen.queryByText('huong-dan-demo.pdf')).toBeNull();
   });
 
   it('filters provider payment history loaded from the backend', async () => {

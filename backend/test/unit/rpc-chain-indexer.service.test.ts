@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 
 import { RpcChainIndexerService } from '../../src/modules/blockchain/application/rpc-chain-indexer.service.js';
 import { ChainIndexerCheckpointRepository } from '../../src/modules/blockchain/infrastructure/chain-indexer-checkpoint.repository.js';
+import type { ObservedChainEvent } from '../../src/modules/blockchain/infrastructure/chain-event.repository.js';
 
 function bytes16(value: string): Hex {
   return `0x${value.replaceAll('-', '')}`;
@@ -56,16 +57,24 @@ describe('RpcChainIndexerService', () => {
       release: vi.fn().mockResolvedValue(undefined),
     };
     const indexer = {
-      ingest: vi.fn().mockResolvedValue({ created: true, id: 'event-1' }),
+      ingest: vi
+        .fn<(event: ObservedChainEvent) => Promise<{ created: boolean; id: string }>>()
+        .mockResolvedValue({ created: true, id: 'event-1' }),
       markReorged: vi.fn().mockResolvedValue(undefined),
     };
     const rpc = {
       blockHash: vi.fn().mockResolvedValue(`0x${'20'.repeat(32)}`),
+      blockTimestamp: vi.fn().mockResolvedValue(new Date('2026-09-17T00:00:00.000Z')),
       contractEvents: vi.fn().mockResolvedValue([
         {
           args: {
+            activationCommitment: `0x${'11'.repeat(32)}`,
+            activationKeyVersion: 1n,
             commandId: bytes16(commandId),
+            expiresAt: 1_800_000_000n,
             licenseId: bytes16(licenseId),
+            planCommitment: `0x${'22'.repeat(32)}`,
+            provider: '0x0000000000000000000000000000000000000002',
           },
           blockHash: `0x${'15'.repeat(32)}`,
           blockNumber: 15n,
@@ -86,6 +95,8 @@ describe('RpcChainIndexerService', () => {
     });
 
     await expect(service.poll('worker-1')).resolves.toBe(1);
+    await expect(service.canonicalTime()).resolves.toEqual(new Date('2026-09-17T00:00:00.000Z'));
+    expect(rpc.blockTimestamp).toHaveBeenCalledWith(19);
 
     expect(indexer.markReorged).toHaveBeenCalledWith(
       '00000000-0000-4000-8000-000000000801',
@@ -98,6 +109,10 @@ describe('RpcChainIndexerService', () => {
         licenseId,
       }),
     );
+    expect(indexer.ingest.mock.calls[0]?.[0].payload).toMatchObject({
+      activationCommitment: `0x${'11'.repeat(32)}`,
+      keyVersion: 1,
+    });
     expect(checkpoints.completeRange).toHaveBeenCalledWith(
       expect.any(Object),
       'worker-1',
@@ -120,6 +135,7 @@ describe('RpcChainIndexerService', () => {
     };
     const rpc = {
       blockHash: vi.fn().mockResolvedValue(`0x${'20'.repeat(32)}`),
+      blockTimestamp: vi.fn(),
       contractEvents: vi
         .fn()
         .mockRejectedValueOnce(
@@ -168,6 +184,7 @@ describe('RpcChainIndexerService', () => {
     };
     const rpc = {
       blockHash: vi.fn().mockResolvedValue(`0x${'20'.repeat(32)}`),
+      blockTimestamp: vi.fn(),
       contractEvents: vi.fn().mockResolvedValue([]),
       latestBlock: vi.fn().mockResolvedValue(200),
     };
@@ -202,6 +219,7 @@ describe('RpcChainIndexerService', () => {
     };
     const rpc = {
       blockHash: vi.fn(),
+      blockTimestamp: vi.fn(),
       contractEvents: vi.fn().mockRejectedValue(new Error('RPC unavailable')),
       latestBlock: vi.fn().mockResolvedValue(20),
     };

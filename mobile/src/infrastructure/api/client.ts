@@ -61,6 +61,34 @@ export interface MobileSession {
   user: MobileUser;
 }
 
+export interface MobileConversation {
+  id: string;
+  customerUserId: string;
+  assignedSupportUserId: string | null;
+  status: 'AI_ACTIVE' | 'WAITING_SUPPORT' | 'SUPPORT_ACTIVE' | 'CLOSED';
+  contextType: string;
+  contextId: string | null;
+  title: string | null;
+}
+
+export interface MobileConversationMessage {
+  id: string;
+  conversationId: string;
+  clientMessageId: string;
+  serverSequence: number;
+  senderType: 'CUSTOMER' | 'SUPPORT' | 'AI' | 'SYSTEM';
+  content: string;
+  grounded?: boolean;
+  sources?: string[];
+}
+
+export interface MobileNotification {
+  id: string;
+  title: string;
+  content: string;
+  isRead: boolean;
+}
+
 let activeSession: MobileSession | null = null;
 
 export class MobileApiError extends Error {
@@ -209,16 +237,15 @@ export async function createOrder(
 }
 
 export async function getOrderTerms(id: string): Promise<MobileOrderTerms> {
-  return json(await request(`/orders/${encodeURIComponent(id)}/terms`));
+  return json(await request(`/orders/${encodeURIComponent(id)}/service-terms`));
 }
 
-export async function acceptOrderTerms(order: MobileOrderDetail): Promise<MobileOrderDetail> {
+export async function acceptServiceTerms(order: MobileOrderDetail): Promise<MobileOrderDetail> {
   return json(
-    await request(`/orders/${encodeURIComponent(order.id)}/accept-terms`, {
+      await request(`/orders/${encodeURIComponent(order.id)}/accept-service-terms`, {
       method: 'POST',
       body: JSON.stringify({
-        termsHash: order.termsHashSnapshot,
-        termsVersion: order.termsVersionSnapshot,
+        accepted: true,
       }),
     }),
   );
@@ -252,8 +279,8 @@ export async function loadActivationKey(licenseId: string): Promise<string | nul
   return SecureStore.getItemAsync(`${ACTIVATION_KEY_PREFIX}${licenseId}`);
 }
 
-export async function requestLicensingActionVerification(licenseId: string, action: 'ROTATE_KEY' | 'REVOKE_DEVICE'): Promise<{ accepted: boolean }> {
-  return json(await request('/licenses/action-verification', { method: 'POST', body: JSON.stringify({ action, licenseId }) }));
+export async function requestLicensingActionVerification(licenseId: string, action: 'ROTATE_KEY' | 'REVOKE_DEVICE' | 'REMOTE_REVOKE_DEVICE' | 'KEY_RECOVERY', deviceId?: string): Promise<{ accepted: boolean }> {
+  return json(await request('/licenses/action-verification', { method: 'POST', body: JSON.stringify({ action, ...(deviceId ? { deviceId } : {}), licenseId }) }));
 }
 
 export async function getCommandStatus(commandId: string): Promise<Phase6CommandStatusDto> {
@@ -276,12 +303,20 @@ export async function revokeDevice(licenseId: string, deviceId: string, input: R
   return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/revoke`, { method: 'POST', body: JSON.stringify(input) }));
 }
 
+export async function remoteRevokeDevice(licenseId: string, deviceId: string, input: { actionToken: string; currentPassword: string }): Promise<Phase6CommandDto> {
+  return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/remote-revoke`, { method: 'POST', body: JSON.stringify(input) }));
+}
+
 export async function issueEntitlement(licenseId: string, deviceId: string, challenge: string, proof: string): Promise<EntitlementDto> {
   return json(await request('/entitlements/issue', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }));
 }
 
 export async function rotateActivationKey(licenseId: string, input: RotateActivationKeyDto): Promise<Phase6CommandDto> {
   return json(await request(`/licenses/${encodeURIComponent(licenseId)}/activation-key/rotate`, { method: 'POST', body: JSON.stringify(input) }));
+}
+
+export async function recoverActivationKey(licenseId: string, input: { actionToken: string; currentPassword: string }): Promise<Phase6CommandDto> {
+  return json(await request(`/licenses/${encodeURIComponent(licenseId)}/activation-key/recover`, { method: 'POST', body: JSON.stringify(input) }));
 }
 
 export async function refreshEntitlement(licenseId: string, deviceId: string, challenge: string, proof: string): Promise<EntitlementDto> {
@@ -301,4 +336,43 @@ export async function verifyPublicLicense(
   return json(
     await request(`/public/licenses/${encodeURIComponent(publicId)}/verify`, {}, false),
   );
+}
+
+export async function listConversations(): Promise<MobileConversation[]> {
+  return json(await request('/conversations'));
+}
+
+export async function listConversationMessages(conversationId: string): Promise<MobileConversationMessage[]> {
+  return json(await request(`/conversations/${encodeURIComponent(conversationId)}/messages`));
+}
+
+export async function createConversation(title = 'Hội thoại hỗ trợ'): Promise<MobileConversation> {
+  return json(await request('/conversations', {
+    method: 'POST',
+    body: JSON.stringify({ contextType: 'GENERAL', title }),
+  }));
+}
+
+export async function appendConversationMessage(conversationId: string, clientMessageId: string, content: string): Promise<{ serverSequence: number; content: string }> {
+  return json(await request(`/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: JSON.stringify({ clientMessageId, content }) }));
+}
+
+export async function askConversationAi(conversationId: string, question: string): Promise<{ answer: string; citedSourceIds: string[]; grounded: boolean }> {
+  return json(await request(`/conversations/${encodeURIComponent(conversationId)}/ai-ask`, { method: 'POST', body: JSON.stringify({ question }) }));
+}
+
+export async function listNotifications(): Promise<MobileNotification[]> {
+  return json(await request('/notifications'));
+}
+
+export async function markNotificationRead(notificationId: string): Promise<void> {
+  await request(`/notifications/${encodeURIComponent(notificationId)}/read`, { method: 'POST' });
+}
+
+export async function registerPushToken(token: string, provider: 'FCM' | 'EXPO'): Promise<void> {
+  await request('/notifications/push-tokens', { method: 'POST', body: JSON.stringify({ provider, token }) });
+}
+
+export async function removePushToken(token: string): Promise<void> {
+  await request('/notifications/push-tokens/remove', { method: 'POST', body: JSON.stringify({ token }) });
 }

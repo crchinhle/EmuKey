@@ -7,7 +7,6 @@ import { keccak256, stringToHex } from 'viem';
 
 type Vector = {
   entitlements: { hash: `0x${string}` };
-  terms: { hash: `0x${string}` };
   plan: {
     providerChainAddress: `0x${string}`;
     productId: string;
@@ -22,7 +21,7 @@ type Vector = {
 
 const vector = JSON.parse(
   await readFile(
-    new URL('../test-vectors/crypto-v1.json', import.meta.url),
+    new URL('../test-vectors/crypto-v2.json', import.meta.url),
     'utf8',
   ),
 ) as Vector;
@@ -48,8 +47,7 @@ describe('LicenseRegistry', async () => {
       BigInt(vector.plan.planVersion),
       BigInt(vector.plan.durationMonths),
       BigInt(vector.plan.maxActiveDevices),
-      vector.entitlements.hash,
-      vector.terms.hash,
+       vector.entitlements.hash,
     ]);
     assert.equal(planCommitment, vector.plan.commitment);
   });

@@ -46,6 +46,24 @@ describe('IdentityService', () => {
       .rejects.toMatchObject({ response: { code: 'INVALID_OR_EXPIRED_ACTION_TOKEN' } });
   });
 
+  it('binds remote revoke email confirmations to the exact device', async () => {
+    const customer = { ...user, role: 'CUSTOMER' as const, emailVerifiedAt: new Date() };
+    const repository = { ...repo(), findById: vi.fn(() => Promise.resolve(customer)) };
+    const redis = new FakeRedis();
+    let deliveredToken = '';
+    const service = new IdentityService(repository, redis, new TextEncoder().encode('test-secret'), {
+      sendEmailVerification: vi.fn(),
+      sendLicensingActionVerification: vi.fn((_email: string, token: string) => { deliveredToken = token; return Promise.resolve(); }),
+      sendPasswordReset: vi.fn(),
+    });
+
+    await service.issueLicensingActionVerification('u1', 'license-1', 'REMOTE_REVOKE_DEVICE', 'device-1');
+    await expect(service.consumeLicensingActionVerification(deliveredToken, 'u1', 'license-1', 'REMOTE_REVOKE_DEVICE', 'device-2'))
+      .rejects.toMatchObject({ response: { code: 'INVALID_OR_EXPIRED_ACTION_TOKEN' } });
+    await expect(service.consumeLicensingActionVerification(deliveredToken, 'u1', 'license-1', 'REMOTE_REVOKE_DEVICE', 'device-1'))
+      .resolves.toBeUndefined();
+  });
+
   it('rotates refresh tokens and rejects reuse', async () => {
     const redis = new FakeRedis(); const service = new IdentityService(repo(), redis, new TextEncoder().encode('test-secret')); const first = await service.issue(user); const second = await service.refresh(first.refreshToken);
     expect(second.refreshToken).not.toBe(first.refreshToken);

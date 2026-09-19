@@ -24,7 +24,6 @@ describe('worker platform contract', () => {
     STORAGE_ADAPTER: 'local',
     ACTIVATION_ENVELOPE_ADAPTER: 'redis',
     ACTIVATION_ENVELOPE_KEY: '00'.repeat(32),
-    TERMS_VERSION: '1',
   };
 
   it('boots and closes an application context with validated config', async () => {

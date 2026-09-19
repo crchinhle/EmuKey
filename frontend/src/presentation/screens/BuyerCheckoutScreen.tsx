@@ -36,13 +36,13 @@ export function BuyerCheckoutScreen() {
     );
   }
 
-  function acceptTerms() {
+  function acceptServiceTerms() {
     if (!accepted || !order) {
       setError('Bạn cần đọc và đồng ý điều khoản trước khi tiếp tục.');
       return;
     }
     setError(null);
-    orderMutations.acceptTerms.mutate(order, {
+    orderMutations.acceptServiceTerms.mutate(order, {
       onSuccess: (acceptedOrder) =>
         void navigate(`/buyer/orders/${acceptedOrder.id}/payment`),
     });
@@ -128,9 +128,7 @@ export function BuyerCheckoutScreen() {
               <>
                 <h2>Điều khoản cấp phép</h2>
                 <pre className="terms-document">{termsQuery.data.content}</pre>
-                <p className="muted-copy">
-                  Phiên bản {termsQuery.data.version} · Hash {termsQuery.data.hash}
-                </p>
+                <p className="muted-copy">Service Terms áp dụng cho từng đơn hàng.</p>
                 <Checkbox
                   checked={accepted}
                   onChange={(event) => {
@@ -144,14 +142,14 @@ export function BuyerCheckoutScreen() {
             )}
             {error ||
             createOrderMutation.error ||
-            orderMutations.acceptTerms.error ||
+            orderMutations.acceptServiceTerms.error ||
             termsQuery.error ? (
               <Alert
                 message={
                   error ??
                   describeApiError(
                     createOrderMutation.error ??
-                      orderMutations.acceptTerms.error ??
+                      orderMutations.acceptServiceTerms.error ??
                       termsQuery.error,
                     'Không thể hoàn tất bước đơn hàng và điều khoản. Vui lòng thử lại.',
                   )
@@ -183,9 +181,9 @@ export function BuyerCheckoutScreen() {
               }
               loading={
                 createOrderMutation.isPending ||
-                orderMutations.acceptTerms.isPending
+                orderMutations.acceptServiceTerms.isPending
               }
-              onClick={order ? acceptTerms : createOrder}
+              onClick={order ? acceptServiceTerms : createOrder}
             >
               {order
                 ? 'Đồng ý và tiếp tục thanh toán'

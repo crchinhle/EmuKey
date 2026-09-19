@@ -1,0 +1,68 @@
+{
+  "runId": "emukey-ext-20260919140015-febc5394",
+  "generatedAt": "2026-09-19T14:00:15.784Z",
+  "providers": {
+    "Gemini": {
+      "status": "REAL_EXTERNAL_VERIFIED",
+      "evidence": {
+        "model": "gemini-3.5-flash-lite",
+        "latencyMs": 1526,
+        "grounded": true,
+        "citedSourceIds": [
+          "e2e-source"
+        ]
+      }
+    },
+    "Cloudinary": {
+      "status": "REAL_EXTERNAL_VERIFIED",
+      "evidence": {
+        "key": "e2e/emukey-ext-20260919140015-febc5394/probe-txt",
+        "uploaded": true,
+        "retrieved": true,
+        "cleanedUp": true
+      }
+    },
+    "Brevo": {
+      "status": "PROVIDER_ACCEPTED_VERIFIED",
+      "evidence": {
+        "providerMessageId": "<202609191349.39821045535@smtp-relay.mailin.fr>",
+        "recipient": "vuivi7410@gmail.com",
+        "inboxReceiptVerified": false
+      }
+    },
+    "FCM": {
+      "status": "PROVIDER_ACCEPTED_VERIFIED",
+      "evidence": {
+        "providerAuthentication": true,
+        "deviceReceiptVerified": false
+      },
+      "blocker": "BLOCKED_EXTERNAL_DEVICE_TOKEN"
+    },
+    "SePay": {
+      "status": "BLOCKED_EXTERNAL",
+      "evidence": {
+        "checkoutGenerated": true,
+        "checkoutUrlHost": "pay-sandbox.sepay.vn",
+        "providerHttpStatus": 302,
+        "sandbox": true,
+        "requiredCallbackPath": "/api/v1/payments/ipn"
+      },
+      "blocker": "BLOCKED_EXTERNAL_PUBLIC_CALLBACK:configure public HTTPS tunnel or staging URL for /api/v1/payments/ipn"
+    },
+    "Sepolia": {
+      "status": "REAL_EXTERNAL_VERIFIED",
+      "evidence": {
+        "chainId": 11155111,
+        "contractAddress": "0xAf61c3712e0A5fe9d5be0b3Fe080C786076e2845",
+        "relayerAddress": "0xeC3Aa982a569812471b337D5b8CA67f5C7A2FCfe",
+        "relayerBalanceWeiBefore": "7056609025521727306",
+        "transactionHash": "0xb2dd665d4728dcba63bb832f1d2587f12583974b7f15787e530e3d3e2fff602b",
+        "blockNumber": "11738098",
+        "receiptStatus": "success",
+        "gasUsed": "254900",
+        "eventName": "LicenseIssued",
+        "licenseId": "0x5fe5f86c0cd87dc774f4ee15a0cbd0a5"
+      }
+    }
+  }
+}

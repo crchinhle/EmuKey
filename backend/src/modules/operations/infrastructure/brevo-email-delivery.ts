@@ -88,9 +88,10 @@ export class BrevoEmailDelivery implements EmailDeliveryPort {
       url.searchParams.set('mode', 'verify');
       url.searchParams.set('token', token);
       const verificationUrl = url.toString();
+      const testRunId = typeof input.data.testRunId === 'string' ? input.data.testRunId : undefined;
       return {
         htmlContent: `<p>Chào bạn,</p><p>Nhấn vào liên kết sau để xác minh tài khoản Emukey:</p><p><a href="${escapeHtml(verificationUrl)}">Xác minh email</a></p><p>Liên kết có hiệu lực trong 24 giờ.</p>`,
-        subject: 'Xác minh email Emukey',
+        subject: testRunId ? `[EmuKey E2E] ${testRunId} - Xác minh email Emukey` : 'Xác minh email Emukey',
         textContent: `Chào bạn,\n\nMở liên kết sau để xác minh tài khoản Emukey:\n${verificationUrl}\n\nLiên kết có hiệu lực trong 24 giờ.`,
         token,
       };

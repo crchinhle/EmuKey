@@ -172,7 +172,7 @@ export function BuyerOrdersScreen() {
             ]}
           />
         ) : null}
-        {detailQuery.data?.orderStatus === 'WAITING_TERMS_ACCEPTANCE' ||
+        {detailQuery.data?.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ||
         detailQuery.data?.orderStatus === 'WAITING_PAYMENT' ? (
           <Button
             danger

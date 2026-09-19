@@ -101,27 +101,27 @@ export class LicensingRepository {
   async findDevice(
     licenseId: string,
     deviceRef: string,
-  ): Promise<{ id: string; status: string; devicePublicKey: string } | null> {
+  ): Promise<{ id: string; status: string; devicePublicKey: string; bindingGeneration: number } | null> {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT id, status, device_public_key FROM license_devices
+      `SELECT id, status, device_signer_address, binding_generation FROM license_devices
        WHERE license_id=$1 AND device_ref=$2`,
       [licenseId, deviceRef],
     );
     const row = result.rows[0];
     return row
-      ? { id: String(row.id), status: String(row.status), devicePublicKey: String(row.device_public_key) }
+      ? { id: String(row.id), status: String(row.status), devicePublicKey: String(row.device_signer_address), bindingGeneration: Number(row.binding_generation) }
       : null;
   }
 
   async findDeviceById(licenseId: string, deviceId: string) {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT id, device_ref, status, device_public_key FROM license_devices
+      `SELECT id, device_ref, status, device_signer_address, binding_generation FROM license_devices
        WHERE license_id=$1 AND id=$2`,
       [licenseId, deviceId],
     );
     const row = result.rows[0];
     return row
-      ? { id: String(row.id), deviceRef: String(row.device_ref), status: String(row.status), devicePublicKey: String(row.device_public_key) }
+      ? { id: String(row.id), deviceRef: String(row.device_ref), status: String(row.status), devicePublicKey: String(row.device_signer_address), bindingGeneration: Number(row.binding_generation) }
       : null;
   }
 
@@ -131,28 +131,36 @@ export class LicensingRepository {
     deviceRef: string,
     devicePublicKey: string,
     deviceId: string,
+    expectedBindingGeneration: number,
     config: LicenseCommandConfig,
   ): Promise<LicenseCommandResult> {
     return this.transaction(async (client) => {
       const license = await this.lockLicense(client, licenseId);
+      this.requireCustomer(license, actorUserId);
       this.requireUsableLicense(license);
 
       const existing = await client.query<Record<string, unknown>>(
         `SELECT id, status, license_device_id, license_id FROM chain_commands
          WHERE license_id=$1 AND command_type='ACTIVATE_DEVICE'
            AND payload->>'deviceRef'=$2
-           AND status IN ('PENDING','SUBMITTED','SUBMITTED_UNKNOWN','CONFIRMED','RETRYABLE_FAILED')
+           AND payload->>'bindingGeneration'=$3
+           AND status IN ('PENDING','SUBMITTED','SUBMITTED_UNKNOWN','RETRYABLE_FAILED')
          ORDER BY created_at DESC LIMIT 1`,
-        [licenseId, deviceRef],
+        [licenseId, deviceRef, String(expectedBindingGeneration)],
       );
       if (existing.rows[0]) return { ...mapCommand(existing.rows[0]), reused: true };
 
       const currentDevice = await client.query<Record<string, unknown>>(
-        `SELECT id, status FROM license_devices WHERE license_id=$1 AND device_ref=$2 FOR UPDATE`,
+        `SELECT id, status, binding_generation FROM license_devices WHERE license_id=$1 AND device_ref=$2 FOR UPDATE`,
         [licenseId, deviceRef],
       );
       const currentStatus = currentDevice.rows[0]?.status;
       if (currentStatus === 'ACTIVE') throw new Error('DEVICE_ALREADY_ACTIVE');
+      if (currentStatus === 'PENDING_ONCHAIN') throw new Error('DEVICE_ACTIVATION_PENDING');
+      const nextBindingGeneration = currentDevice.rows[0]
+        ? Number(currentDevice.rows[0].binding_generation) + 1
+        : 1;
+      if (nextBindingGeneration !== expectedBindingGeneration) throw new Error('STALE_DEVICE_GENERATION');
 
       const activeCount = await client.query<{ count: string }>(
         `SELECT count(*)::text AS count FROM license_devices
@@ -166,17 +174,17 @@ export class LicensingRepository {
         typeof existingDeviceId === 'string' ? existingDeviceId : deviceId;
       if (!currentDevice.rows[0]) {
         await client.query(
-          `INSERT INTO license_devices (id, license_id, device_ref, device_public_key)
-           VALUES ($1, $2, $3, $4)`,
-          [storedDeviceId, licenseId, deviceRef, devicePublicKey],
+          `INSERT INTO license_devices (id, license_id, device_ref, device_signer_address, binding_generation)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [storedDeviceId, licenseId, deviceRef, devicePublicKey.toLowerCase(), expectedBindingGeneration],
         );
       } else {
         await client.query(
-          `UPDATE license_devices SET status='PENDING_ONCHAIN', device_public_key=$3,
-             binding_generation=binding_generation + 1, last_applied_chain_event_id=NULL,
+          `UPDATE license_devices SET status='PENDING_ONCHAIN', device_signer_address=$3,
+             binding_generation=$4, last_applied_chain_event_id=NULL,
              activated_at=NULL, revoked_at=NULL, updated_at=now()
            WHERE id=$1 AND license_id=$2`,
-          [storedDeviceId, licenseId, devicePublicKey],
+          [storedDeviceId, licenseId, devicePublicKey.toLowerCase(), expectedBindingGeneration],
         );
       }
       const commandId = randomUUID();
@@ -184,6 +192,7 @@ export class LicensingRepository {
         commandId,
         deviceId: `0x${createHash('sha256').update(deviceRef).digest('hex')}`,
         deviceRef,
+        bindingGeneration: expectedBindingGeneration,
         keyVersion: license.activationKeyVersion,
         licenseId,
         protocolVersion: 1,
@@ -206,27 +215,31 @@ export class LicensingRepository {
     licenseId: string,
     deviceRef: string,
     deviceId: string,
+    expectedBindingGeneration: number,
     config: LicenseCommandConfig,
   ): Promise<LicenseCommandResult> {
     return this.transaction(async (client) => {
       const license = await this.lockLicense(client, licenseId);
+      this.requireCustomer(license, actorUserId);
       const device = await client.query<Record<string, unknown>>(
-        `SELECT id, status FROM license_devices WHERE license_id=$1 AND device_ref=$2 FOR UPDATE`,
+        `SELECT id, status, binding_generation FROM license_devices WHERE license_id=$1 AND device_ref=$2 FOR UPDATE`,
         [licenseId, deviceRef],
       );
       const row = device.rows[0];
       if (!row) throw new Error('DEVICE_NOT_FOUND');
       if (String(row.status) !== 'ACTIVE') throw new Error('DEVICE_NOT_ACTIVE');
+      if (Number(row.binding_generation) !== expectedBindingGeneration) throw new Error('STALE_DEVICE_GENERATION');
       const existing = await client.query<Record<string, unknown>>(
         `SELECT id, status, license_device_id, license_id FROM chain_commands
          WHERE license_id=$1 AND license_device_id=$2 AND command_type='REVOKE_DEVICE'
-           AND status IN ('PENDING','SUBMITTED','SUBMITTED_UNKNOWN','CONFIRMED','RETRYABLE_FAILED')
+           AND payload->>'bindingGeneration'=$3
+            AND status IN ('PENDING','SUBMITTED','SUBMITTED_UNKNOWN','RETRYABLE_FAILED')
          ORDER BY created_at DESC LIMIT 1`,
-        [licenseId, String(row.id)],
+        [licenseId, String(row.id), String(expectedBindingGeneration)],
       );
       if (existing.rows[0]) return { ...mapCommand(existing.rows[0]), reused: true };
       const commandId = randomUUID();
-      const payload = { commandId, deviceId, deviceRef, licenseId, protocolVersion: 1 };
+      const payload = { bindingGeneration: expectedBindingGeneration, commandId, deviceId, deviceRef, licenseId, protocolVersion: 1 };
       const command = await this.insertCommand(client, commandId, 'REVOKE_DEVICE', license, String(row.id), payload, config);
       await this.audit.write(client, {
         action: 'DEVICE_REVOCATION_REQUESTED',
@@ -249,6 +262,7 @@ export class LicensingRepository {
   ): Promise<LicenseCommandResult> {
     return this.transaction(async (client) => {
       const license = await this.lockLicense(client, licenseId);
+      this.requireCustomer(license, actorUserId);
       this.requireUsableLicense(license);
       if (!/^0x[0-9a-fA-F]{64}$/.test(commitment)) throw new Error('INVALID_ACTIVATION_COMMITMENT');
       if (nextVersion !== license.activationKeyVersion + 1) throw new Error('INVALID_KEY_VERSION');
@@ -260,14 +274,23 @@ export class LicensingRepository {
         [licenseId],
       );
       if (existing.rows[0]) return { ...mapCommand(existing.rows[0]), reused: true };
+      const commandId = randomUUID();
+      const payload = {
+        activationCommitment: commitment,
+        commandId,
+        keyVersion: nextVersion,
+        licenseId,
+        previousActivationCommitment: license.activationCommitment,
+        previousKeyVersion: license.activationKeyVersion,
+        protocolVersion: 1,
+      };
+      const command = await this.insertCommand(client, commandId, 'ROTATE_KEY', license, null, payload, config);
       await client.query(
         `UPDATE licenses SET pending_activation_commitment=decode($2,'hex'),
-           pending_activation_key_version=$3, updated_at=now() WHERE id=$1`,
-        [licenseId, commitment.slice(2), nextVersion],
+           pending_activation_key_version=$3, pending_activation_command_id=$4,
+           updated_at=now() WHERE id=$1`,
+        [licenseId, commitment.slice(2), nextVersion, commandId],
       );
-      const commandId = randomUUID();
-      const payload = { activationCommitment: commitment, commandId, keyVersion: nextVersion, licenseId, protocolVersion: 1 };
-      const command = await this.insertCommand(client, commandId, 'ROTATE_KEY', license, null, payload, config);
       await this.audit.write(client, {
         action: 'ACTIVATION_KEY_ROTATION_REQUESTED',
         actorRole: 'CUSTOMER',
@@ -296,7 +319,7 @@ export class LicensingRepository {
       const existing = await client.query<Record<string, unknown>>(
         `SELECT id, status, license_device_id, license_id FROM chain_commands
          WHERE license_id=$1 AND command_type=$2
-           AND status IN ('PENDING','SUBMITTED','SUBMITTED_UNKNOWN','CONFIRMED','RETRYABLE_FAILED')
+           AND status IN ('PENDING','SUBMITTED','SUBMITTED_UNKNOWN','RETRYABLE_FAILED')
          ORDER BY created_at DESC LIMIT 1`,
         [licenseId, commandType],
       );
@@ -354,13 +377,55 @@ export class LicensingRepository {
     payload: Record<string, unknown>,
     config: LicenseCommandConfig,
   ): Promise<LicenseCommandResult> {
+    const predecessor = await client.query<{
+      basis_chain_event_id: string | null;
+      id: string;
+      license_command_sequence: string;
+    }>(
+      `SELECT latest.id, latest.license_command_sequence,
+              (
+                SELECT confirmed.confirmation_chain_event_id
+                FROM chain_commands confirmed
+                WHERE confirmed.license_id=latest.license_id
+                  AND confirmed.status='CONFIRMED'
+                  AND confirmed.license_command_sequence <= latest.license_command_sequence
+                ORDER BY confirmed.license_command_sequence DESC
+                LIMIT 1
+              ) AS basis_chain_event_id
+       FROM chain_commands latest
+       WHERE latest.license_id=$1
+       ORDER BY latest.license_command_sequence DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [license.id],
+    );
+    const previous = predecessor.rows[0];
+    if (!previous || !previous.basis_chain_event_id) {
+      throw new Error('LICENSE_CANONICAL_BASIS_NOT_FOUND');
+    }
+    const commandSequence = Number(previous.license_command_sequence) + 1;
     const result = await client.query<Record<string, unknown>>(
       `INSERT INTO chain_commands
         (id, idempotency_key, command_type, provider_user_id, license_id,
-         license_device_id, network, chain_id, contract_address, payload, payload_hash)
-       VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,decode($10,'hex'))
+         license_device_id, license_command_sequence, predecessor_command_id,
+         basis_chain_event_id, network, chain_id, contract_address, payload, payload_hash)
+       VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,decode($13,'hex'))
        RETURNING id, license_id, license_device_id, status`,
-      [commandId, commandType, license.providerUserId, license.id, deviceId, config.network, config.chainId, config.contractAddress, JSON.stringify(payload), hashPayload(payload).slice(2)],
+      [
+        commandId,
+        commandType,
+        license.providerUserId,
+        license.id,
+        deviceId,
+        commandSequence,
+        previous.id,
+        previous.basis_chain_event_id,
+        config.network.toLowerCase(),
+        config.chainId,
+        config.contractAddress.toLowerCase(),
+        JSON.stringify(payload),
+        hashPayload(payload).slice(2),
+      ],
     );
     return mapCommand(result.rows[0]!);
   }

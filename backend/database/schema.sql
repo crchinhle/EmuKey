@@ -94,8 +94,8 @@ CREATE TABLE products (
     )
 );
 
--- 3. Published Plan is immutable at application level. A changed rights/Terms set
--- creates a new version row. Terms content itself is a versioned application artefact.
+-- 3. Published Plan is immutable at application level. A changed rights set
+-- creates a new version row. Service Terms are platform content, not Plan data.
 CREATE TABLE plans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     product_id UUID NOT NULL,
@@ -109,8 +109,6 @@ CREATE TABLE plans (
     price_vnd BIGINT NOT NULL,
     max_active_devices INT NOT NULL,
     entitlements JSONB NOT NULL DEFAULT '{}'::jsonb,
-    terms_version INT NOT NULL,
-    terms_hash BYTEA NOT NULL,
     plan_commitment BYTEA NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     published_at TIMESTAMPTZ,
@@ -126,7 +124,7 @@ CREATE TABLE plans (
     CONSTRAINT uq_plans_id_provider UNIQUE (id, provider_user_id),
     CONSTRAINT uq_plans_id_product_provider_commitment
         UNIQUE (id, product_id, provider_user_id, plan_commitment),
-    CONSTRAINT ck_plans_version CHECK (version > 0 AND terms_version > 0),
+    CONSTRAINT ck_plans_version CHECK (version > 0),
     CONSTRAINT ck_plans_billing_cycle CHECK (billing_cycle IN ('MONTHLY', 'YEARLY')),
     CONSTRAINT ck_plans_duration CHECK (
         (billing_cycle = 'MONTHLY' AND duration_months = 1) OR
@@ -134,9 +132,7 @@ CREATE TABLE plans (
     ),
     CONSTRAINT ck_plans_values CHECK (price_vnd > 0 AND max_active_devices > 0),
     CONSTRAINT ck_plans_entitlements CHECK (jsonb_typeof(entitlements) = 'object'),
-    CONSTRAINT ck_plans_hashes CHECK (
-        octet_length(terms_hash) = 32 AND octet_length(plan_commitment) = 32
-    ),
+    CONSTRAINT ck_plans_hashes CHECK (octet_length(plan_commitment) = 32),
     CONSTRAINT ck_plans_status CHECK (status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')),
     CONSTRAINT ck_plans_publish CHECK (
         (status = 'DRAFT' AND published_at IS NULL) OR
@@ -157,7 +153,7 @@ CREATE TABLE orders (
     plan_id UUID NOT NULL,
     target_license_id UUID,
     order_type VARCHAR(20) NOT NULL,
-    order_status VARCHAR(40) NOT NULL DEFAULT 'WAITING_TERMS_ACCEPTANCE',
+    order_status VARCHAR(40) NOT NULL DEFAULT 'WAITING_SERVICE_TERMS_ACCEPTANCE',
     provider_name_snapshot VARCHAR(255) NOT NULL,
     product_name_snapshot VARCHAR(255) NOT NULL,
     plan_name_snapshot VARCHAR(255) NOT NULL,
@@ -168,12 +164,10 @@ CREATE TABLE orders (
     duration_months_snapshot INT NOT NULL,
     max_active_devices_snapshot INT NOT NULL,
     entitlements_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
-    terms_version_snapshot INT NOT NULL,
-    terms_hash_snapshot BYTEA NOT NULL,
     plan_commitment_snapshot BYTEA NOT NULL,
     payment_due_at TIMESTAMPTZ NOT NULL,
     ipn_accept_until TIMESTAMPTZ NOT NULL,
-    terms_accepted_at TIMESTAMPTZ,
+    service_terms_accepted_at TIMESTAMPTZ,
     payment_accepted_at TIMESTAMPTZ,
     cancelled_at TIMESTAMPTZ,
     expired_at TIMESTAMPTZ,
@@ -204,12 +198,11 @@ CREATE TABLE orders (
                 plan_commitment_snapshot, order_type),
     CONSTRAINT ck_orders_type CHECK (order_type IN ('NEW_PURCHASE', 'RENEWAL')),
     CONSTRAINT ck_orders_status CHECK (
-        order_status IN ('WAITING_TERMS_ACCEPTANCE', 'WAITING_PAYMENT', 'PAYMENT_ACCEPTED', 'CANCELLED', 'EXPIRED')
+        order_status IN ('WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT', 'PAYMENT_ACCEPTED', 'CANCELLED', 'EXPIRED')
     ),
     CONSTRAINT ck_orders_snapshots CHECK (
         plan_version_snapshot > 0 AND price_vnd_snapshot > 0 AND currency = 'VND' AND
         duration_months_snapshot > 0 AND max_active_devices_snapshot > 0 AND
-        terms_version_snapshot > 0 AND octet_length(terms_hash_snapshot) = 32 AND
         octet_length(plan_commitment_snapshot) = 32 AND payment_due_at > created_at AND
         ipn_accept_until > payment_due_at
     ),
@@ -217,8 +210,8 @@ CREATE TABLE orders (
         jsonb_typeof(entitlements_snapshot) = 'object'
     ),
     CONSTRAINT ck_orders_terms_gate CHECK (
-        (order_status = 'WAITING_TERMS_ACCEPTANCE' AND terms_accepted_at IS NULL) OR
-        (order_status IN ('WAITING_PAYMENT', 'PAYMENT_ACCEPTED') AND terms_accepted_at IS NOT NULL) OR
+        (order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND service_terms_accepted_at IS NULL) OR
+        (order_status IN ('WAITING_PAYMENT', 'PAYMENT_ACCEPTED') AND service_terms_accepted_at IS NOT NULL) OR
         order_status IN ('CANCELLED', 'EXPIRED')
     ),
     CONSTRAINT ck_orders_payment_gate CHECK (
@@ -245,12 +238,12 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF NEW.order_status <> 'WAITING_TERMS_ACCEPTANCE' OR
-       NEW.terms_accepted_at IS NOT NULL OR
+    IF NEW.order_status <> 'WAITING_SERVICE_TERMS_ACCEPTANCE' OR
+       NEW.service_terms_accepted_at IS NOT NULL OR
        NEW.payment_accepted_at IS NOT NULL OR
        NEW.cancelled_at IS NOT NULL OR
        NEW.expired_at IS NOT NULL THEN
-        RAISE EXCEPTION 'A new Order must enter in WAITING_TERMS_ACCEPTANCE state';
+        RAISE EXCEPTION 'A new Order must enter in WAITING_SERVICE_TERMS_ACCEPTANCE state';
     END IF;
 
     NEW.created_at := statement_timestamp();
@@ -264,7 +257,7 @@ CREATE TRIGGER trg_orders_initial_state
 BEFORE INSERT ON orders
 FOR EACH ROW EXECUTE FUNCTION enforce_order_initial_state();
 
--- Commercial identity, Plan/Terms snapshots and payment cutoffs are immutable.
+-- Commercial identity, Plan snapshot and payment cutoffs are immutable.
 -- Only the explicit Order state graph may change lifecycle timestamps.
 CREATE FUNCTION guard_order_snapshot_and_lifecycle()
 RETURNS TRIGGER
@@ -277,9 +270,8 @@ BEGIN
            NEW.provider_name_snapshot, NEW.product_name_snapshot, NEW.plan_name_snapshot,
            NEW.plan_version_snapshot, NEW.price_vnd_snapshot, NEW.currency,
            NEW.billing_cycle_snapshot, NEW.duration_months_snapshot,
-           NEW.max_active_devices_snapshot, NEW.entitlements_snapshot,
-           NEW.terms_version_snapshot, NEW.terms_hash_snapshot,
-           NEW.plan_commitment_snapshot, NEW.payment_due_at, NEW.ipn_accept_until,
+            NEW.max_active_devices_snapshot, NEW.entitlements_snapshot,
+            NEW.plan_commitment_snapshot, NEW.payment_due_at, NEW.ipn_accept_until,
            NEW.created_at)
        IS DISTINCT FROM
        ROW(OLD.id, OLD.order_number, OLD.idempotency_key,
@@ -288,15 +280,14 @@ BEGIN
            OLD.provider_name_snapshot, OLD.product_name_snapshot, OLD.plan_name_snapshot,
            OLD.plan_version_snapshot, OLD.price_vnd_snapshot, OLD.currency,
            OLD.billing_cycle_snapshot, OLD.duration_months_snapshot,
-           OLD.max_active_devices_snapshot, OLD.entitlements_snapshot,
-           OLD.terms_version_snapshot, OLD.terms_hash_snapshot,
-           OLD.plan_commitment_snapshot, OLD.payment_due_at, OLD.ipn_accept_until,
+            OLD.max_active_devices_snapshot, OLD.entitlements_snapshot,
+            OLD.plan_commitment_snapshot, OLD.payment_due_at, OLD.ipn_accept_until,
            OLD.created_at) THEN
         RAISE EXCEPTION 'Order identity, commercial snapshot and payment cutoffs are immutable';
     END IF;
 
     IF NEW.order_status IS DISTINCT FROM OLD.order_status AND NOT (
-        (OLD.order_status = 'WAITING_TERMS_ACCEPTANCE' AND
+        (OLD.order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND
             NEW.order_status IN ('WAITING_PAYMENT', 'CANCELLED', 'EXPIRED')) OR
         (OLD.order_status = 'WAITING_PAYMENT' AND
             NEW.order_status IN ('PAYMENT_ACCEPTED', 'CANCELLED', 'EXPIRED'))
@@ -305,7 +296,7 @@ BEGIN
             OLD.order_status, NEW.order_status;
     END IF;
 
-    IF OLD.order_status = 'WAITING_TERMS_ACCEPTANCE' AND
+    IF OLD.order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND
        NEW.order_status IN ('WAITING_PAYMENT', 'CANCELLED') AND
        statement_timestamp() >= OLD.payment_due_at THEN
         RAISE EXCEPTION 'Terms acceptance or cancellation is closed at payment_due_at';
@@ -317,7 +308,7 @@ BEGIN
         RAISE EXCEPTION 'Order cancellation is closed at payment_due_at';
     END IF;
 
-    IF OLD.order_status = 'WAITING_TERMS_ACCEPTANCE' AND
+    IF OLD.order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND
        NEW.order_status = 'EXPIRED' AND
        statement_timestamp() < OLD.payment_due_at THEN
         RAISE EXCEPTION 'Terms-pending Order cannot expire before payment_due_at';
@@ -332,7 +323,7 @@ BEGIN
     IF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
         CASE NEW.order_status
             WHEN 'WAITING_PAYMENT' THEN
-                NEW.terms_accepted_at := statement_timestamp();
+                NEW.service_terms_accepted_at := statement_timestamp();
             WHEN 'PAYMENT_ACCEPTED' THEN
                 NEW.payment_accepted_at := statement_timestamp();
             WHEN 'CANCELLED' THEN
@@ -344,16 +335,16 @@ BEGIN
         END CASE;
     END IF;
 
-    IF OLD.terms_accepted_at IS NOT NULL AND
-       NEW.terms_accepted_at IS DISTINCT FROM OLD.terms_accepted_at THEN
-        RAISE EXCEPTION 'Accepted Terms timestamp is immutable';
+    IF OLD.service_terms_accepted_at IS NOT NULL AND
+       NEW.service_terms_accepted_at IS DISTINCT FROM OLD.service_terms_accepted_at THEN
+        RAISE EXCEPTION 'Accepted Service Terms timestamp is immutable';
     END IF;
 
-    IF OLD.terms_accepted_at IS NULL AND NEW.terms_accepted_at IS NOT NULL AND NOT (
-        OLD.order_status = 'WAITING_TERMS_ACCEPTANCE' AND
+    IF OLD.service_terms_accepted_at IS NULL AND NEW.service_terms_accepted_at IS NOT NULL AND NOT (
+        OLD.order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND
         NEW.order_status = 'WAITING_PAYMENT'
     ) THEN
-        RAISE EXCEPTION 'Terms may be accepted only on WAITING_TERMS_ACCEPTANCE -> WAITING_PAYMENT';
+        RAISE EXCEPTION 'Service Terms may be accepted only on WAITING_SERVICE_TERMS_ACCEPTANCE -> WAITING_PAYMENT';
     END IF;
 
     IF OLD.payment_accepted_at IS NOT NULL AND
@@ -459,7 +450,7 @@ BEGIN
             WHERE pt.fulfillment_payment_attempt_id = OLD.id
               AND pt.fulfillment_order_id = OLD.order_id
               AND o.order_status = 'WAITING_PAYMENT'
-              AND pt.provider_occurred_at >= o.terms_accepted_at
+              AND pt.provider_occurred_at >= o.service_terms_accepted_at
               AND pt.provider_occurred_at >= OLD.created_at
               AND pt.provider_occurred_at < OLD.expires_at
               AND pt.provider_occurred_at < o.payment_due_at
@@ -927,6 +918,8 @@ CREATE TABLE chain_commands (
     receipt_checked_at TIMESTAMPTZ,
     attempt_count INT NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMPTZ,
+    lease_owner VARCHAR(180),
+    lease_expires_at TIMESTAMPTZ,
     last_error TEXT,
     locked_by VARCHAR(120),
     locked_at TIMESTAMPTZ,
@@ -2431,7 +2424,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_order_status VARCHAR(40);
-    v_terms_accepted_at TIMESTAMPTZ;
+    v_service_terms_accepted_at TIMESTAMPTZ;
     v_payment_due_at TIMESTAMPTZ;
 BEGIN
     IF NEW.status <> 'PENDING' THEN
@@ -2447,15 +2440,15 @@ BEGIN
     NEW.created_at := statement_timestamp();
     NEW.updated_at := NEW.created_at;
 
-    SELECT order_status, terms_accepted_at, payment_due_at
-    INTO v_order_status, v_terms_accepted_at, v_payment_due_at
+    SELECT order_status, service_terms_accepted_at, payment_due_at
+    INTO v_order_status, v_service_terms_accepted_at, v_payment_due_at
     FROM orders
     WHERE id = NEW.order_id
     FOR UPDATE;
 
     IF NOT FOUND OR v_order_status <> 'WAITING_PAYMENT' OR
-       v_terms_accepted_at IS NULL OR statement_timestamp() >= v_payment_due_at OR
-       NEW.created_at < v_terms_accepted_at OR
+       v_service_terms_accepted_at IS NULL OR statement_timestamp() >= v_payment_due_at OR
+       NEW.created_at < v_service_terms_accepted_at OR
        NEW.created_at >= v_payment_due_at OR NEW.expires_at > v_payment_due_at THEN
         RAISE EXCEPTION 'PaymentAttempt requires a terms-accepted WAITING_PAYMENT Order before due time';
     END IF;
@@ -2475,7 +2468,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_order_status VARCHAR(40);
-    v_terms_accepted_at TIMESTAMPTZ;
+    v_service_terms_accepted_at TIMESTAMPTZ;
     v_payment_due_at TIMESTAMPTZ;
     v_ipn_accept_until TIMESTAMPTZ;
     v_attempt_status VARCHAR(30);
@@ -2498,9 +2491,9 @@ BEGIN
     END IF;
 
     IF v_new_effect AND (NOT v_old_effect OR v_effect_link_changed) THEN
-        SELECT o.order_status, o.terms_accepted_at, o.payment_due_at, o.ipn_accept_until,
+        SELECT o.order_status, o.service_terms_accepted_at, o.payment_due_at, o.ipn_accept_until,
                pa.status, pa.created_at, pa.expires_at, pa.superseded_at
-        INTO v_order_status, v_terms_accepted_at, v_payment_due_at, v_ipn_accept_until,
+        INTO v_order_status, v_service_terms_accepted_at, v_payment_due_at, v_ipn_accept_until,
              v_attempt_status, v_attempt_created_at, v_attempt_expires_at,
              v_attempt_superseded_at
         FROM orders o
@@ -2510,12 +2503,12 @@ BEGIN
         FOR UPDATE OF o, pa;
 
         IF NOT FOUND OR v_order_status <> 'WAITING_PAYMENT' OR
-           v_terms_accepted_at IS NULL OR
+           v_service_terms_accepted_at IS NULL OR
            v_attempt_status NOT IN ('PENDING', 'EXPIRED', 'SUPERSEDED') THEN
             RAISE EXCEPTION 'Payment fulfillment requires an eligible attempt on a terms-accepted WAITING_PAYMENT Order';
         END IF;
 
-        IF NEW.provider_occurred_at < v_terms_accepted_at OR
+        IF NEW.provider_occurred_at < v_service_terms_accepted_at OR
            NEW.provider_occurred_at < v_attempt_created_at OR
            NEW.provider_occurred_at >= v_payment_due_at OR
            NEW.provider_occurred_at >= v_attempt_expires_at OR
@@ -3040,6 +3033,8 @@ CREATE TABLE notifications (
     delivery_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
     attempt_count INT NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMPTZ,
+    lease_owner VARCHAR(180),
+    lease_expires_at TIMESTAMPTZ,
     last_error TEXT,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     sent_at TIMESTAMPTZ,
@@ -3059,6 +3054,7 @@ CREATE TABLE notifications (
     ),
     CONSTRAINT ck_notifications_data CHECK (jsonb_typeof(data) = 'object'),
     CONSTRAINT ck_notifications_attempts CHECK (attempt_count >= 0)
+    ,CONSTRAINT ck_notifications_lease CHECK ((lease_owner IS NULL AND lease_expires_at IS NULL) OR (lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL))
 );
 
 -- 17. Android push registration.
@@ -3190,7 +3186,7 @@ CREATE INDEX ix_orders_status_due ON orders (order_status, payment_due_at);
 CREATE UNIQUE INDEX uq_orders_one_open_renewal
     ON orders (target_license_id)
     WHERE order_type = 'RENEWAL'
-      AND order_status IN ('WAITING_TERMS_ACCEPTANCE', 'WAITING_PAYMENT');
+      AND order_status IN ('WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT');
 CREATE INDEX ix_payment_attempts_order ON payment_attempts (order_id, created_at DESC);
 CREATE UNIQUE INDEX uq_payment_attempts_one_pending
     ON payment_attempts (order_id) WHERE status = 'PENDING';

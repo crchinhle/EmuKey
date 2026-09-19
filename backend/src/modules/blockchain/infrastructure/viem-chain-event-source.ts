@@ -28,6 +28,7 @@ export interface RpcContractEvent {
 
 export interface ChainEventRpcPort {
   blockHash(blockNumber: number): Promise<Hex>;
+  blockTimestamp(blockNumber: number): Promise<Date>;
   contractEvents(
     fromBlock: number,
     toBlock: number,
@@ -87,6 +88,15 @@ export class ViemChainEventSource implements ChainEventRpcPort {
       return block.hash;
     } catch (error) {
       throw sanitizeRpcError('CHAIN_RPC_BLOCK_HASH_FAILED', error);
+    }
+  }
+
+  async blockTimestamp(blockNumber: number): Promise<Date> {
+    try {
+      const block = await this.client.getBlock({ blockNumber: BigInt(blockNumber) });
+      return new Date(Number(block.timestamp) * 1_000);
+    } catch (error) {
+      throw sanitizeRpcError('CHAIN_RPC_BLOCK_TIMESTAMP_FAILED', error);
     }
   }
 

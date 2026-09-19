@@ -6,7 +6,7 @@ import { vi } from 'vitest';
 
 const actor: AuthPrincipal = { sub: '00000000-0000-4000-8000-000000000002', role: 'PROVIDER_ADMIN', sessionVersion: 1 };
 const product: ProductRecord = { code: 'EMUKEY', createdAt: new Date(), description: null, imageUrl: null, id: '00000000-0000-4000-8000-000000000200', name: 'Emukey', providerUserId: actor.sub, publishedAt: null, status: 'DRAFT', updatedAt: new Date() };
-const plan: PlanRecord = { billingCycle: 'MONTHLY', code: 'MONTHLY', createdAt: new Date(), durationMonths: 1, entitlements: { desktop: true }, id: '00000000-0000-4000-8000-000000000300', maxActiveDevices: 2, name: 'Monthly', planCommitment: `0x${'01'.repeat(32)}`, priceVnd: 120000, productId: product.id, providerUserId: actor.sub, publishedAt: null, status: 'DRAFT', termsHash: `0x${'02'.repeat(32)}`, termsVersion: 1, updatedAt: new Date(), version: 1 };
+const plan: PlanRecord = { billingCycle: 'MONTHLY', code: 'MONTHLY', createdAt: new Date(), durationMonths: 1, entitlements: { desktop: true }, id: '00000000-0000-4000-8000-000000000300', maxActiveDevices: 2, name: 'Monthly', planCommitment: `0x${'01'.repeat(32)}`, priceVnd: 120000, productId: product.id, providerUserId: actor.sub, publishedAt: null, status: 'DRAFT', updatedAt: new Date(), version: 1 };
 
 function repository() {
   return {

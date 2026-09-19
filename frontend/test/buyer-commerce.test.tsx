@@ -6,14 +6,15 @@ import { App } from '../src/presentation/app/App';
 afterEach(cleanup);
 
 describe('Customer commerce', () => {
-  it('renders the authenticated Customer home from the metric and license arrays', () => {
+  it('renders the authenticated Customer home from real API arrays', async () => {
     render(<App initialEntries={['/buyer']} />);
 
     expect(
       screen.getByRole('heading', { name: 'Tổng quan tài khoản người mua' }),
     ).toBeTruthy();
-    expect(screen.getByText('18 / 25')).toBeTruthy();
-    expect(screen.getAllByText('CloudStudio AI').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('SecureDesk Pro')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Dữ liệu tài khoản thật')).toHaveLength(2);
+    expect(screen.queryByText('CloudStudio AI')).toBeNull();
   });
 
   it('creates the server snapshot before asking for Terms acceptance', async () => {
@@ -27,7 +28,7 @@ describe('Customer commerce', () => {
       await screen.findByRole('heading', { name: 'Điều khoản cấp phép' }),
     ).toBeTruthy();
     expect(screen.getByText(/Đơn hàng và License sẽ được gắn với tài khoản Emukey/)).toBeTruthy();
-    expect(screen.getByText(/deterministic Terms snapshot/i)).toBeTruthy();
+    expect(screen.getByText(/platform Service Terms/i)).toBeTruthy();
     expect(
       screen.getByRole('checkbox', { name: /đồng ý với điều khoản cấp phép/i }),
     ).toBeTruthy();

@@ -1,4 +1,4 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createHmac } from 'node:crypto';
@@ -32,6 +32,8 @@ function fixture() {
       licenseId,
       status: 'PENDING',
     }),
+    createDeviceRevokeCommand: vi.fn(),
+    createRotationCommand: vi.fn(),
     findSecurity: vi.fn().mockResolvedValue({
       activationCommitment: activationCommitment(secret),
       activationKeyVersion: 1,
@@ -42,6 +44,8 @@ function fixture() {
       providerUserId: '00000000-0000-4000-8000-000000000002',
       status: 'ACTIVE',
     }),
+    findDevice: vi.fn().mockResolvedValue(null),
+    findDeviceById: vi.fn(),
   };
   const service = new LicensingService(
     repository as never,
@@ -90,7 +94,44 @@ describe('LicensingService Phase 6 boundaries', () => {
       createHmac('sha256', new TextEncoder().encode('test-secret')).update('device-ref:opaque-device-1').digest('hex'),
       deviceAddress,
       expect.any(String),
+      1,
       expect.objectContaining({ chainId: 31_337 }),
+    );
+    expect(repository.findSecurity).toHaveBeenCalledWith(licenseId, customer.sub);
+  });
+
+  it('does not reveal or mutate a license outside the authenticated customer scope', async () => {
+    const { repository, service } = fixture();
+    repository.findSecurity.mockResolvedValueOnce(null);
+
+    await expect(
+      service.challenge(customer, {
+        deviceRef: 'device-owned-by-another-customer',
+        licenseId,
+        purpose: 'ACTIVATE_DEVICE',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(repository.findSecurity).toHaveBeenCalledWith(licenseId, customer.sub);
+  });
+
+  it('binds a one-time challenge to purpose, key version and binding generation', async () => {
+    const { redis, service } = fixture();
+
+    const result = await service.challenge(customer, {
+      deviceRef: 'new-device',
+      licenseId,
+      purpose: 'ACTIVATE_DEVICE',
+    });
+
+    expect(result).toMatchObject({ bindingGeneration: 1, keyVersion: 1, purpose: 'ACTIVATE_DEVICE' });
+    expect(result.challenge).toMatch(
+      new RegExp(`^emukey:v1:ACTIVATE_DEVICE:${licenseId}:[0-9a-f]{64}:1:1:[0-9]+:[A-Za-z0-9_-]+$`),
+    );
+    expect(redis.set).toHaveBeenCalledWith(
+      expect.stringContaining(':ACTIVATE_DEVICE:1:1'),
+      result.challenge,
+      'EX',
+      300,
     );
   });
 
@@ -157,5 +198,95 @@ describe('LicensingService Phase 6 boundaries', () => {
     await expect(
       service.verifyEntitlement(customer, { token: staleToken }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('supports remote revoke without requiring proof from the lost device', async () => {
+    const { repository } = fixture();
+    repository.findDeviceById = vi.fn().mockResolvedValue({
+      bindingGeneration: 4,
+      devicePublicKey: deviceAddress,
+      deviceRef: 'lost-device',
+      id: '00000000-0000-4000-8000-000000000902',
+      status: 'ACTIVE',
+    });
+    repository.createDeviceRevokeCommand = vi.fn().mockResolvedValue({
+      commandId: '00000000-0000-4000-8000-000000000903',
+      deviceId: '00000000-0000-4000-8000-000000000902',
+      licenseId,
+      status: 'PENDING',
+    });
+    const identity = {
+      verifyCurrentPassword: vi.fn().mockResolvedValue(true),
+      consumeLicensingActionVerification: vi.fn().mockResolvedValue(undefined),
+    };
+    const remote = new LicensingService(
+      repository as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new TextEncoder().encode('test-secret'),
+      { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+      identity as never,
+    );
+
+    await expect(remote.remoteRevokeDevice(customer, licenseId, '00000000-0000-4000-8000-000000000902', {
+      actionToken: 'remote-action-token',
+      currentPassword: 'CurrentPassword1!',
+    })).resolves.toMatchObject({ status: 'PENDING', licenseId });
+    expect(identity.consumeLicensingActionVerification).toHaveBeenCalledWith(
+      'remote-action-token', customer.sub, licenseId, 'REMOTE_REVOKE_DEVICE', '00000000-0000-4000-8000-000000000902',
+    );
+    expect(repository.createDeviceRevokeCommand).toHaveBeenCalledWith(
+      customer.sub,
+      licenseId,
+      'lost-device',
+      expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      4,
+      expect.objectContaining({ chainId: 31_337 }),
+    );
+  });
+
+  it('recovers a lost activation key by creating a new on-chain rotation', async () => {
+    const { repository } = fixture();
+    repository.createRotationCommand = vi.fn().mockResolvedValue({
+      commandId: '00000000-0000-4000-8000-000000000904',
+      deviceId: null,
+      licenseId,
+      reused: false,
+      status: 'PENDING',
+    });
+    const envelopes = { prepare: vi.fn().mockResolvedValue(undefined) };
+    const identity = {
+      verifyCurrentPassword: vi.fn().mockResolvedValue(true),
+      consumeLicensingActionVerification: vi.fn().mockResolvedValue(undefined),
+    };
+    const recovery = new LicensingService(
+      repository as never,
+      {} as never,
+      envelopes as never,
+      {} as never,
+      new TextEncoder().encode('test-secret'),
+      { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+      identity as never,
+    );
+
+    await expect(recovery.recoverActivationKey(customer, licenseId, {
+      actionToken: 'recovery-action-token',
+      currentPassword: 'CurrentPassword1!',
+    })).resolves.toMatchObject({ status: 'PENDING', licenseId });
+    expect(identity.consumeLicensingActionVerification).toHaveBeenCalledWith(
+      'recovery-action-token', customer.sub, licenseId, 'KEY_RECOVERY', undefined,
+    );
+    expect(repository.createRotationCommand).toHaveBeenCalledWith(
+      customer.sub,
+      licenseId,
+      expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      2,
+      expect.objectContaining({ chainId: 31_337 }),
+    );
+    expect(envelopes.prepare).toHaveBeenCalledWith(
+      expect.objectContaining({ commandId: '00000000-0000-4000-8000-000000000904', keyVersion: 2, licenseId }),
+      86_400,
+    );
   });
 });

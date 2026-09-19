@@ -196,25 +196,25 @@ export class IdentityService {
     }
   }
 
-  async issueLicensingActionVerification(userId: string, licenseId: string, action: string): Promise<void> {
+  async issueLicensingActionVerification(userId: string, licenseId: string, action: string, deviceId?: string): Promise<void> {
     const user = await this.repo.findById(userId);
     if (!user || user.role !== 'CUSTOMER' || !user.emailVerifiedAt) {
       throw new UnauthorizedException({ code: 'EMAIL_NOT_VERIFIED', message: 'Email verification is required.' });
     }
     await this.rateLimit('licensing-action', `${userId}:${licenseId}:${action}`, 3);
-    const token = await this.issueOneTime('licensing-action', JSON.stringify({ action, licenseId, userId }), 900);
+    const token = await this.issueOneTime('licensing-action', JSON.stringify({ action, deviceId: deviceId ?? null, licenseId, userId }), 900);
     if (!this.delivery.sendLicensingActionVerification) throw new Error('LICENSING_ACTION_EMAIL_UNAVAILABLE');
     await this.delivery.sendLicensingActionVerification(user.email, token, action);
   }
 
-  async consumeLicensingActionVerification(token: string | undefined, userId: string, licenseId: string, action: string): Promise<void> {
+  async consumeLicensingActionVerification(token: string | undefined, userId: string, licenseId: string, action: string, deviceId?: string): Promise<void> {
     if (!token) throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
     const key = `licensing-action:${this.digest(token)}`;
     const value = await this.redis.get(key);
     if (!value) throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
     try {
-      const data = JSON.parse(value) as { action?: string; licenseId?: string; userId?: string };
-      if (data.action !== action || data.licenseId !== licenseId || data.userId !== userId) throw new Error('mismatch');
+      const data = JSON.parse(value) as { action?: string; deviceId?: string | null; licenseId?: string; userId?: string };
+      if (data.action !== action || data.deviceId !== (deviceId ?? null) || data.licenseId !== licenseId || data.userId !== userId) throw new Error('mismatch');
     } catch {
       throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
     }

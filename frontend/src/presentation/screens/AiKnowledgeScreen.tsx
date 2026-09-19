@@ -1,24 +1,13 @@
 import { Button, Input, Upload } from 'antd';
 import type { UploadProps } from 'antd';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
-import { knowledgeDocuments } from '../../infrastructure/workspace/mockWorkspace';
-import { PageHeader, StatusChip } from '../components/WorkspacePrimitives';
+import { PageHeader } from '../components/WorkspacePrimitives';
 
 export function AiKnowledgeScreen() {
-  const [localFiles, setLocalFiles] = useState<string[]>([]);
   const [query, setQuery] = useState('');
-  const visibleDocuments = useMemo(
-    () =>
-      knowledgeDocuments.filter((document) =>
-        document.name
-          .toLocaleLowerCase('vi')
-          .includes(query.trim().toLocaleLowerCase('vi')),
-      ),
-    [query],
-  );
   const beforeUpload: UploadProps['beforeUpload'] = (file) => {
-    setLocalFiles((current) => [...current, file.name]);
+    void file;
     return false;
   };
   return (
@@ -54,24 +43,7 @@ export function AiKnowledgeScreen() {
             value={query}
           />
         </div>
-        {localFiles.map((name) => (
-          <article key={name}>
-            <div>
-              <strong>{name}</strong>
-              <small>Tệp cục bộ · chờ tải lên</small>
-            </div>
-            <StatusChip tone="warning">Bản nháp</StatusChip>
-          </article>
-        ))}
-        {visibleDocuments.map((document) => (
-          <article key={document.id}>
-            <div>
-              <strong>{document.name}</strong>
-              <small>{document.meta}</small>
-            </div>
-            <StatusChip tone={document.tone}>{document.status}</StatusChip>
-          </article>
-        ))}
+        <p className="muted-copy">Knowledge API upload chưa được nối vào màn hình này. Không hiển thị dữ liệu tài liệu giả.</p>
       </section>
     </>
   );

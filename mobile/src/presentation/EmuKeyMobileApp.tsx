@@ -19,7 +19,7 @@ import { GreatVibes_400Regular } from '@expo-google-fonts/great-vibes/400Regular
 import { useFonts } from 'expo-font';
 
 import {
-  acceptOrderTerms,
+  acceptServiceTerms,
   comparePlans,
   createCheckout,
   createOrder,
@@ -27,12 +27,19 @@ import {
   getCommandStatus,
   getOrderTerms,
   getProfile,
+  listConversationMessages,
+  listConversations,
   listDevices,
   listLicenses,
   listOrders,
   listProducts,
+  listNotifications,
+  markNotificationRead,
   activateDevice,
   createActivationChallenge,
+  createConversation,
+  appendConversationMessage,
+  askConversationAi,
   issueEntitlement,
   loadActivationKey,
   login,
@@ -55,15 +62,20 @@ import {
   type MobilePlanComparison,
   type MobileProduct,
   type MobileSession,
+  type MobileNotification,
+  type MobileConversation,
+  type MobileConversationMessage,
   updateProfile,
 } from '../infrastructure/api/client';
 import { createOrLoadDeviceIdentity } from '../infrastructure/device-identity';
 
 type RootStackParamList = {
+  Assistance: undefined;
   Catalog: undefined;
   Checkout: { planId: string; planName: string; priceVnd: number; productName: string };
   ComparePlans: { ids: string[] };
   Licenses: undefined;
+  Notifications: undefined;
   Orders: undefined;
   OrderDetail: { id: string };
   Payment: { orderId: string };
@@ -111,8 +123,109 @@ function CustomerNavigation({ navigation }: { readonly navigation: Pick<NativeSt
       <Button onPress={() => navigation.navigate('Orders')} title="Đơn hàng" />
       <Button onPress={() => navigation.navigate('Licenses')} title="License" />
       <Button onPress={() => navigation.navigate('Profile')} title="Hồ sơ" />
+      <Button onPress={() => navigation.navigate('Notifications')} title="Thông báo" />
+      <Button onPress={() => navigation.navigate('Assistance')} title="Hỗ trợ" />
     </View>
   );
+}
+
+export function AssistanceScreen() {
+  const [conversations, setConversations] = useState<MobileConversation[]>([]);
+  const [selected, setSelected] = useState<MobileConversation | null>(null);
+  const [messages, setMessages] = useState<MobileConversationMessage[]>([]);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [aiAnswer, setAiAnswer] = useState<{ answer: string; grounded: boolean; citedSourceIds: string[] } | null>(null);
+
+  useEffect(() => {
+    void listConversations().then((items) => {
+      setConversations(items);
+      if (items[0]) {
+        setSelected(items[0]);
+        return listConversationMessages(items[0].id).then(setMessages);
+      }
+      return undefined;
+    }).catch(() => setError('Không thể tải hội thoại hỗ trợ.'));
+  }, []);
+
+  const selectConversation = async (conversation: MobileConversation) => {
+    setSelected(conversation);
+    setAiAnswer(null);
+    try { setMessages(await listConversationMessages(conversation.id)); }
+    catch { setError('Không thể tải nội dung hội thoại.'); }
+  };
+
+  const send = async () => {
+    const content = draft.trim();
+    if (!content || !selected) return;
+    try {
+      await appendConversationMessage(selected.id, crypto.randomUUID(), content);
+      setDraft('');
+      setMessages(await listConversationMessages(selected.id));
+    } catch { setError('Không thể gửi tin nhắn.'); }
+  };
+
+  const ask = async () => {
+    const question = draft.trim();
+    if (!question || !selected) return;
+    try {
+      setAiAnswer(await askConversationAi(selected.id, question));
+      setDraft('');
+      setMessages(await listConversationMessages(selected.id));
+    } catch { setError('Không thể hỏi AI lúc này.'); }
+  };
+
+  const start = async () => {
+    try {
+      const conversation = await createConversation();
+      setConversations((items) => [conversation, ...items]);
+      setSelected(conversation);
+      setMessages([]);
+    } catch { setError('Không thể tạo hội thoại mới.'); }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text accessibilityRole="header" style={styles.heading}>Hỗ trợ</Text>
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      <Button onPress={() => void start()} title="Hội thoại mới" />
+      {conversations.map((conversation) => (
+        <Pressable key={conversation.id} onPress={() => void selectConversation(conversation)} style={[styles.card, selected?.id === conversation.id ? styles.selectedCard : null]}>
+          <Text style={styles.cardTitle}>{conversation.title ?? 'Hội thoại hỗ trợ'}</Text>
+          <Text style={styles.muted}>{conversation.status}</Text>
+        </Pressable>
+      ))}
+      {!selected ? <Text>Chưa có hội thoại hỗ trợ.</Text> : (
+        <View style={styles.card}>
+          {messages.map((message) => (
+            <View key={message.id} style={styles.messageRow}>
+              <Text style={styles.muted}>{message.senderType === 'CUSTOMER' ? 'Bạn' : message.senderType === 'AI' ? 'AI' : 'Hỗ trợ'}</Text>
+              <Text>{message.content}</Text>
+            </View>
+          ))}
+          {aiAnswer ? <View style={styles.aiNotice}><Text>{aiAnswer.answer}</Text><Text style={styles.muted}>{aiAnswer.grounded ? `Nguồn: ${aiAnswer.citedSourceIds.join(', ')}` : 'AI từ chối vì không đủ nguồn chính thức.'}</Text></View> : null}
+          <TextInput accessibilityLabel="Tin nhắn hỗ trợ" onChangeText={setDraft} placeholder="Nhập câu hỏi hoặc tin nhắn" style={styles.input} value={draft} />
+          <View style={styles.actions}><Button disabled={!draft.trim()} onPress={() => void send()} title="Gửi tin nhắn" /><Button disabled={!draft.trim()} onPress={() => void ask()} title="Hỏi AI có nguồn" /></View>
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
+export function NotificationsScreen() {
+  const [notifications, setNotifications] = useState<MobileNotification[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { void listNotifications().then(setNotifications).catch(() => setError('Không thể tải thông báo.')); }, []);
+  return <ScrollView contentContainerStyle={styles.content}>
+    <Text accessibilityRole="header" style={styles.heading}>Thông báo</Text>
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {notifications.length === 0 && !error ? <Text>Chưa có thông báo.</Text> : null}
+    {notifications.map((notification) => <Pressable key={notification.id} onPress={() => { if (!notification.isRead) void markNotificationRead(notification.id).then(() => setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, isRead: true } : item))); }} style={styles.card}>
+      <Text style={styles.cardTitle}>{notification.title}</Text>
+      <Text>{notification.content}</Text>
+      {!notification.isRead ? <Text style={styles.muted}>Chưa đọc</Text> : null}
+    </Pressable>)}
+  </ScrollView>;
 }
 
 export function CatalogScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Catalog'>) {
@@ -304,7 +417,7 @@ export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<Roo
     if (!order || !accepted) return;
     setError(null);
     try {
-      const updated = await acceptOrderTerms(order);
+      const updated = await acceptServiceTerms(order);
       navigation.replace('Payment', { orderId: updated.id });
     } catch {
       setError('Không thể xác nhận điều khoản của đơn hàng.');
@@ -459,7 +572,7 @@ export function LicensesScreen({
     setError(null);
     try {
       const identity = await createOrLoadDeviceIdentity(license.id);
-      const challenge = await createActivationChallenge({ deviceRef: identity.deviceRef, licenseId: license.id });
+      const challenge = await createActivationChallenge({ deviceRef: identity.deviceRef, licenseId: license.id, purpose: 'ACTIVATE_DEVICE' });
       const proof = identity.signMessage(challenge.challenge);
       const command = await activateDevice({
         activationKey: activationKey?.licenseId === license.id ? activationKey.key : '',
@@ -481,7 +594,7 @@ export function LicensesScreen({
       const key = activationKey?.licenseId === licenseId ? activationKey.key : await loadActivationKey(licenseId);
       if (!key) throw new Error('ACTIVATION_KEY_MISSING');
       const identity = await createOrLoadDeviceIdentity(licenseId);
-      const challenge = await createActivationChallenge({ deviceId: device.id, deviceRef: identity.deviceRef, licenseId });
+      const challenge = await createActivationChallenge({ deviceId: device.id, deviceRef: identity.deviceRef, licenseId, purpose: 'SELF_REVOKE_DEVICE' });
       const proof = identity.signMessage(challenge.challenge);
       const command = await revokeDevice(licenseId, device.id, { actionToken, activationKey: key, challenge: challenge.challenge, proof });
       setMessage(`Revoke ${command.status}: ${command.commandId}`);
@@ -495,7 +608,12 @@ export function LicensesScreen({
     setError(null);
     try {
       const identity = await createOrLoadDeviceIdentity(licenseId);
-      const challenge = await createActivationChallenge({ deviceId: device.id, deviceRef: identity.deviceRef, licenseId });
+      const challenge = await createActivationChallenge({
+        deviceId: device.id,
+        deviceRef: identity.deviceRef,
+        licenseId,
+        purpose: refresh ? 'REFRESH_ENTITLEMENT' : 'ISSUE_ENTITLEMENT',
+      });
       const proof = identity.signMessage(challenge.challenge);
       const result = refresh
         ? await refreshEntitlement(licenseId, device.id, challenge.challenge, proof)
@@ -540,7 +658,7 @@ export function LicensesScreen({
           void loadDevices(command.licenseId);
           return;
         }
-        if (command.status === 'DEAD_LETTER') return;
+        if (['DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'].includes(command.status)) return;
       } catch {
         if (active) setError('Tạm thời không thể đọc trạng thái blockchain command. Ứng dụng sẽ thử lại.');
       }
@@ -587,7 +705,7 @@ export function LicensesScreen({
             {(devices[license.id] ?? []).map((device) => (
               <View key={device.id} style={styles.card}>
                 <Text>{device.deviceRef} · {device.status} · {device.finality ?? 'PENDING'}</Text>
-                {device.status === 'ACTIVE' ? <Button onPress={() => void requestLicensingActionVerification(license.id, 'REVOKE_DEVICE').then(() => setMessage('Đã gửi email xác nhận thu hồi.')).catch(() => setError('Không thể gửi email xác nhận.'))} title="Gửi email xác nhận thu hồi" /> : null}
+                {device.status === 'ACTIVE' ? <Button onPress={() => void requestLicensingActionVerification(license.id, 'REVOKE_DEVICE', device.id).then(() => setMessage('Đã gửi email xác nhận thu hồi.')).catch(() => setError('Không thể gửi email xác nhận.'))} title="Gửi email xác nhận thu hồi" /> : null}
                 {device.status === 'ACTIVE' ? <Button disabled={!actionToken} onPress={() => void revoke(license.id, device)} title="Thu hồi thiết bị" /> : null}
                 {device.status === 'ACTIVE' && device.finality === 'CONFIRMED' ? <Button onPress={() => void sendEntitlement(license.id, device, false)} title="Cấp entitlement" /> : null}
                 {device.status === 'ACTIVE' && device.finality === 'CONFIRMED' ? <Button onPress={() => void sendEntitlement(license.id, device, true)} title="Làm mới entitlement" /> : null}
@@ -629,7 +747,7 @@ export function RenewalScreen({ navigation, route }: NativeStackScreenProps<Root
   const continueToPayment = async () => {
     if (!renewalOrder || !accepted) return;
     try {
-      const updated = await acceptOrderTerms(renewalOrder);
+      const updated = await acceptServiceTerms(renewalOrder);
       navigation.replace('Payment', { orderId: updated.id });
     } catch {
       setError('Không thể xác nhận điều khoản gia hạn.');
@@ -722,11 +840,13 @@ export function EmuKeyMobileApp() {
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Catalog">
         <Stack.Screen component={CatalogScreen} name="Catalog" options={{ headerRight: () => <Button onPress={() => void logout().then(() => setSession(null))} title="Đăng xuất" />, title: 'Sản phẩm' }} />
+        <Stack.Screen component={AssistanceScreen} name="Assistance" options={{ title: 'Hỗ trợ' }} />
         <Stack.Screen component={ComparePlansScreen} name="ComparePlans" options={{ title: 'So sánh gói' }} />
         <Stack.Screen component={CheckoutScreen} name="Checkout" options={{ title: 'Tạo đơn hàng' }} />
         <Stack.Screen component={OrdersScreen} name="Orders" options={{ headerRight: () => <Button onPress={() => void logout().then(() => setSession(null))} title="Đăng xuất" />, title: 'Đơn hàng' }} />
         <Stack.Screen component={OrderDetailScreen} name="OrderDetail" options={{ title: 'Chi tiết đơn hàng' }} />
         <Stack.Screen component={LicensesScreen} name="Licenses" options={{ title: 'License của tôi' }} />
+        <Stack.Screen component={NotificationsScreen} name="Notifications" options={{ title: 'Thông báo' }} />
         <Stack.Screen component={PaymentScreen} name="Payment" options={{ title: 'Thanh toán' }} />
         <Stack.Screen name="Profile" options={{ title: 'Hồ sơ' }}>
           {() => <ProfileScreen onProfileUpdated={(user) => setSession((current) => current ? { ...current, user } : current)} />}
@@ -739,6 +859,7 @@ export function EmuKeyMobileApp() {
 }
 
 const styles = StyleSheet.create({
+  aiNotice: { backgroundColor: '#e9f1f5', borderColor: '#b7cfda', borderRadius: 8, borderWidth: 1, gap: 6, padding: 12 },
   acceptance: { backgroundColor: '#fdfbf6', borderColor: '#a9977a', borderRadius: 8, borderWidth: 1, padding: 12 },
   acceptanceSelected: { backgroundColor: '#fbf0d6', borderColor: '#a8792e' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -755,6 +876,7 @@ const styles = StyleSheet.create({
   flexOne: { flex: 1 },
   heading: { color: '#1c1a17', fontSize: 22, fontWeight: '700' },
   input: { backgroundColor: '#fdfbf6', borderColor: '#a9977a', borderRadius: 8, borderWidth: 1, padding: 12 },
+  messageRow: { borderBottomColor: '#e4dfd3', borderBottomWidth: 1, gap: 4, paddingVertical: 8 },
   multilineInput: { minHeight: 88, textAlignVertical: 'top' },
   muted: { color: '#52493c' },
   planRow: { alignItems: 'center', borderTopColor: '#e4dfd3', borderTopWidth: 1, flexDirection: 'row', gap: 8, paddingTop: 10 },
@@ -762,6 +884,7 @@ const styles = StyleSheet.create({
   price: { color: '#8a611f', fontSize: 18, fontWeight: '700' },
   publicContainer: { flex: 1 },
   subtitle: { color: '#52493c', fontSize: 16 },
+  selectedCard: { borderColor: '#7a2e3a', borderWidth: 2 },
   success: { color: '#1f6f46' },
   terms: { color: '#1c1a17', lineHeight: 22 },
   webView: { flex: 1 },

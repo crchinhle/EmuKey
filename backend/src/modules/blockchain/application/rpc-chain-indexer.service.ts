@@ -13,6 +13,7 @@ import type { ChainEventType } from '../infrastructure/chain-event.repository.js
 export const CHAIN_RPC_INDEXER = Symbol('CHAIN_RPC_INDEXER');
 
 export interface ChainRpcIndexerPort {
+  canonicalTime(): Promise<Date>;
   poll(workerId: string): Promise<number | null>;
 }
 
@@ -53,6 +54,15 @@ function eventType(log: RpcContractEvent): ChainEventType {
 }
 
 function eventPayload(log: RpcContractEvent): Record<string, unknown> {
+  if (log.eventName === 'LicenseIssued') {
+    return {
+      activationCommitment: log.args.activationCommitment,
+      expiresAt: new Date(Number(log.args.expiresAt) * 1_000).toISOString(),
+      keyVersion: Number(log.args.activationKeyVersion),
+      planCommitment: log.args.planCommitment,
+      provider: log.args.provider,
+    };
+  }
   if (log.eventName === 'LicenseRenewed') {
     return {
       expiresAt: new Date(Number(log.args.expiresAt) * 1_000).toISOString(),
@@ -94,6 +104,15 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
     private readonly rpc: ChainEventRpcPort,
     private readonly options: RpcChainIndexerOptions,
   ) {}
+
+  async canonicalTime(): Promise<Date> {
+    const latestBlock = await this.rpc.latestBlock();
+    const finalizedBlock = latestBlock - this.options.requiredConfirmations + 1;
+    if (finalizedBlock < this.options.deploymentBlock) {
+      throw new Error('CHAIN_FINALIZED_HEAD_UNAVAILABLE');
+    }
+    return this.rpc.blockTimestamp(finalizedBlock);
+  }
 
   async poll(workerId: string): Promise<number | null> {
     const latestBlock = await this.rpc.latestBlock();
@@ -208,14 +227,14 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
       chainCommandId: context.commandId,
       chainId: this.options.chainId,
       confirmationCount: latestBlock - Number(log.blockNumber) + 1,
-      contractAddress: this.options.contractAddress,
+      contractAddress: this.options.contractAddress.toLowerCase(),
       eventType: eventType(log),
       ...(context.licenseDeviceId
         ? { licenseDeviceId: context.licenseDeviceId }
         : {}),
       licenseId,
       logIndex: log.logIndex,
-      network: this.options.network,
+      network: this.options.network.toLowerCase(),
       payload: eventPayload(log),
       providerUserId: context.providerUserId,
       transactionHash: log.transactionHash,

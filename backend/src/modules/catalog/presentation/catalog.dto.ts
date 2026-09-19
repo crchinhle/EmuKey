@@ -170,8 +170,6 @@ export class AdminPlanDto {
   publishedAt!: string | null;
   @ApiProperty({ enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] })
   status!: 'ARCHIVED' | 'DRAFT' | 'PUBLISHED';
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' }) termsHash!: string;
-  @ApiProperty() termsVersion!: number;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
   @ApiProperty() version!: number;
 }

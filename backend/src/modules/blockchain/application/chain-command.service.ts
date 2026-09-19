@@ -21,6 +21,9 @@ export class ChainCommandService {
     let command = await this.repository.claimNext(workerId);
     if (!command) return null;
     try {
+      if (command.status === 'RETRYABLE_FAILED') {
+        await this.repository.markPending(command.commandId, workerId);
+      }
       if (command.commandType === 'ISSUE_LICENSE' || command.commandType === 'ROTATE_KEY') {
         if (this.recovery) command = await this.recovery.ensure(command);
         const [envelope, durable] = await Promise.all([
@@ -109,6 +112,16 @@ export class ChainCommandService {
       await this.repository.releaseSubmitted(command.commandId);
       return command.commandId;
     }
+  }
+
+  recoverDeadLetter(
+    commandId: string,
+    mode: 'REQUEUE_NO_SUBMISSION' | 'RECONCILE_SAME_RAW' | 'ABANDON_REVERTED' | 'ABANDON_NO_EFFECT',
+    reason: string,
+    evidence?: Record<string, unknown>,
+    actor?: { userId: string; role: string },
+  ) {
+    return this.repository.recoverDeadLetter(commandId, mode, reason, evidence, actor);
   }
 
   private input(command: ChainCommandRecord): ChainCommandInput {

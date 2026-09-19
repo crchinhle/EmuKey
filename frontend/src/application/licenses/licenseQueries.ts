@@ -45,9 +45,9 @@ export function useLicenseLifecycle() {
 
 export function useRequestLicensingActionVerification() {
   return useMutation({
-    mutationFn: ({ licenseId, action }: { licenseId: string; action: 'ROTATE_KEY' | 'REVOKE_DEVICE' }) =>
+    mutationFn: ({ licenseId, action, deviceId }: { licenseId: string; action: 'ROTATE_KEY' | 'REVOKE_DEVICE' | 'REMOTE_REVOKE_DEVICE' | 'KEY_RECOVERY'; deviceId?: string }) =>
       requestJson<{ accepted: boolean }>('/licenses/action-verification', {
-        body: JSON.stringify({ action, licenseId }),
+        body: JSON.stringify({ action, ...(deviceId ? { deviceId } : {}), licenseId }),
         method: 'POST',
       }),
   });
@@ -58,7 +58,7 @@ export function usePhase6Command(commandId: string | undefined) {
     enabled: Boolean(commandId),
     queryKey: ['phase6-command', commandId],
     queryFn: () => requestJson<Phase6CommandStatusDto>(`/commands/${encodeURIComponent(commandId!)}`),
-    refetchInterval: (query) => ['CONFIRMED', 'DEAD_LETTER'].includes(query.state.data?.status ?? '') ? false : 2_000,
+    refetchInterval: (query) => ['CONFIRMED', 'DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'].includes(query.state.data?.status ?? '') ? false : 2_000,
   });
 }
 
@@ -123,11 +123,35 @@ export function useRevokeDevice() {
   });
 }
 
+export function useRemoteRevokeDevice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ licenseId, deviceId, input }: { licenseId: string; deviceId: string; input: { actionToken: string; currentPassword: string } }) =>
+      requestJson<Phase6CommandDto>(
+        `/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/remote-revoke`,
+        { body: JSON.stringify(input), method: 'POST' },
+      ),
+    onSuccess: (_value, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['licenses', variables.licenseId, 'devices'] });
+    },
+  });
+}
+
 export function useRotateActivationKey() {
   return useMutation({
     mutationFn: ({ licenseId, input }: { licenseId: string; input: RotateActivationKeyDto }) =>
       requestJson<Phase6CommandDto>(
         `/licenses/${encodeURIComponent(licenseId)}/activation-key/rotate`,
+        { body: JSON.stringify(input), method: 'POST' },
+      ),
+  });
+}
+
+export function useRecoverActivationKey() {
+  return useMutation({
+    mutationFn: ({ licenseId, input }: { licenseId: string; input: { actionToken: string; currentPassword: string } }) =>
+      requestJson<Phase6CommandDto>(
+        `/licenses/${encodeURIComponent(licenseId)}/activation-key/recover`,
         { body: JSON.stringify(input), method: 'POST' },
       ),
   });

@@ -57,12 +57,12 @@ export function BuyerRenewalScreen() {
       return;
     }
     setValidationError(null);
-    mutations.acceptTerms.mutate(renewalOrder, {
+    mutations.acceptServiceTerms.mutate(renewalOrder, {
       onSuccess: (order) => void navigate(`/buyer/orders/${order.id}/payment`),
     });
   };
 
-  const requestError = mutations.create.error ?? mutations.acceptTerms.error ?? terms.error;
+  const requestError = mutations.create.error ?? mutations.acceptServiceTerms.error ?? terms.error;
 
   return (
     <div className="workspace-screen">
@@ -105,7 +105,7 @@ export function BuyerRenewalScreen() {
               <>
                 <h2>Điều khoản gia hạn</h2>
                 <pre className="terms-document">{terms.data.content}</pre>
-                <p className="muted-copy">Phiên bản {terms.data.version} · Hash {terms.data.hash}</p>
+                <p className="muted-copy">Service Terms áp dụng cho từng đơn gia hạn.</p>
                 <Checkbox checked={accepted} onChange={(event) => setAccepted(event.target.checked)}>
                   Tôi đã đọc và đồng ý với điều khoản gia hạn
                 </Checkbox>
@@ -132,7 +132,7 @@ export function BuyerRenewalScreen() {
             <Button onClick={() => void navigate('/buyer/licenses')}>Quay lại</Button>
             <Button
               disabled={renewalOrder ? !accepted || terms.isPending : !activationKey.trim()}
-              loading={mutations.create.isPending || mutations.acceptTerms.isPending}
+              loading={mutations.create.isPending || mutations.acceptServiceTerms.isPending}
               onClick={renewalOrder ? acceptRenewalTerms : createRenewal}
               type="primary"
             >

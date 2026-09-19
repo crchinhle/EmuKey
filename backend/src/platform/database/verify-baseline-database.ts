@@ -76,7 +76,7 @@ const EXPECTED_CRITICAL_INDEXES = {
   uq_knowledge_documents_one_current:
     'CREATE UNIQUE INDEX uq_knowledge_documents_one_current ON public.knowledge_documents USING btree (provider_user_id, logical_document_key) WHERE is_current',
   uq_orders_one_open_renewal:
-    "CREATE UNIQUE INDEX uq_orders_one_open_renewal ON public.orders USING btree (target_license_id) WHERE (((order_type)::text = 'RENEWAL'::text) AND ((order_status)::text = ANY ((ARRAY['WAITING_TERMS_ACCEPTANCE'::character varying, 'WAITING_PAYMENT'::character varying])::text[])))",
+    "CREATE UNIQUE INDEX uq_orders_one_open_renewal ON public.orders USING btree (target_license_id) WHERE (((order_type)::text = 'RENEWAL'::text) AND ((order_status)::text = ANY ((ARRAY['WAITING_SERVICE_TERMS_ACCEPTANCE'::character varying, 'WAITING_PAYMENT'::character varying])::text[])))",
   uq_users_provider_chain_address:
     'CREATE UNIQUE INDEX uq_users_provider_chain_address ON public.users USING btree (lower((provider_chain_address)::text)) WHERE (provider_chain_address IS NOT NULL)',
   uq_users_provider_chain_namespace:
@@ -84,6 +84,18 @@ const EXPECTED_CRITICAL_INDEXES = {
 } as const;
 
 const EXPECTED_CRITICAL_COLUMNS = {
+  'orders.service_terms_accepted_at': {
+    dataType: 'timestamp with time zone',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'YES',
+  },
+  'orders.plan_commitment_snapshot': {
+    dataType: 'bytea',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'NO',
+  },
   'users.customer_type': {
     dataType: 'character varying',
     expression: null,

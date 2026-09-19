@@ -92,10 +92,7 @@ describe('customer commerce and payment flow', () => {
 
   it('accepts payment and creates a license owned by the customer account', async () => {
     const order = await service.createOrder(customer, '00000000-0000-4000-8000-000000000702', undefined, { planId });
-    await service.acceptTerms(customer, order.id, {
-      termsHash: order.termsHashSnapshot,
-      termsVersion: order.termsVersionSnapshot,
-    });
+    await service.acceptServiceTerms(customer, order.id, { accepted: true });
     const checkout = await service.checkout(customer, order.id);
     const providerClock = await pool.query<{ occurred_at: Date }>(
       "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
