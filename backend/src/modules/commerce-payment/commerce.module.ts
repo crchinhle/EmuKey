@@ -67,6 +67,9 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
             merchantId: config.getOrThrow<string>('SEPAY_MERCHANT_ID'),
             secretKey: config.getOrThrow<string>('SEPAY_SECRET_KEY'),
             webAppUrl: config.getOrThrow<string>('WEB_APP_URL'),
+            ...((config.get<number>('SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS') ?? 0) > 0
+              ? { sandboxClockOffsetSeconds: config.getOrThrow<number>('SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS') }
+              : {}),
           });
         }
         throw new Error(`Payment adapter ${adapter} is not configured`);

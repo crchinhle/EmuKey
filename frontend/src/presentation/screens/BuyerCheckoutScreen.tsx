@@ -1,5 +1,5 @@
 import { Alert, Button, Checkbox, Input, Result, Spin, Steps } from 'antd';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useProduct } from '../../application/catalog/catalogQueries';
@@ -21,20 +21,17 @@ export function BuyerCheckoutScreen() {
   const [order, setOrder] = useState<OrderDetail>();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const orderStarted = useRef(false);
   const orderMutations = useOrderMutations();
   const createOrderMutation = orderMutations.create;
   const termsQuery = useOrderTerms(order?.id ?? '');
 
-  function createOrder() {
-    if (!planId) return;
-    setError(null);
-    createOrderMutation.mutate(
-      { planId },
-      {
-        onSuccess: setOrder,
-      },
-    );
-  }
+  useEffect(() => {
+    if (product && planId && !order && !orderStarted.current) {
+      orderStarted.current = true;
+      createOrderMutation.mutate({ planId }, { onSuccess: setOrder });
+    }
+  }, [createOrderMutation, order, planId, product]);
 
   function acceptServiceTerms() {
     if (!accepted || !order) {
@@ -110,13 +107,7 @@ export function BuyerCheckoutScreen() {
             </div>
           </section>
           <section className="workspace-card section-card">
-            {!order ? (
-              <Alert
-                showIcon
-                type="info"
-                message="Tạo đơn hàng để backend khóa giá, quyền sử dụng và phiên bản điều khoản."
-              />
-            ) : termsQuery.isPending ? (
+            {!order || termsQuery.isPending ? (
               <Spin aria-label="Đang tải điều khoản" />
             ) : termsQuery.isError || !termsQuery.data ? (
               <Alert
@@ -172,24 +163,16 @@ export function BuyerCheckoutScreen() {
             <Button onClick={() => void navigate('/products/securedesk')}>
               Quay lại
             </Button>
-            <Button
-              type="primary"
-              disabled={
-                order
-                  ? !accepted || termsQuery.isPending
-                  : createOrderMutation.isPending
-              }
+              <Button
+                type="primary"
+                disabled={!order || !accepted || termsQuery.isPending}
               loading={
                 createOrderMutation.isPending ||
                 orderMutations.acceptServiceTerms.isPending
               }
-              onClick={order ? acceptServiceTerms : createOrder}
+              onClick={acceptServiceTerms}
             >
-              {order
-                ? 'Đồng ý và tiếp tục thanh toán'
-                : createOrderMutation.isPending
-                  ? 'Đang tạo...'
-                  : 'Tạo đơn hàng'}
+              Đồng ý và tiếp tục thanh toán
             </Button>
           </div>
         </aside>

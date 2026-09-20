@@ -16,6 +16,7 @@ export interface SePayPaymentGatewayOptions {
   merchantId: string;
   secretKey: string;
   webAppUrl: string;
+  sandboxClockOffsetSeconds?: number;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -41,6 +42,27 @@ function positiveVnd(value: unknown): number {
     throw new Error('INVALID_PAYMENT_PAYLOAD');
   }
   return amount;
+}
+
+function parseTransactionDate(value: unknown): Date {
+  const match = typeof value === 'string'
+    ? value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/)
+    : null;
+  if (!match) {
+    throw new Error('INVALID_PAYMENT_PAYLOAD');
+  }
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  // SePay transaction_date is Vietnam local time, not a JavaScript host-local
+  // timestamp. Convert explicitly to UTC for timestamptz/window comparisons.
+  const occurredAt = new Date(Date.UTC(year, month - 1, day, hour - 7, minute, second));
+  if (Number.isNaN(occurredAt.getTime())) throw new Error('INVALID_PAYMENT_PAYLOAD');
+  return occurredAt;
 }
 
 function equalSecret(provided: string | undefined, expected: string): boolean {
@@ -127,17 +149,15 @@ export class SePayPaymentGateway implements PaymentGatewayPort {
       if (positiveVnd(transaction.transaction_amount) !== amountVnd) {
         throw new Error('INVALID_PAYMENT_PAYLOAD');
       }
-      if (
-        !Number.isSafeInteger(payload.timestamp) ||
-        Number(payload.timestamp) <= 0
-      ) {
-        throw new Error('INVALID_PAYMENT_PAYLOAD');
-      }
+       const occurredAt = parseTransactionDate(transaction.transaction_date);
+       if (this.options.environment === 'sandbox' && this.options.sandboxClockOffsetSeconds) {
+         occurredAt.setTime(occurredAt.getTime() + this.options.sandboxClockOffsetSeconds * 1_000);
+       }
 
-      return Promise.resolve({
+       return Promise.resolve({
         amountVnd,
         eventId: nonEmptyString(transaction.id),
-        occurredAt: new Date(Number(payload.timestamp) * 1_000),
+         occurredAt,
         protocolVersion: PAYMENT_IPN_PROTOCOL_VERSION,
         providerReference: nonEmptyString(order.order_invoice_number),
         transactionReference: nonEmptyString(transaction.transaction_id),

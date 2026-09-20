@@ -20,10 +20,6 @@ describe('Customer commerce', () => {
   it('creates the server snapshot before asking for Terms acceptance', async () => {
     render(<App initialEntries={['/buyer/checkout']} />);
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Tạo đơn hàng' }),
-    );
-
     expect(
       await screen.findByRole('heading', { name: 'Điều khoản cấp phép' }),
     ).toBeTruthy();
@@ -37,9 +33,6 @@ describe('Customer commerce', () => {
   it('creates an order after explicit Terms acceptance and opens payment', async () => {
     render(<App initialEntries={['/buyer/checkout']} />);
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: 'Tạo đơn hàng' }),
-    );
     fireEvent.click(
       await screen.findByRole('checkbox', {
         name: /đồng ý với điều khoản cấp phép/i,
@@ -61,12 +54,6 @@ describe('Customer commerce', () => {
           '/buyer/orders/11111111-1111-4111-8111-111111111111/payment',
         ]}
       />,
-    );
-
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Tạo yêu cầu thanh toán',
-      }),
     );
 
     const form = await screen.findByTestId('sepay-checkout-form');

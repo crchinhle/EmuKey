@@ -14,7 +14,7 @@ import { BlockchainReconciliationDto, DeadLetterRecoveryDto } from './blockchain
 @ApiTags('operations')
 @Controller('operations/blockchain')
 @UseGuards(AuthGuard, RolesGuard)
-@Roles('SYSTEM_ADMIN', 'SUPPORT_STAFF')
+@Roles('SYSTEM_ADMIN')
 @ApiBearerAuth()
 export class BlockchainOperationsController {
   constructor(

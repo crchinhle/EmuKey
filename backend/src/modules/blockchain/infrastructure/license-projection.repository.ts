@@ -4,7 +4,7 @@ const PRIVATE_COLUMNS = `
   l.id, l.public_license_id, l.origin_order_id,
   CASE WHEN l.status='ACTIVE' AND l.expires_at <= now() THEN 'EXPIRED' ELSE l.status END AS status,
   l.period_start, l.expires_at,
-  l.max_active_devices, l.activation_key_version, l.entitlement_version,
+  l.max_active_devices, l.activation_key_version, l.activation_key_trust_status, l.entitlement_version,
   l.created_at, l.updated_at, p.name AS product_name, pl.name AS plan_name,
   pl.version AS plan_version, encode(l.plan_commitment,'hex') AS plan_commitment,
   provider.display_name AS provider_display_name,
@@ -205,6 +205,10 @@ export class LicenseProjectionRepository {
       finality: row.finality_status ?? 'PENDING',
       id: row.id,
       keyVersion: Number(row.activation_key_version),
+      activationKeyTrustStatus:
+        typeof row.activation_key_trust_status === 'string'
+          ? row.activation_key_trust_status
+          : 'PENDING_FINALITY',
       maxActiveDevices: Number(row.max_active_devices),
       originOrderId: String(row.origin_order_id),
       periodStart: row.period_start,

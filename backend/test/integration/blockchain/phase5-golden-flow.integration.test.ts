@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHmac } from 'node:crypto';
 import { resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import {
   PostgreSqlContainer,
@@ -273,6 +274,23 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
     const devices = await licensingProjection.listCustomerDevices(customer.sub, licenseId);
     expect(devices).toHaveLength(1);
     expect(devices[0]).toMatchObject({ deviceRef: storedDeviceRef, status: 'ACTIVE', finality: 'CONFIRMED' });
+    const activationLoadStarted = performance.now();
+    const activationChallenges = await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const requestStarted = performance.now();
+        const challenge = await licensing.challenge(customer, {
+          deviceId: devices[0]!.id,
+          deviceRef,
+          licenseId,
+          purpose: 'ISSUE_ENTITLEMENT',
+        });
+        return { challenge, elapsedMs: performance.now() - requestStarted };
+      }),
+    );
+    const activationLoadElapsed = performance.now() - activationLoadStarted;
+    const activationLoadSamples = activationChallenges.map(({ elapsedMs }) => elapsedMs).sort((a, b) => a - b);
+    const percentile = (ratio: number) => activationLoadSamples[Math.min(activationLoadSamples.length - 1, Math.floor(activationLoadSamples.length * ratio))] ?? 0;
+    console.log(JSON.stringify({ phase8: 'LOAD_ACTIVATION', requests: activationChallenges.length, concurrency: activationChallenges.length, totalElapsedMs: Number(activationLoadElapsed.toFixed(2)), p50Ms: Number(percentile(0.5).toFixed(2)), p95Ms: Number(percentile(0.95).toFixed(2)), p99Ms: Number(percentile(0.99).toFixed(2)), errorRate: 0 }));
     const entitlementChallenge = await licensing.challenge(customer, { deviceId: devices[0]!.id, deviceRef, licenseId, purpose: 'ISSUE_ENTITLEMENT' });
     const entitlementProof = await deviceAccount.signMessage({ message: entitlementChallenge.challenge });
     const entitlement = await licensing.issueEntitlement(customer, { licenseId, deviceId: devices[0]!.id, challenge: entitlementChallenge.challenge, proof: entitlementProof });

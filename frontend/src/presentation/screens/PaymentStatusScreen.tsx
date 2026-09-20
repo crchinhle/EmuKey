@@ -1,6 +1,11 @@
-import { Alert, Button, Spin } from 'antd';
+import { Alert, Button, Input, Spin } from 'antd';
+import { useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 
+import {
+  useOrderLicense,
+  useRetrieveActivationKey,
+} from '../../application/licenses/licenseQueries';
 import {
   useOrder,
   useOrderMutations,
@@ -18,6 +23,24 @@ export function PaymentStatusScreen() {
   const [searchParams] = useSearchParams();
   const order = useOrder(id);
   const checkout = useOrderMutations().checkout;
+  const retrieveKey = useRetrieveActivationKey();
+  const providerReturned = ['success', 'error', 'cancel'].includes(searchParams.get('sepay') ?? '') || searchParams.get('returned') === 'sepay';
+  const license = useOrderLicense(id, order.data?.orderStatus === 'PAYMENT_ACCEPTED');
+  const checkoutStarted = useRef(false);
+  const checkoutSubmitted = useRef(false);
+  useEffect(() => {
+    if (!providerReturned && order.data?.orderStatus !== 'PAYMENT_ACCEPTED' && !checkout.data && !checkoutStarted.current) {
+      checkoutStarted.current = true;
+      checkout.mutate(id);
+    }
+  }, [checkout, id, order.data?.orderStatus, providerReturned]);
+  useEffect(() => {
+    if (!providerReturned && checkout.data && !checkoutSubmitted.current) {
+      checkoutSubmitted.current = true;
+      (document.getElementById('sepay-checkout-form') as HTMLFormElement | null)?.requestSubmit();
+    }
+  }, [checkout.data, providerReturned]);
+  const licenseReady = license.data?.status === 'ACTIVE' && license.data.activationKeyTrustStatus === 'TRUSTED';
   if (order.isPending) return <Spin />;
   if (order.error || !order.data)
     return <Alert type="error" message="Không thể tải đơn hàng." />;
@@ -37,12 +60,24 @@ export function PaymentStatusScreen() {
             <h2>Chuyển khoản qua SePay</h2>
             <StatusChip tone="warning">{current.orderStatus}</StatusChip>
           </header>
-          {searchParams.get('sepay') === 'success' &&
+          {providerReturned &&
+          searchParams.get('sepay') === 'success' &&
           current.orderStatus !== 'PAYMENT_ACCEPTED' ? (
             <Alert
               showIcon
               type="info"
-              message="SePay đã chuyển bạn về Emukey. Hệ thống đang chờ IPN để xác minh giao dịch."
+              message="SePay đã chuyển bạn về Emukey. Chúng tôi đang xác nhận giao dịch, quá trình này có thể mất vài giây."
+            />
+          ) : null}
+          {current.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady ? (
+            <Alert showIcon type="info" message="Đang kích hoạt bản quyền trên blockchain..." />
+          ) : null}
+          {licenseReady ? (
+            <Alert
+              showIcon
+              type="success"
+              message="Bản quyền đã sẵn sàng"
+              description="Bản quyền đã đạt finality. Bạn có thể nhận mã kích hoạt một lần."
             />
           ) : null}
           {searchParams.get('sepay') === 'error' ? (
@@ -65,14 +100,10 @@ export function PaymentStatusScreen() {
               type="success"
               message="Thanh toán đã được backend xác nhận từ IPN hợp lệ."
             />
+          ) : providerReturned ? (
+            <Alert showIcon type="info" message="Đang xác nhận thanh toán" />
           ) : !payment ? (
-            <Button
-              type="primary"
-              loading={checkout.isPending}
-              onClick={() => checkout.mutate(current.id)}
-            >
-              Tạo yêu cầu thanh toán
-            </Button>
+            <Alert showIcon type="info" message="Đang chuyển bạn đến cổng thanh toán SePay..." />
           ) : (
             <>
               <FactList
@@ -87,6 +118,7 @@ export function PaymentStatusScreen() {
               />
               <form
                 action={payment.checkoutUrl}
+                id="sepay-checkout-form"
                 data-testid="sepay-checkout-form"
                 method="post"
               >
@@ -106,6 +138,27 @@ export function PaymentStatusScreen() {
               />
             </>
           )}
+          {licenseReady ? (
+            <div className="workspace-actions">
+              <Button
+                type="primary"
+                loading={retrieveKey.isPending}
+                disabled={retrieveKey.isSuccess}
+                onClick={() => retrieveKey.mutate({ id: license.data!.id })}
+              >
+                Nhận mã kích hoạt
+              </Button>
+              {retrieveKey.data?.activationKey ? (
+                <div className="workspace-card">
+                  <h3>Mã kích hoạt của bạn</h3>
+                  <Input.Password aria-label="Mã kích hoạt" readOnly value={retrieveKey.data.activationKey} />
+                  <Button onClick={() => void navigator.clipboard?.writeText(retrieveKey.data.activationKey)}>Sao chép</Button>
+                  <p>Mã chỉ được cấp một lần. Hãy lưu lại trước khi rời trang.</p>
+                </div>
+              ) : null}
+              {retrieveKey.error ? <Alert type="warning" message="Mã kích hoạt đã được nhận trước đó hoặc hiện không còn khả dụng." /> : null}
+            </div>
+          ) : null}
           {checkout.error ? (
             <Alert type="error" message="Không thể tạo yêu cầu thanh toán." />
           ) : null}

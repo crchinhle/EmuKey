@@ -5,8 +5,12 @@ export type AuthUser = { id: string; email: string; displayName: string; role: s
 export type RegisterInput = { customerType: CustomerType; displayName: string; email: string; password: string };
 export type ProfileInput = { displayName: string; phone?: string; address?: string; organizationName?: string };
 const API_URL = (import.meta.env as Record<string, string | undefined>).VITE_API_URL ?? '/api/v1';
-const REQUEST_TIMEOUT_MS = 3000;
+// Readiness, catalog and first-query paths can cross a cold database/RPC start;
+// avoid treating a slow but healthy request as an expired authentication session.
+const REQUEST_TIMEOUT_MS = 10_000;
 let accessToken: string | null = null;
+type RefreshResult = { accessToken: string; user: AuthUser | undefined };
+let refreshPromise: Promise<RefreshResult | null> | null = null;
 
 export class ApiRequestError extends Error {
   readonly code: string | undefined;
@@ -20,18 +24,51 @@ export class ApiRequestError extends Error {
   }
 }
 
+async function refreshSession(): Promise<RefreshResult | null> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    const headers = new Headers({ 'content-type': 'application/json' });
+    const response = await fetch(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+    });
+    if (!response.ok) return null;
+    const result = await response.json() as { accessToken?: string; user?: AuthUser };
+    return typeof result.accessToken === 'string' ? { accessToken: result.accessToken, user: result.user } : null;
+  })().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
 export async function api(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
   const headers = new Headers(init.headers); headers.set('content-type', 'application/json');
-  if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
+  // Refresh is cookie-based; sending an expired bearer token makes the API
+  // reject an otherwise valid rotated refresh session before it can recover.
+  if (accessToken && path !== '/auth/refresh') headers.set('authorization', `Bearer ${accessToken}`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, { ...init, headers, credentials: 'include', signal: init.signal ?? controller.signal });
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      cache: 'no-store',
+      headers,
+      credentials: 'include',
+      signal: init.signal ?? controller.signal,
+    });
   } finally {
     clearTimeout(timeout);
   }
-  if (response.status === 401 && retry && path !== '/auth/refresh') { const refreshed = await api('/auth/refresh', { method: 'POST' }, false); if (refreshed.ok) { accessToken = (await refreshed.json() as { accessToken: string }).accessToken; return api(path, init, false); } accessToken = null; }
+  if (response.status === 401 && retry && path !== '/auth/refresh') {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      accessToken = refreshed.accessToken;
+      return api(path, init, false);
+    }
+    accessToken = null;
+  }
   return response;
 }
 
@@ -80,13 +117,11 @@ export function AuthProvider({ children, initialUser, skipBootstrap = false }: A
   const [user, setUser] = useState<AuthUser | null>(initialUser ?? null); const [loading, setLoading] = useState(!skipBootstrap);
   useEffect(() => {
     if (skipBootstrap) return;
-    void api('/auth/refresh', { method: 'POST' })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const result = await response.json() as { accessToken?: string; user?: AuthUser };
-        if (typeof result.accessToken === 'string' && result.user) {
+    void refreshSession()
+      .then((result) => {
+        if (result) {
           accessToken = result.accessToken;
-          setUser(result.user);
+          if (result.user) setUser(result.user);
         }
       })
       .catch(() => {

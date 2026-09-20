@@ -220,6 +220,11 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
     const commandId = bytes16ToUuid(log.args.commandId, 'commandId');
     const licenseId = bytes16ToUuid(log.args.licenseId, 'licenseId');
     const context = await this.checkpoints.commandContext(commandId);
+    // A fresh environment may start at a deployed contract's block after the
+    // chain already contains events from another database. Preserve the
+    // checkpoint and ignore those unowned historical events; a command that is
+    // present but points at another license remains a hard integrity failure.
+    if (!context) return;
     this.assertContext(context, licenseId);
     await this.indexer.ingest({
       blockHash: log.blockHash,

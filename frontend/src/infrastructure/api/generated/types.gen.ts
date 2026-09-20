@@ -315,6 +315,7 @@ export type LicenseProviderDto = {
 };
 
 export type LicenseProjectionDto = {
+  activationKeyTrustStatus: 'PENDING_FINALITY' | 'TRUSTED' | 'UNTRUSTED_REORG';
   blockNumber?: number | null;
   confirmationCount: number;
   createdAt: string;

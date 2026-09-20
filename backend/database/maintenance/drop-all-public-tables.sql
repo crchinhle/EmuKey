@@ -29,6 +29,36 @@ SELECT pg_advisory_xact_lock(
   hashtextextended('emukey.drop-all-public-tables', 0)
 );
 
+DO $drop_public_routines$
+DECLARE
+  routine record;
+BEGIN
+  FOR routine IN
+    SELECT
+      namespace.nspname AS schema_name,
+      procedure.proname AS routine_name,
+      pg_get_function_identity_arguments(procedure.oid) AS identity_arguments
+    FROM pg_proc AS procedure
+    JOIN pg_namespace AS namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM pg_depend AS dependency
+        WHERE dependency.classid = 'pg_proc'::regclass
+          AND dependency.objid = procedure.oid
+          AND dependency.deptype = 'e'
+      )
+  LOOP
+    EXECUTE format(
+      'DROP FUNCTION IF EXISTS %I.%I(%s) CASCADE',
+      routine.schema_name,
+      routine.routine_name,
+      routine.identity_arguments
+    );
+  END LOOP;
+END
+$drop_public_routines$;
+
 DO $drop_public_tables$
 DECLARE
   target record;

@@ -24,6 +24,22 @@ export function useLicenses() {
   });
 }
 
+export function useOrderLicense(orderId: string, enabled: boolean) {
+  return useQuery({
+    enabled: Boolean(orderId) && enabled,
+    queryKey: ['licenses', 'order', orderId],
+    queryFn: async () => {
+      const licenses = await requestJson<LicenseProjectionDto[]>('/licenses');
+      return licenses.find((license) => license.originOrderId === orderId) ?? null;
+    },
+    refetchInterval: (query) => {
+      const license = query.state.data;
+      if (license?.status === 'ACTIVE' && license.activationKeyTrustStatus === 'TRUSTED') return false;
+      return 2_000;
+    },
+  });
+}
+
 export function useProviderLicenses() {
   return useQuery({
     queryKey: ['licenses', 'provider'],
@@ -64,6 +80,7 @@ export function usePhase6Command(commandId: string | undefined) {
 
 export function useRetrieveActivationKey() {
   return useMutation({
+    retry: false,
     mutationFn: ({ id }: { id: string }) =>
       requestJson<ActivationKeyDto>(
         `/licenses/${encodeURIComponent(id)}/activation-key/retrieve`,

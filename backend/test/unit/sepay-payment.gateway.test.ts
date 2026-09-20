@@ -8,6 +8,13 @@ const gateway = new SePayPaymentGateway({
   secretKey: 'sandbox-merchant-secret',
   webAppUrl: 'https://demo.emukey.test',
 });
+const sandboxOffsetGateway = new SePayPaymentGateway({
+  environment: 'sandbox',
+  merchantId: 'SP-TEST-EMUKEY',
+  secretKey: 'sandbox-merchant-secret',
+  webAppUrl: 'https://demo.emukey.test',
+  sandboxClockOffsetSeconds: 143,
+});
 
 describe('SePayPaymentGateway', () => {
   it('creates a signed Sandbox checkout form without exposing the secret key', async () => {
@@ -51,21 +58,22 @@ describe('SePayPaymentGateway', () => {
             order_invoice_number: '959ded01-53f4-4b64-ae49-7f193c939b95',
             order_status: 'CAPTURED',
           },
-          timestamp: 1_757_058_220,
-          transaction: {
+           timestamp: 1_757_058_220,
+           transaction: {
             id: 'sepay-event-id',
             transaction_amount: '199000',
             transaction_currency: 'VND',
             transaction_id: 'BANK-REFERENCE-001',
             transaction_status: 'APPROVED',
             transaction_type: 'PAYMENT',
+            transaction_date: '2025-09-01 00:00:15',
           },
         },
       }),
     ).resolves.toEqual({
       amountVnd: 199_000,
       eventId: 'sepay-event-id',
-      occurredAt: new Date(1_757_058_220_000),
+       occurredAt: new Date('2025-08-31T17:00:15.000Z'),
       protocolVersion: 1,
       providerReference: '959ded01-53f4-4b64-ae49-7f193c939b95',
       transactionReference: 'BANK-REFERENCE-001',
@@ -88,5 +96,48 @@ describe('SePayPaymentGateway', () => {
         },
       }),
     ).rejects.toThrow('INVALID_PAYMENT_PAYLOAD');
+  });
+
+  it.each([
+    ['2025-09-01 00:00:15', '2025-08-31T17:00:15.000Z'],
+    ['2025-12-31 23:59:59', '2025-12-31T16:59:59.000Z'],
+  ])('normalizes SePay Asia/Ho_Chi_Minh transaction time %s', async (transactionDate, expected) => {
+    await expect(gateway.verifyIpn({
+      signature: 'sandbox-merchant-secret',
+      payload: {
+        notification_type: 'ORDER_PAID',
+        order: { order_amount: '199000', order_currency: 'VND', order_invoice_number: '959ded01-53f4-4b64-ae49-7f193c939b95', order_status: 'CAPTURED' },
+        timestamp: 1_757_058_220,
+        transaction: {
+          id: 'sepay-event-time-vector', transaction_amount: '199000', transaction_currency: 'VND',
+          transaction_id: 'BANK-REFERENCE-TIME', transaction_status: 'APPROVED', transaction_type: 'PAYMENT', transaction_date: transactionDate,
+        },
+      },
+    })).resolves.toMatchObject({ occurredAt: new Date(expected) });
+  });
+
+  it('applies the explicitly configured sandbox-only clock correction at the adapter boundary', async () => {
+    const result = await sandboxOffsetGateway.verifyIpn({
+      signature: 'sandbox-merchant-secret',
+      payload: {
+        notification_type: 'ORDER_PAID',
+        order: { order_amount: '199000', order_currency: 'VND', order_invoice_number: '959ded01-53f4-4b64-ae49-7f193c939b95', order_status: 'CAPTURED' },
+        timestamp: 1_757_058_220,
+        transaction: { id: 'sepay-event-offset', transaction_amount: '199000', transaction_currency: 'VND', transaction_id: 'BANK-REFERENCE-OFFSET', transaction_status: 'APPROVED', transaction_type: 'PAYMENT', transaction_date: '2025-09-01 00:00:15' },
+      },
+    });
+    expect(result.occurredAt).toEqual(new Date('2025-08-31T17:02:38.000Z'));
+  });
+
+  it('rejects malformed transaction-local timestamps instead of using callback delivery time', async () => {
+    await expect(gateway.verifyIpn({
+      signature: 'sandbox-merchant-secret',
+      payload: {
+        notification_type: 'ORDER_PAID',
+        order: { order_amount: '199000', order_currency: 'VND', order_invoice_number: '959ded01-53f4-4b64-ae49-7f193c939b95', order_status: 'CAPTURED' },
+        timestamp: 1_757_058_220,
+        transaction: { id: 'sepay-event-invalid-time', transaction_amount: '199000', transaction_currency: 'VND', transaction_id: 'BANK-REFERENCE-INVALID', transaction_status: 'APPROVED', transaction_type: 'PAYMENT', transaction_date: '2025-09-01T00:00:15Z' },
+      },
+    })).rejects.toThrow('INVALID_PAYMENT_PAYLOAD');
   });
 });

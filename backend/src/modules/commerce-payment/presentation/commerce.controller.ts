@@ -147,7 +147,7 @@ export class PaymentController {
 
   @Get('review')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'SUPPORT_STAFF')
+  @Roles('SYSTEM_ADMIN')
   @ApiBearerAuth()
   @ApiOkResponse({ type: PaymentReviewDto, isArray: true })
   @ApiForbiddenResponse()
@@ -158,7 +158,7 @@ export class PaymentController {
   @Post('review/:id')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'SUPPORT_STAFF')
+  @Roles('SYSTEM_ADMIN')
   @ApiBearerAuth()
   @ApiOkResponse({ type: PaymentReviewDto })
   @ApiNotFoundResponse()

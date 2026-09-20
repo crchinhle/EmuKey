@@ -22,6 +22,7 @@ export class LicenseProjectionDto {
   @ApiProperty() finality!: string;
   @ApiProperty() id!: string;
   @ApiProperty() keyVersion!: number;
+  @ApiProperty({ enum: ['PENDING_FINALITY', 'TRUSTED', 'UNTRUSTED_REORG'] }) activationKeyTrustStatus!: string;
   @ApiProperty() maxActiveDevices!: number;
   @ApiProperty({ format: 'uuid' }) originOrderId!: string;
   @ApiProperty() periodStart!: string;

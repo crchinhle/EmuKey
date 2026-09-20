@@ -44,6 +44,7 @@ export interface PlatformEnvironment {
   PAYMENT_ADAPTER: PaymentAdapter;
   IPN_DELIVERY_GRACE_SECONDS: number;
   PAYMENT_WEBHOOK_SECRET?: string;
+  SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: number;
   SEPAY_ENV?: SePayEnvironment;
   SEPAY_MERCHANT_ID?: string;
   SEPAY_SECRET_KEY?: string;
@@ -162,6 +163,13 @@ function assertHttpUrl(value: string, name: string): void {
   }
 }
 
+function assertNetworkChain(network: string, chainId: number): void {
+  const expected = network === 'hardhat' ? 31_337 : network === 'sepolia' ? 11_155_111 : undefined;
+  if (expected !== undefined && chainId !== expected) {
+    throw new Error(`EVM_NETWORK_${network.toUpperCase()}_CHAIN_ID_MISMATCH`);
+  }
+}
+
 export function validateEnvironment(
   environment: Record<string, unknown>,
 ): PlatformEnvironment {
@@ -203,6 +211,10 @@ export function validateEnvironment(
       requiredString(environment, 'PAYMENT_ADAPTER'),
       'PAYMENT_ADAPTER',
       PAYMENT_ADAPTERS,
+    ),
+    SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: parseNonNegativeInteger(
+      typeof environment.SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS === 'string' ? environment.SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS : '0',
+      'SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS',
     ),
     IPN_DELIVERY_GRACE_SECONDS: parsePositiveInteger(
       typeof environment.IPN_DELIVERY_GRACE_SECONDS === 'string' &&
@@ -334,10 +346,14 @@ export function validateEnvironment(
     throw new Error('EVM_CONTRACT_ADDRESS must contain a 20-byte address');
   }
   result.EVM_CONTRACT_ADDRESS = result.EVM_CONTRACT_ADDRESS.toLowerCase();
+  assertNetworkChain(result.EVM_NETWORK, result.EVM_CHAIN_ID);
   if (!/^[0-9a-fA-F]{64}$/.test(result.ACTIVATION_ENVELOPE_KEY)) {
     throw new Error('ACTIVATION_ENVELOPE_KEY must contain exactly 32 bytes');
   }
   if (nodeEnvironment === 'production') {
+    if (result.SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS !== 0) {
+      throw new Error('SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS must be 0 in production');
+    }
     for (const adapterName of LOCAL_ADAPTERS) {
       if (result[adapterName] === 'fake') {
         throw new Error(`${adapterName} cannot use fake in production`);
@@ -353,6 +369,18 @@ export function validateEnvironment(
     }
     if (result.STORAGE_ADAPTER === 'local') {
       throw new Error('STORAGE_ADAPTER cannot use local in production');
+    }
+    if (result.EVM_NETWORK !== 'sepolia') {
+      throw new Error('EVM_NETWORK must use sepolia in production');
+    }
+    if (result.EVM_RPC_HTTP_URL.startsWith('http://')) {
+      throw new Error('EVM_RPC_HTTP_URL must use HTTPS in production');
+    }
+    if (result.EVM_RPC_FALLBACK_HTTP_URL?.startsWith('http://')) {
+      throw new Error('EVM_RPC_FALLBACK_HTTP_URL must use HTTPS in production');
+    }
+    if (result.JWT_SECRET.length < 32) {
+      throw new Error('JWT_SECRET must contain at least 32 characters in production');
     }
   }
 

@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  BadRequestException,
   HttpException,
   HttpStatus,
   NotFoundException,
@@ -40,6 +41,12 @@ export class LicenseQueryService {
   }
 
   async verify(publicId: string, requester: string) {
+    if (publicId.trim().length < 20) {
+      throw new BadRequestException({
+        code: 'PUBLIC_LICENSE_ID_INVALID',
+        message: 'Public license identifier is invalid.',
+      });
+    }
     const key = `public-license-verify:${requester}`;
     const count = await this.redis.incr(key);
     if (count === 1) await this.redis.expire(key, 60);

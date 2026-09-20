@@ -3,13 +3,14 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { createPublicClient, createWalletClient, defineChain, getAddress, http, keccak256, parseEventLogs, stringToHex } from 'viem';
+import { createPublicClient, createWalletClient, defineChain, getAddress, keccak256, parseEventLogs, stringToHex } from 'viem';
 
 import { BrevoEmailDelivery } from '../dist/modules/operations/infrastructure/brevo-email-delivery.js';
 import { FcmPushDelivery } from '../dist/modules/operations/infrastructure/fcm-push-delivery.js';
 import { GeminiAiGateway } from '../dist/modules/assistance-support/infrastructure/gemini-ai.gateway.js';
 import { SePayPaymentGateway } from '../dist/modules/commerce-payment/infrastructure/sepay-payment.gateway.js';
 import { CloudinaryPrivateStorage } from '../dist/platform/storage/cloudinary-private-storage.js';
+import { createViemRpcTransport } from '../dist/platform/blockchain/viem-rpc-transport.js';
 
 const runId = `emukey-ext-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}-${randomUUID().slice(0, 8)}`;
 const results = { runId, generatedAt: new Date().toISOString(), providers: {} };
@@ -20,7 +21,13 @@ const setResult = (provider, status, evidence = {}, blocker = null) => {
   results.providers[provider] = { status, evidence, ...(blocker ? { blocker } : {}) };
   console.log(`${provider}: ${status}${blocker ? ` (${blocker})` : ''}`);
 };
-const safeError = (error) => error instanceof Error ? error.message.replace(/\b\d{8,}\b/g, '[redacted]') : 'UNKNOWN_EXTERNAL_ERROR';
+const safeError = (error) => {
+  const message = error instanceof Error ? error.message : 'UNKNOWN_EXTERNAL_ERROR';
+  return message
+    .replaceAll(/https?:\/\/[^\s]+/g, '[REDACTED_RPC_URL]')
+    .replaceAll(/\b(?:sk|rk)_[A-Za-z0-9_-]+\b/g, '[REDACTED_PROVIDER_KEY]')
+    .replaceAll(/\b\d{8,}\b/g, '[REDACTED_NUMBER]');
+};
 
 async function verifyGemini() {
   if (!enabled('GEMINI')) return setResult('Gemini', 'SKIPPED_BY_OPT_IN');
@@ -106,12 +113,16 @@ async function verifySepolia() {
   if (!['EVM_RPC_HTTP_URL', 'EVM_CONTRACT_ADDRESS', 'EVM_RELAYER_PRIVATE_KEY'].every(present)) return setResult('Sepolia', 'BLOCKED_EXTERNAL', {}, 'SEPOLIA_CONFIG_MISSING');
   try {
     const chain = defineChain({ id: 11155111, name: 'sepolia', nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [process.env.EVM_RPC_HTTP_URL] } }, testnet: true });
-    const client = createPublicClient({ chain, transport: http(process.env.EVM_RPC_HTTP_URL, { timeout: 15000, retryCount: 1 }) });
+     const client = createPublicClient({ chain, transport: createViemRpcTransport(process.env.EVM_RPC_HTTP_URL, process.env.EVM_RPC_FALLBACK_HTTP_URL) });
     const address = getAddress(process.env.EVM_CONTRACT_ADDRESS);
     const { privateKeyToAccount } = await import('viem/accounts');
     const relayer = privateKeyToAccount(process.env.EVM_RELAYER_PRIVATE_KEY);
     const [chainId, code, balance] = await Promise.all([client.getChainId(), client.getCode({ address }), client.getBalance({ address: relayer.address })]);
-    if (chainId !== 11155111 || !code || code === '0x') throw new Error('SEPOLIA_READINESS_FAILED');
+     if (chainId !== 11155111 || !code || code === '0x') throw new Error('SEPOLIA_READINESS_FAILED');
+     const deploymentBlock = Number(process.env.EVM_DEPLOYMENT_BLOCK ?? 0);
+     if (!deploymentBlock) throw new Error('SEPOLIA_DEPLOYMENT_BLOCK_REQUIRED');
+     const deploymentReceipt = await client.getTransactionReceipt({ hash: process.env.SEPOLIA_DEPLOYMENT_TX ?? '0x26b27aa01bc194fe4b9505009b74e09d16794b92da870fd564d9f3ddc77db77e' });
+     if (Number(deploymentReceipt.blockNumber) !== deploymentBlock || deploymentReceipt.contractAddress?.toLowerCase() !== address.toLowerCase()) throw new Error('SEPOLIA_DEPLOYMENT_RECEIPT_MISMATCH');
     const abi = [
       { type: 'function', name: 'computePlanCommitment', stateMutability: 'view', inputs: [{ name: 'provider', type: 'address' }, { name: 'productId', type: 'bytes16' }, { name: 'planId', type: 'bytes16' }, { name: 'planVersion', type: 'uint256' }, { name: 'durationMonths', type: 'uint256' }, { name: 'maxActiveDevices', type: 'uint256' }, { name: 'entitlementsHash', type: 'bytes32' }], outputs: [{ type: 'bytes32' }] },
       { type: 'function', name: 'issueLicense', stateMutability: 'nonpayable', inputs: [{ name: 'commandId', type: 'bytes16' }, { name: 'licenseId', type: 'bytes16' }, { name: 'provider', type: 'address' }, { name: 'productId', type: 'bytes16' }, { name: 'planId', type: 'bytes16' }, { name: 'planVersion', type: 'uint256' }, { name: 'planCommitment', type: 'bytes32' }, { name: 'activationCommitment', type: 'bytes32' }, { name: 'activationKeyVersion', type: 'uint256' }, { name: 'maxActiveDevices', type: 'uint256' }, { name: 'expiresAt', type: 'uint256' }], outputs: [] },
@@ -126,14 +137,14 @@ async function verifySepolia() {
     const activationCommitment = keccak256(stringToHex(`${runId}:activation`));
     const latestBlock = await client.getBlock();
     const expiresAt = latestBlock.timestamp + 30n * 24n * 60n * 60n;
-    const wallet = createWalletClient({ account: relayer, chain, transport: http(process.env.EVM_RPC_HTTP_URL, { timeout: 15_000, retryCount: 1 }) });
+     const wallet = createWalletClient({ account: relayer, chain, transport: createViemRpcTransport(process.env.EVM_RPC_HTTP_URL, process.env.EVM_RPC_FALLBACK_HTTP_URL) });
     const args = [commandId, licenseId, relayer.address, productId, planId, 1n, planCommitment, activationCommitment, 1n, 1n, expiresAt];
     const simulation = await client.simulateContract({ address, abi, functionName: 'issueLicense', account: relayer, args });
     const gas = await client.estimateContractGas({ address, abi, functionName: 'issueLicense', account: relayer, args });
     const txHash = await wallet.writeContract({ ...simulation.request, gas });
     const receipt = await client.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
     const events = parseEventLogs({ abi, eventName: 'LicenseIssued', logs: receipt.logs });
-    setResult('Sepolia', 'REAL_EXTERNAL_VERIFIED', { chainId, contractAddress: address, relayerAddress: relayer.address, relayerBalanceWeiBefore: balance.toString(), transactionHash: txHash, blockNumber: receipt.blockNumber.toString(), receiptStatus: receipt.status, gasUsed: receipt.gasUsed.toString(), eventName: events[0]?.eventName ?? null, licenseId });
+     setResult('Sepolia', 'REAL_EXTERNAL_VERIFIED', { chainId, contractAddress: address, deploymentBlock, deploymentTransactionHash: deploymentReceipt.transactionHash, bytecodeLength: code.length, planCommitmentV2: planCommitment, relayerAddress: relayer.address, relayerBalanceWeiBefore: balance.toString(), transactionHash: txHash, blockNumber: receipt.blockNumber.toString(), receiptStatus: receipt.status, gasUsed: receipt.gasUsed.toString(), eventName: events[0]?.eventName ?? null, licenseId });
   } catch (error) {
     setResult('Sepolia', 'FAIL', { error: safeError(error) });
   }
@@ -146,7 +157,10 @@ await verifyFcm();
 await verifySePay();
 await verifySepolia();
 const reportPath = resolve(process.cwd(), '..', 'docs', 'traceability', 'external-provider-evidence.json');
-await mkdir(resolve(process.cwd(), '..', 'docs', 'traceability'), { recursive: true });
+const releaseEvidenceDirectory = resolve(process.cwd(), '..', 'docs', 'traceability', 'releases', runId);
+await mkdir(releaseEvidenceDirectory, { recursive: true });
 await writeFile(reportPath, `${JSON.stringify(results, null, 2)}\n`, 'utf8');
+await writeFile(resolve(releaseEvidenceDirectory, 'external-provider-evidence.json'), `${JSON.stringify(results, null, 2)}\n`, 'utf8');
 console.log(`Evidence written: ${reportPath}`);
+console.log(`Run evidence written: docs/traceability/releases/${runId}/external-provider-evidence.json`);
 if (Object.values(results.providers).some((result) => result.status === 'FAIL')) process.exitCode = 1;
