@@ -97,11 +97,24 @@ a {
   z-index: 30;
 }
 
+.site-header-right {
+  min-width: 0;
+  margin-left: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
 .site-header .public-nav {
   display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
   gap: 4px;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 0;
   align-items: center;
 }
 
@@ -115,6 +128,7 @@ a {
   font-weight: 500;
   text-decoration: none;
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
 }
 
 .site-header .public-nav a.active {
@@ -128,6 +142,10 @@ a {
   gap: 4px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.site-header .site-header-right .header-actions {
+  margin-left: 0;
 }
 
 .site-header .header-action-group {

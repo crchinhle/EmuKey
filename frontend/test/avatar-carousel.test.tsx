@@ -49,6 +49,17 @@ describe('Avatar and brand separation', () => {
 });
 
 describe('Public Home hero and carousel', () => {
+  it('uses a large introduction section without the compact trust-card row', () => {
+    expect(homeScreenText).toContain('public-home-hero-flow');
+    expect(homeScreenText).toContain('public-home-introduction');
+    expect(homeScreenText).toContain('Quy trình cấp phép');
+    expect(homeScreenText).toContain('EmuKey là nền tảng');
+    expect(homeScreenText).toContain('align-self: center');
+    expect(homeScreenText).not.toContain('Bắt đầu cùng EmuKey');
+    expect(homeScreenText).not.toContain('public-home-trust-grid');
+    expect(homeScreenText).not.toContain('Xem tất cả sản phẩm');
+  });
+
   it('hero has compact padding without a large min-height', () => {
     expect(homeScreenText).toContain('.public-home-hero');
     const heroStart = homeScreenText.indexOf('.public-home-hero {');
@@ -63,13 +74,25 @@ describe('Public Home hero and carousel', () => {
     expect(homeScreenText).toContain('.public-home-track');
   });
 
-  it('provides prev/next arrow controls and pause', () => {
+  it('provides manual prev/next controls without autoplay or a pause button', () => {
     expect(homeScreenText).toContain('.public-home-arrow');
-    expect(homeScreenText).toContain('.public-home-pause');
+    expect(homeScreenText).not.toContain('.public-home-pause');
+    expect(homeScreenText).not.toContain('setInterval');
   });
 });
 
 describe('Public header brand navigation', () => {
+  it('keeps the desktop navigation and account actions in one right-aligned row', () => {
+    const layoutStart = cssText.indexOf('.site-header-right {');
+    const layoutEnd = cssText.indexOf('}', layoutStart);
+    const layoutBlock = cssText.slice(layoutStart, layoutEnd);
+
+    expect(layoutStart).toBeGreaterThan(-1);
+    expect(layoutBlock).toContain('display: flex');
+    expect(layoutBlock).toContain('margin-left: auto');
+    expect(layoutBlock).toContain('flex-wrap: nowrap');
+  });
+
   it('brand navigates to home when logged out', () => {
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

@@ -9,6 +9,7 @@ import './presentation/styles.css';
 import './presentation/runtime-scale-fixes.css';
 import './presentation/mobile-header-fix.css';
 import './presentation/orders-table-fix.css';
+import './presentation/header-nav-adjacency.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

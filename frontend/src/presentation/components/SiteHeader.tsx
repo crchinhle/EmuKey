@@ -61,6 +61,7 @@ export function SiteHeader() {
         EmuKey
       </Link>
 
+      <div className="site-header-right">
       <nav aria-label="Điều hướng chính" className="public-nav">
         <NavLink aria-current={activeFor(location.pathname, '/') ? 'page' : undefined} className={({ isActive }) => (isActive && location.pathname === '/' ? 'active' : '')} end to="/">
           Trang chủ
@@ -99,6 +100,7 @@ export function SiteHeader() {
             <Button onClick={() => void navigate('/auth?mode=register')}>Đăng ký</Button>
           </div>
         )}
+      </div>
       </div>
 
       <button
