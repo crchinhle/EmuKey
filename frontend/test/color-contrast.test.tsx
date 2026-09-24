@@ -47,12 +47,12 @@ describe('high-contrast color system', () => {
       text: theme!.style.getPropertyValue('--text'),
       textSecondary: theme!.style.getPropertyValue('--text-secondary'),
     }).toEqual({
-      canvas: '#e3e1dc',
-      control: '#403e39',
-      primary: '#7a2e3a',
+      canvas: '#f7f9fb',
+      control: '#cbd5e1',
+      primary: '#1a4dc7',
       sidebar: '#1f1e1c',
       sidebarSelected: '#2e2c29',
-      surface: '#f8f7f3',
+      surface: '#ffffff',
       text: '#1c1c1a',
       textSecondary: '#4a4844',
     });

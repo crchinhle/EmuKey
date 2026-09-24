@@ -8,7 +8,7 @@ afterEach(cleanup);
 describe('Emukey public web screens', () => {
   it('keeps the AI assistant launcher available across routes', async () => {
     render(<App initialEntries={['/verify']} />);
-    const launcher = screen.getByRole('button', { name: 'Hỏi AI' });
+    const launcher = screen.getByRole('button', { name: 'Mở chat chăm sóc khách hàng' });
     expect(launcher.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(launcher);
     expect(await screen.findByRole('region', { name: 'Trợ lý AI Emukey' })).toBeTruthy();
@@ -21,7 +21,7 @@ describe('Emukey public web screens', () => {
     expect(screen.getByText('Theo dõi đơn hàng và thanh toán')).toBeTruthy();
     expect(screen.getByText('Xác minh công khai trên Blockchain')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Đăng ký' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('link', { name: 'Emukey - Trang sản phẩm' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Về trang chủ EmuKey' }));
     expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
   });
 
@@ -33,7 +33,7 @@ describe('Emukey public web screens', () => {
     fireEvent.change(screen.getByLabelText('Mật khẩu'), { target: { value: 'Emu@1234' } });
     fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập và tiếp tục' }));
 
-    expect(await screen.findByRole('heading', { name: 'License Hub' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bản quyền & thiết bị' })).toBeTruthy();
     expect(screen.getByLabelText('Email action token')).toHaveProperty('value', 'action-token-123');
   });
 

@@ -21,7 +21,7 @@ export function BuyerAssistanceScreen() {
   if (!conversation) {
     return (
       <>
-        <PageHeader title="Trung tâm hỗ trợ" description="Trao đổi với đội ngũ hỗ trợ về đơn hàng và kích hoạt." />
+        <PageHeader title="Hội thoại hỗ trợ" />
         <Empty description="Bạn chưa có hội thoại hỗ trợ." image={Empty.PRESENTED_IMAGE_SIMPLE}>
           <Button loading={create.isPending} onClick={() => create.mutate({ contextType: 'GENERAL', title: 'Hội thoại hỗ trợ' })} type="primary">
             Bắt đầu hội thoại
@@ -33,8 +33,7 @@ export function BuyerAssistanceScreen() {
   return (
     <>
       <PageHeader
-        title="Trung tâm hỗ trợ"
-        description="Trao đổi với đội ngũ hỗ trợ về đơn hàng và kích hoạt."
+        title="Hội thoại hỗ trợ"
         action={<StatusChip tone="error">{conversation.status}</StatusChip>}
       />
       <div className="support-thread-tabs" aria-label="Hội thoại hỗ trợ">

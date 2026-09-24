@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/presentation/app/App';
 
@@ -10,11 +10,14 @@ describe('Customer commerce', () => {
     render(<App initialEntries={['/buyer']} />);
 
     expect(
-      screen.getByRole('heading', { name: 'Tổng quan tài khoản người mua' }),
+      screen.getByRole('heading', { name: 'Bản quyền và đơn hàng của bạn' }),
     ).toBeTruthy();
-    expect((await screen.findAllByText('SecureDesk Pro')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Dữ liệu tài khoản thật')).toHaveLength(2);
-    expect(screen.queryByText('CloudStudio AI')).toBeNull();
+    expect(await screen.findByText('Đơn hàng gần đây')).toBeTruthy();
+    expect(screen.getByText('Thiết bị đang dùng')).toBeTruthy();
+    expect(screen.getByText('Sắp hết hạn trong 30 ngày')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Lối tắt' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Xem sản phẩm' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Bản quyền của tôi' })).toBeTruthy();
   });
 
   it('creates the server snapshot before asking for Terms acceptance', async () => {
@@ -69,6 +72,29 @@ describe('Customer commerce', () => {
     ).toBe('sandbox-signature');
   });
 
+  it('continues from accepted payment to trusted license without retrieving a key automatically', async () => {
+    render(
+      <App
+        initialEntries={[
+          '/buyer/orders/00000000-0000-4000-8000-000000000502/payment',
+        ]}
+      />,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Bản quyền đã sẵn sàng' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Nhận mã kích hoạt' })).toBeTruthy();
+    expect(screen.queryByText('0x' + '12'.repeat(32))).toBeNull();
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([input, init]) =>
+        (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).includes('/activation-key/retrieve') &&
+        init?.method === 'POST',
+      ),
+    ).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nhận mã kích hoạt' }));
+    expect(await screen.findByLabelText('Mã kích hoạt')).toBeTruthy();
+  });
+
   it('creates a renewal order only after the current activation key is provided', async () => {
     render(
       <App
@@ -86,6 +112,6 @@ describe('Customer commerce', () => {
     expect(
       await screen.findByRole('heading', { name: 'Điều khoản gia hạn' }),
     ).toBeTruthy();
-    expect(screen.getByText(/chỉ thay đổi sau khi thanh toán và blockchain đạt finality/i)).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Gia hạn License' })).toBeTruthy();
   });
 });

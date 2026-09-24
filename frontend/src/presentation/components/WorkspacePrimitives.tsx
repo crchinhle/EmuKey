@@ -8,7 +8,7 @@ export function formatMoney(value: number): string {
 
 interface PageHeaderProps {
   readonly title: string;
-  readonly description: string;
+  readonly description?: string;
   readonly action?: ReactNode;
 }
 
@@ -17,7 +17,7 @@ export function PageHeader({ title, description, action }: PageHeaderProps) {
     <header className="workspace-page-header">
       <div>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
       </div>
       {action}
     </header>

@@ -7,9 +7,9 @@ import {
   useProduct,
 } from '../../application/catalog/catalogQueries';
 import { ProductArtwork } from '../components/ProductArtwork';
-import { PublicHeader } from '../components/PublicHeader';
+import { SiteHeader } from '../components/SiteHeader';
 
-export function ProductDetailScreen() {
+export function ProductDetailScreen({ authenticated = false }: { readonly authenticated?: boolean }) {
   const { slug = '' } = useParams();
   const navigate = useNavigate();
   const { data: product, isLoading, isError } = useProduct(slug);
@@ -53,10 +53,10 @@ export function ProductDetailScreen() {
 
   return (
     <div className="page-shell">
-      <PublicHeader />
+        {!authenticated ? <SiteHeader /> : null}
       <main className="detail-content">
         <nav aria-label="Breadcrumb" className="breadcrumb">
-          <Link to="/products">Sản phẩm</Link>
+          <Link to={authenticated ? '/buyer/products' : '/products'}>Sản phẩm</Link>
           <span>/</span>
           <span>{product.name}</span>
         </nav>
@@ -102,7 +102,7 @@ export function ProductDetailScreen() {
                 type="primary"
                 onClick={() =>
                   void navigate(
-                    `/buyer/checkout?product=${encodeURIComponent(slug)}&planId=${encodeURIComponent(selectedPlan.id)}`,
+                     `/buyer/checkout?product=${encodeURIComponent(slug)}&planId=${encodeURIComponent(selectedPlan.id)}`,
                   )
                 }
               >

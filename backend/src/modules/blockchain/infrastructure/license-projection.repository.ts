@@ -155,9 +155,17 @@ export class LicenseProjectionRepository {
        `SELECT cc.id AS command_id, l.id AS license_id,
           ('0x' || encode(l.activation_commitment, 'hex')) AS commitment,
           l.activation_key_version AS key_version
-        FROM licenses l JOIN chain_commands cc ON cc.license_id=l.id
-          AND cc.command_type IN ('ISSUE_LICENSE','ROTATE_KEY') AND cc.status='CONFIRMED'
-         WHERE l.id=$1 AND l.status='ACTIVE' AND l.expires_at > now() AND l.customer_user_id=$2
+         FROM licenses l JOIN chain_commands cc ON cc.license_id=l.id
+           AND cc.command_type IN ('ISSUE_LICENSE','ROTATE_KEY') AND cc.status='CONFIRMED'
+         JOIN chain_events ce ON ce.chain_command_id=cc.id
+           AND ce.finality_status='CONFIRMED'
+           AND ce.event_type = CASE cc.command_type
+             WHEN 'ISSUE_LICENSE' THEN 'LICENSE_ISSUED'
+             WHEN 'ROTATE_KEY' THEN 'KEY_ROTATED'
+           END
+          WHERE l.id=$1 AND l.status='ACTIVE' AND l.expires_at > now()
+            AND l.activation_key_trust_status='TRUSTED'
+            AND l.customer_user_id=$2
          ORDER BY cc.confirmed_at DESC LIMIT 1`,
       [id, customerUserId],
     );

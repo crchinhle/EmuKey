@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useAuth } from '../../application/auth/authContext';
+import { roleHomePath } from '../../domain/workspace';
 import { Brand } from '../components/Brand';
 import {
   type AuthMode,
@@ -48,8 +49,14 @@ export function AuthScreen() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = resolveAuthMode(searchParams.get('mode'));
+  const redirectTarget = searchParams.get('redirect');
   const [verification, setVerification] = useState<'failed' | 'pending' | 'verified' | null>(null);
   const verificationToken = searchParams.get('token');
+  useEffect(() => {
+    if (user && (mode === 'login' || mode === 'register')) {
+      void navigate(user.role === 'CUSTOMER' ? '/' : roleHomePath(user.role), { replace: true });
+    }
+  }, [mode, navigate, user]);
   useEffect(() => {
     if (mode !== 'verify' || !verificationToken || verification) return;
     setVerification('pending');
@@ -63,8 +70,11 @@ export function AuthScreen() {
     }
   }, [mode, navigate, user?.role, verificationToken]);
   const copy = authCopy[mode];
-  const selectMode = (nextMode: AuthMode) =>
-    setSearchParams(nextMode === 'login' ? {} : { mode: nextMode });
+  const selectMode = (nextMode: AuthMode) => {
+    const next = nextMode === 'login' ? new URLSearchParams() : new URLSearchParams({ mode: nextMode });
+    if (redirectTarget) next.set('redirect', redirectTarget);
+    setSearchParams(next);
+  };
 
   return (
     <main className="auth-screen">
@@ -113,15 +123,12 @@ export function AuthScreen() {
                 onForgotPassword={() => selectMode('forgot')}
                 onLogin={login}
                 onSuccess={(user) => {
-                  const destination = mode === 'licensing-action' && user.role === 'CUSTOMER' && verificationToken
+                  const safeRedirect = redirectTarget?.startsWith('/') && !redirectTarget.startsWith('//') ? redirectTarget : null;
+                  const destination = safeRedirect && user.role === 'CUSTOMER'
+                    ? safeRedirect
+                    : mode === 'licensing-action' && user.role === 'CUSTOMER' && verificationToken
                     ? `/buyer/licenses?actionToken=${encodeURIComponent(verificationToken)}`
-                    : user.role === 'CUSTOMER'
-                      ? '/buyer'
-                      : user.role === 'PROVIDER_ADMIN'
-                        ? '/provider'
-                        : user.role === 'SUPPORT_STAFF'
-                          ? '/support'
-                          : '/system/console';
+                    : user.role === 'CUSTOMER' ? '/' : roleHomePath(user.role);
                   void navigate(destination, { replace: mode === 'licensing-action' });
                 }}
                 submitLabel={mode === 'licensing-action' ? 'Đăng nhập và tiếp tục' : 'Đăng nhập'}
@@ -130,7 +137,14 @@ export function AuthScreen() {
             </>
           ) : null}
           {mode === 'register' ? (
-            <RegisterForm onRegister={register} onRegistered={(email) => setSearchParams({ mode: 'verify', email })} />
+            <RegisterForm
+              onRegister={register}
+              onRegistered={(email) => {
+                const next = new URLSearchParams({ mode: 'verify', email });
+                if (redirectTarget) next.set('redirect', redirectTarget);
+                setSearchParams(next);
+              }}
+            />
           ) : null}
           {mode === 'verify' ? (
             <>

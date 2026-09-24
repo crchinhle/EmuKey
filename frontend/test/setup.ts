@@ -7,6 +7,7 @@ configure({ asyncUtilTimeout: 5_000 });
 vi.stubGlobal('crypto', webcrypto);
 
 const testOrderId = '00000000-0000-4000-8000-000000000501';
+const acceptedOrderId = '00000000-0000-4000-8000-000000000502';
 beforeEach(() => localStorage.clear());
 
 const publicProducts = [
@@ -115,6 +116,8 @@ const orders = [
 ] as const;
 
 const license = {
+  activationKeyAvailable: true,
+  activationKeyTrustStatus: 'TRUSTED',
   blockNumber: 42,
   confirmationCount: 2,
   createdAt: '2026-09-08T00:00:00.000Z',
@@ -182,6 +185,10 @@ vi.stubGlobal(
     const method = init?.method?.toUpperCase() ?? 'GET';
 
     if (path === '/auth/refresh') return jsonResponse(undefined, 401);
+    if (method === 'GET' && path === '/notifications') return jsonResponse([]);
+    if (method === 'GET' && path === '/knowledge/documents') return jsonResponse([]);
+    if (method === 'GET' && path === '/health/ready') return jsonResponse({ status: 'ok', dependencies: { postgres: 'up', redis: 'up', blockchain: 'up' } });
+    if (method === 'GET' && path === '/operations/health/assistance') return jsonResponse({ conversations: { supportActive: 0, waitingSupport: 0 }, notifications: { deadLetter: 0, pending: 0, retryableFailed: 0 } });
     if (path === '/auth/profile' && method === 'PUT') {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {};
       return jsonResponse({
@@ -313,7 +320,9 @@ vi.stubGlobal(
       ]);
     }
     if (method === 'GET' && path.startsWith('/orders/'))
-      return jsonResponse(orders[0]);
+      return jsonResponse(path.endsWith(acceptedOrderId)
+        ? { ...orders[0], id: acceptedOrderId, licenseId: license.id, orderStatus: 'PAYMENT_ACCEPTED' }
+        : orders[0]);
     if (method === 'POST' && path === '/orders')
       return jsonResponse(orders[0], 201);
     if (method === 'POST' && path.endsWith('/accept-service-terms'))
@@ -343,6 +352,7 @@ vi.stubGlobal(
       return jsonResponse({ ...orders[0], orderStatus: 'CANCELLED' });
     }
     if (method === 'GET' && path === '/licenses') return jsonResponse([license]);
+    if (method === 'GET' && path === `/licenses/${license.id}`) return jsonResponse(license);
     if (method === 'POST' && path.endsWith('/lifecycle')) return jsonResponse({ commandId: '00000000-0000-4000-8000-000000000902', deviceId: null, licenseId: license.id, status: 'PENDING' }, 201);
     if (method === 'GET' && path === '/commands/00000000-0000-4000-8000-000000000902') {
       return jsonResponse({

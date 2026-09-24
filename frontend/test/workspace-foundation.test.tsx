@@ -32,7 +32,7 @@ describe('workspace foundation', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('Emukey').className).toContain('brand-wordmark');
+    expect(screen.getByText('EmuKey').className).toContain('brand-wordmark');
     expect(screen.getByRole('link', { name: 'Đơn hàng' }).className).toContain(
       'active',
     );

@@ -7,7 +7,7 @@ import {
   useComparePlans,
   useProducts,
 } from '../../application/catalog/catalogQueries';
-import { PublicHeader } from '../components/PublicHeader';
+import { SiteHeader } from '../components/SiteHeader';
 
 function displayDimension(key: string, value: unknown): string {
   if (key === 'priceVnd' && typeof value === 'number') return formatVnd(value);
@@ -45,7 +45,7 @@ export function ComparePlansScreen() {
 
   return (
     <div className="page-shell">
-      <PublicHeader />
+      <SiteHeader />
       <main className="catalog-content comparison-content">
         <nav aria-label="Breadcrumb" className="breadcrumb">
           <Link to="/products">Sản phẩm</Link><span>/</span><span>So sánh gói</span>

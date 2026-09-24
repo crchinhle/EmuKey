@@ -2,7 +2,7 @@ import { Alert, Button, Input, Spin } from 'antd';
 import { useState } from 'react';
 
 import { usePublicLicenseVerification } from '../../application/licenses/licenseQueries';
-import { PublicHeader } from '../components/PublicHeader';
+import { SiteHeader } from '../components/SiteHeader';
 import { FactList, StatusChip } from '../components/WorkspacePrimitives';
 
 export function PublicVerificationScreen() {
@@ -13,7 +13,7 @@ export function PublicVerificationScreen() {
 
   return (
     <div className="page-shell">
-      <PublicHeader />
+      <SiteHeader />
       <main className="verification-content">
         <section className="verification-query" aria-labelledby="verify-title">
           <h1 id="verify-title">Xác minh Blockchain</h1>

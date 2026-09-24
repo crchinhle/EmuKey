@@ -11,6 +11,7 @@ interface ConversationPanelProps {
   readonly suggestion?: string;
   readonly onSubmit?: (content: string) => void;
   readonly onAskAi?: (question: string) => void;
+  readonly readOnly?: boolean;
 }
 
 export function ConversationPanel({
@@ -21,6 +22,7 @@ export function ConversationPanel({
   suggestion,
   onSubmit,
   onAskAi,
+  readOnly = false,
 }: ConversationPanelProps) {
   const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState('');
@@ -53,7 +55,9 @@ export function ConversationPanel({
           </article>
         ))}
       </div>
-      <label className="message-composer">
+      {readOnly ? (
+        <p className="muted-copy">Hội thoại đã hoàn tất. Không thể gửi thêm tin nhắn ở trạng thái này.</p>
+      ) : <label className="message-composer">
         <span>{inputLabel}</span>
         <Input.TextArea
           aria-label={inputLabel}
@@ -70,7 +74,7 @@ export function ConversationPanel({
             {submitLabel}
           </Button>
         </span>
-      </label>
+      </label>}
     </section>
   );
 }

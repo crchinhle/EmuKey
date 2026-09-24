@@ -43,7 +43,10 @@ async function refreshSession(): Promise<RefreshResult | null> {
 }
 
 export async function api(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
-  const headers = new Headers(init.headers); headers.set('content-type', 'application/json');
+  const headers = new Headers(init.headers);
+  if (!(init.body instanceof FormData) && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
   // Refresh is cookie-based; sending an expired bearer token makes the API
   // reject an otherwise valid rotated refresh session before it can recover.
   if (accessToken && path !== '/auth/refresh') headers.set('authorization', `Bearer ${accessToken}`);

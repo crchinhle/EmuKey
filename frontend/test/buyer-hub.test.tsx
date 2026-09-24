@@ -19,6 +19,7 @@ describe('Customer hub', () => {
     render(<App initialEntries={['/buyer/licenses']} />);
     const key = '0x' + '12'.repeat(32);
     expect(screen.queryByText(key)).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Khóa kích hoạt' }));
     fireEvent.click(
       await screen.findByRole('button', { name: 'Nhận activation key' }),
     );

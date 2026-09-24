@@ -1,23 +1,24 @@
-import { Alert, Button, Card, Empty, Input, Select, Spin, Tag } from 'antd';
+import { Alert, Button, Card, Empty, Input, Select, Spin } from 'antd';
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import {
   formatVnd,
   useProducts,
 } from '../../application/catalog/catalogQueries';
 import { ProductArtwork } from '../components/ProductArtwork';
-import { PublicHeader } from '../components/PublicHeader';
+import { SiteHeader } from '../components/SiteHeader';
 
 const sortOptions = [
   { value: 'popular', label: 'Phổ biến nhất' },
   { value: 'price-asc', label: 'Giá tăng dần' },
 ] as const;
 
-export function CatalogScreen() {
+export function CatalogScreen({ authenticated = false }: { readonly authenticated?: boolean }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] =
     useState<(typeof sortOptions)[number]['value']>('popular');
+  const navigate = useNavigate();
   const { data: products = [], isLoading, isError, refetch } = useProducts();
   const visibleProducts = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('vi');
@@ -38,23 +39,13 @@ export function CatalogScreen() {
 
   return (
     <div className="page-shell">
-      <PublicHeader />
+      {!authenticated ? <SiteHeader /> : null}
       <main className="catalog-content">
         <section className="catalog-hero">
           <div>
-            <h1>Bản quyền phần mềm được xác lập on-chain</h1>
-            <p>
-              Chọn Product và Plan phù hợp theo thời hạn, quyền sử dụng và số thiết bị.
-            </p>
-            <a className="primary-link" href="#product-grid">
-              Khám phá sản phẩm
-            </a>
+            <h1>Sản phẩm</h1>
+            <p>Chọn gói phù hợp với số thiết bị, thời hạn và nhu cầu sử dụng.</p>
           </div>
-          <Card className="trust-card">
-            <Tag color="blue">Blockchain verified</Tag>
-            <h2>License có bằng chứng on-chain</h2>
-            <p>Kiểm tra commitment, finality và trạng thái công khai.</p>
-          </Card>
         </section>
 
         <section aria-label="Bộ lọc sản phẩm" className="catalog-toolbar">
@@ -93,20 +84,30 @@ export function CatalogScreen() {
             <Empty description="Chưa có sản phẩm và gói giá được công bố." />
           ) : null}
           {!isLoading && !isError && visibleProducts.map((product) => (
-            <Card className="product-card" key={product.slug}>
+            <Card
+              aria-label={`Mở chi tiết ${product.name}`}
+              className="product-card"
+              key={product.slug}
+              onClick={() => void navigate(`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  void navigate(`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`);
+                }
+              }}
+              role="link"
+              tabIndex={0}
+            >
               <ProductArtwork imageUrl={product.imageUrl} productName={product.name} tone={product.tone} />
               <h2>{product.name}</h2>
               <p>{product.summary}</p>
               <strong>Từ {formatVnd(product.plans[0]!.priceVnd)}</strong>
               <div className="product-actions">
-                <Link className="ghost-link" to={'/products/' + product.slug}>
-                  Xem chi tiết
-                </Link>
                 <Link
-                  className="secondary-link"
-                  to={'/products/' + product.slug}
+                  className="primary-link"
+                  to={`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`}
                 >
-                  Chọn gói
+                  Xem gói & chi tiết
                 </Link>
               </div>
             </Card>

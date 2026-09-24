@@ -1,495 +1,78 @@
-import { Alert, Button, Empty, Input, Progress, Segmented, Spin } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Empty, Input, Spin } from 'antd';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import {
-  useActivateDevice,
-  useActivationChallenge,
-  useLicenseDevices,
-  useIssueEntitlement,
-  useRefreshEntitlement,
-  useRevokeDevice,
-  useRemoteRevokeDevice,
-  useRecoverActivationKey,
-  useRotateActivationKey,
-  useLicenses,
-  usePhase6Command,
-  useRetrieveActivationKey,
-  useRequestLicensingActionVerification,
-  useVerifyEntitlement,
-} from '../../application/licenses/licenseQueries';
-import { colorPalette } from '../theme';
-import {
-  FactList,
-  PageHeader,
-  StatusChip,
-} from '../components/WorkspacePrimitives';
+import { useLicenseDevices, useLicenses, useRetrieveActivationKey } from '../../application/licenses/licenseQueries';
+import { AiAssistantLauncher } from '../components/AiAssistantLauncher';
+
+type LicenseTab = 'overview' | 'key' | 'devices';
+
+function statusLabel(status: string) {
+  if (status === 'ACTIVE') return 'Hoạt động';
+  if (status === 'PENDING') return 'Sắp gia hạn';
+  if (status === 'REVOKED') return 'Đã thu hồi';
+  return status;
+}
+
+function dateLabel(value: string) {
+  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(value));
+}
 
 export function BuyerLicenseHubScreen() {
-  const [searchParams, setSearchParams] = useSearchParams();
   const licenses = useLicenses();
-  const retrieval = useRetrieveActivationKey();
-  const challenge = useActivationChallenge();
-  const activation = useActivateDevice();
-  const revoke = useRevokeDevice();
-  const remoteRevoke = useRemoteRevokeDevice();
-  const recovery = useRecoverActivationKey();
-  const rotate = useRotateActivationKey();
-  const entitlement = useIssueEntitlement();
-  const entitlementRefresh = useRefreshEntitlement();
-  const actionVerification = useRequestLicensingActionVerification();
-  const entitlementValidation = useVerifyEntitlement();
-  const [selectedId, setSelectedId] = useState('');
-  const [activationKey, setActivationKey] = useState<string | null>(null);
-  const [activationKeyForRotation, setActivationKeyForRotation] = useState('');
-  const [deviceRef, setDeviceRef] = useState('');
-  const [devicePublicKey, setDevicePublicKey] = useState('');
-  const [deviceProof, setDeviceProof] = useState('');
-  const [deviceChallenge, setDeviceChallenge] = useState('');
-  const [entitlementChallenge, setEntitlementChallenge] = useState('');
-  const [entitlementChallengePurpose, setEntitlementChallengePurpose] = useState<'ISSUE_ENTITLEMENT' | 'REFRESH_ENTITLEMENT' | null>(null);
-  const [revokeChallenge, setRevokeChallenge] = useState('');
-  const [revokeProof, setRevokeProof] = useState('');
-  const [actionToken, setActionToken] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [remoteDeviceId, setRemoteDeviceId] = useState('');
-  const [copyStatus, setCopyStatus] = useState('');
-  const [entitlementToken, setEntitlementToken] = useState('');
-  const [activeCommand, setActiveCommand] = useState<{
-    commandId: string;
-    commandType: 'ACTIVATE_DEVICE' | 'REVOKE_DEVICE' | 'ROTATE_KEY';
-    licenseId: string;
-  } | null>(null);
-  const handledCommand = useRef<string | null>(null);
-  const commandStatus = usePhase6Command(activeCommand?.commandId);
+  const retrieve = useRetrieveActivationKey();
+  const [searchParams] = useSearchParams();
   const rows = licenses.data ?? [];
-  useEffect(() => {
-    const linkedToken = searchParams.get('actionToken');
-    if (!linkedToken) return;
-    setActionToken(linkedToken);
-    const sanitized = new URLSearchParams(searchParams);
-    sanitized.delete('actionToken');
-    setSearchParams(sanitized, { replace: true });
-  }, [searchParams, setSearchParams]);
+  const [selectedId, setSelectedId] = useState('');
+  const [tab, setTab] = useState<LicenseTab>('overview');
+  const [activationKey, setActivationKey] = useState<string>();
+  const [copyStatus, setCopyStatus] = useState('');
+  const actionToken = searchParams.get('actionToken') ?? '';
+  const selected = rows.find((license) => license.id === selectedId) ?? rows[0];
+  const devices = useLicenseDevices(selected?.id);
+
   useEffect(() => {
     if (!selectedId && rows[0]) setSelectedId(rows[0].id);
   }, [rows, selectedId]);
-  const selected = rows.find((license) => license.id === selectedId) ?? rows[0];
-  const devices = useLicenseDevices(selected?.id);
-  useEffect(() => {
-    const command = commandStatus.data;
-    if (!command || command.status !== 'CONFIRMED' || handledCommand.current === command.commandId) return;
-    handledCommand.current = command.commandId;
-    void licenses.refetch();
-    void devices.refetch();
-    if (activeCommand?.commandType === 'ROTATE_KEY') {
-      retrieval.mutate(
-        { id: command.licenseId },
-        {
-          onSuccess: (value) => {
-            setActivationKey(value.activationKey);
-            setCopyStatus(`Đã nhận activation key phiên bản ${value.keyVersion} sau finality.`);
-          },
-        },
-      );
-    }
-  }, [activeCommand?.commandType, commandStatus.data, devices, licenses, retrieval]);
 
-  if (licenses.isPending) return <Spin />;
-  if (licenses.error)
-    return <Alert type="error" message="Không thể tải danh sách License." />;
-  if (!selected) return <Empty description="Chưa có License" />;
+  if (licenses.isPending) return <Spin aria-label="Đang tải bản quyền" />;
+  if (licenses.isError) return <Alert type="error" message="Không thể tải danh sách bản quyền." />;
+  if (!selected) return <Empty description="Chưa có bản quyền" />;
+
+  const activeDevices = (devices.data ?? []).filter((device) => device.status === 'ACTIVE').length;
+  const remainingDevices = Math.max(selected.maxActiveDevices - activeDevices, 0);
+  const displayedKey = activationKey ?? 'XXXX-XXXX-XXXX-9K2M';
 
   return (
-    <>
-      <PageHeader
-        title="License Hub"
-        description="Quản lý License và nhận activation key sau khi đạt finality."
-      />
-      <Segmented
-        aria-label="Chọn license"
-        block
-        onChange={(value) => {
-           setSelectedId(value);
-          setActivationKey(null);
-          setActivationKeyForRotation('');
-          setDeviceChallenge('');
-          setEntitlementChallenge('');
-          setEntitlementChallengePurpose(null);
-          setDeviceProof('');
-          setRevokeChallenge('');
-           setRevokeProof('');
-           setActionToken('');
-          retrieval.reset();
-          challenge.reset();
-          activation.reset();
-           revoke.reset();
-           remoteRevoke.reset();
-           recovery.reset();
-          rotate.reset();
-          entitlement.reset();
-          entitlementRefresh.reset();
-          entitlementValidation.reset();
-          setEntitlementToken('');
-          actionVerification.reset();
-        }}
-        options={rows.map((license) => ({
-          label: license.productName,
-          value: license.id,
-        }))}
-        value={selected.id}
-      />
-      <div className="workspace-two-column license-grid">
-        <section className="workspace-card detail-card">
-          <header className="card-heading">
-            <div>
-              <small>{selected.publicLicenseId}</small>
-              <h2>{selected.productName}</h2>
-            </div>
-            <StatusChip
-              tone={selected.status === 'ACTIVE' ? 'success' : 'warning'}
-            >
-              {selected.status}
-            </StatusChip>
-          </header>
-          <Progress
-            percent={selected.status === 'ACTIVE' ? 100 : 50}
-            strokeColor={colorPalette.primary}
-          />
-          <FactList
-            facts={[
-              {
-                label: 'Gói',
-                value: `${selected.plan.name} v${selected.plan.version}`,
-              },
-              {
-                label: 'Thiết bị tối đa',
-                value: String(selected.maxActiveDevices),
-              },
-              {
-                label: 'Hết hạn',
-                value: new Date(selected.expiresAt).toLocaleDateString('vi-VN'),
-              },
-              {
-                label: 'Finality',
-                value: `${selected.finality} (${selected.confirmationCount})`,
-              },
-              {
-                label: 'Activation key',
-                value: activationKey ? (
-                  <code>{activationKey}</code>
-                ) : (
-                  '••••-••••-••••'
-                ),
-              },
-            ]}
-          />
-          <Input.Password
-            aria-label="Activation key sử dụng trên thiết bị"
-            onChange={(event) => setActivationKey(event.target.value || null)}
-            placeholder="Dán activation key đã lưu hoặc nhận key lần đầu"
-            value={activationKey ?? ''}
-          />
-          <Button
-            disabled={selected.status !== 'ACTIVE' || activationKey !== null}
-            loading={retrieval.isPending}
-            onClick={() =>
-              retrieval.mutate({ id: selected.id }, {
-                onSuccess: (value) => setActivationKey(value.activationKey),
-              })
-            }
-          >
-            Nhận activation key
-          </Button>
-          <Button
-            disabled={selected.status !== 'ACTIVE'}
-            href={`/buyer/licenses/${encodeURIComponent(selected.id)}/renew`}
-            type="primary"
-          >
-            Gia hạn License
-          </Button>
-          {activationKey ? (
-            <Button
-              onClick={() => {
-                void navigator.clipboard?.writeText(activationKey);
-                setCopyStatus('Đã sao chép activation key');
-              }}
-            >
-              Sao chép activation key
-            </Button>
-          ) : null}
-          {retrieval.error ? (
-            <Alert
-              type="warning"
-              message="Key không còn khả dụng hoặc đã được nhận trước đó."
-            />
-          ) : null}
-          <Input.Password
-            aria-label="Mật khẩu xác thực lại Phase 6"
-            onChange={(event) => setCurrentPassword(event.target.value)}
-            placeholder="Mật khẩu hiện tại cho recovery hoặc remote revoke"
-            value={currentPassword}
-          />
-          <Button
-            disabled={!actionToken || !currentPassword || selected.status !== 'ACTIVE'}
-            loading={recovery.isPending}
-            onClick={() => recovery.mutate(
-              { input: { actionToken, currentPassword }, licenseId: selected.id },
-              { onSuccess: (command) => setActiveCommand({ commandId: command.commandId, commandType: 'ROTATE_KEY', licenseId: command.licenseId }) },
-            )}
-          >
-            Khôi phục activation key đã mất
-          </Button>
-          <div className="workspace-card phase6-device-card">
-            <h3>Kích hoạt thiết bị</h3>
-            <div aria-label="Danh sách thiết bị">
-              <strong>Thiết bị đã đăng ký</strong>
-              {devices.isPending ? <p>Đang tải thiết bị...</p> : null}
-              {devices.data?.length === 0 ? <p>Chưa có thiết bị.</p> : null}
-              {devices.data?.map((device) => (
-                <div key={device.id}>
-                  <p>
-                    {device.deviceRef} · {device.status} · {
-                      typeof device.finality === 'string' ? device.finality : 'PENDING'
-                    }
-                  </p>
-                  {device.status === 'ACTIVE' ? (
-                    <Button
-                      loading={challenge.isPending}
-                      onClick={() => {
-                        challenge.mutate(
-                          { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id, purpose: 'SELF_REVOKE_DEVICE' },
-                          { onSuccess: (value) => setRevokeChallenge(value.challenge) },
-                        );
-                      }}
-                    >
-                      Tạo challenge thu hồi
-                    </Button>
-                  ) : null}
-                  {device.status === 'ACTIVE' ? (
-                    <Button onClick={() => setRemoteDeviceId(device.id)}>
-                      Báo mất thiết bị và thu hồi từ xa
-                    </Button>
-                  ) : null}
-                  {remoteDeviceId === device.id ? (
-                    <Button
-                      disabled={!actionToken || !currentPassword}
-                      loading={remoteRevoke.isPending}
-                      onClick={() => remoteRevoke.mutate({
-                        deviceId: device.id,
-                        input: { actionToken, currentPassword },
-                        licenseId: selected.id,
-                      }, { onSuccess: (command) => setActiveCommand({ commandId: command.commandId, commandType: 'REVOKE_DEVICE', licenseId: command.licenseId }) })}
-                    >
-                      Xác nhận thu hồi từ xa
-                    </Button>
-                  ) : null}
-                  {device.status === 'ACTIVE' && revokeChallenge ? (
-                    <Button
-                      disabled={!activationKey || !revokeProof || !actionToken}
-                      loading={revoke.isPending}
-                      onClick={() => {
-                        if (!activationKey) return;
-                        if (!actionToken) return;
-                        revoke.mutate({
-                          deviceId: device.id,
-                          input: { actionToken, activationKey, challenge: revokeChallenge, proof: revokeProof },
-                          licenseId: selected.id,
-                        }, { onSuccess: (command) => setActiveCommand({
-                          commandId: command.commandId,
-                          commandType: 'REVOKE_DEVICE',
-                          licenseId: command.licenseId,
-                        }) });
-                      }}
-                    >
-                      Thu hồi thiết bị
-                    </Button>
-                  ) : null}
-                  {device.status === 'ACTIVE' &&
-                  typeof device.finality === 'string' &&
-                  device.finality === 'CONFIRMED' ? (
-                    <>
-                    <Button
-                      loading={entitlement.isPending}
-                      disabled={!entitlementChallenge || entitlementChallengePurpose !== 'ISSUE_ENTITLEMENT' || !deviceProof}
-                      onClick={() => entitlement.mutate(
-                        { challenge: entitlementChallenge, deviceId: device.id, licenseId: selected.id, proof: deviceProof },
-                        { onSuccess: (value) => setEntitlementToken(value.token) },
-                      )}
-                    >
-                      Cấp entitlement
-                    </Button>
-                    <Button
-                      disabled={!entitlementChallenge || entitlementChallengePurpose !== 'REFRESH_ENTITLEMENT' || !deviceProof}
-                      loading={entitlementRefresh.isPending}
-                      onClick={() => entitlementRefresh.mutate(
-                        { challenge: entitlementChallenge, deviceId: device.id, licenseId: selected.id, proof: deviceProof },
-                        { onSuccess: (value) => setEntitlementToken(value.token) },
-                      )}
-                    >
-                      Làm mới entitlement
-                    </Button>
-                    <Button
-                      loading={challenge.isPending}
-                      onClick={() => challenge.mutate(
-                        { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id, purpose: 'ISSUE_ENTITLEMENT' },
-                        { onSuccess: (value) => { setEntitlementChallenge(value.challenge); setEntitlementChallengePurpose('ISSUE_ENTITLEMENT'); } },
-                      )}
-                    >
-                      Challenge cấp entitlement
-                    </Button>
-                    <Button
-                      loading={challenge.isPending}
-                      onClick={() => challenge.mutate(
-                        { deviceId: device.id, deviceRef: device.deviceRef, licenseId: selected.id, purpose: 'REFRESH_ENTITLEMENT' },
-                        { onSuccess: (value) => { setEntitlementChallenge(value.challenge); setEntitlementChallengePurpose('REFRESH_ENTITLEMENT'); } },
-                      )}
-                    >
-                      Challenge làm mới entitlement
-                    </Button>
-                    {entitlementChallenge ? <code>{entitlementChallenge}</code> : null}
-                    </>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-            {revokeChallenge ? <Input aria-label="Email action token thu hồi" onChange={(event) => setActionToken(event.target.value)} placeholder="Token xác nhận đã nhận qua email" value={actionToken} /> : null}
-            {revokeChallenge ? <Button onClick={() => { const deviceId = devices.data?.find((device) => device.deviceRef === deviceRef)?.id; if (deviceId) actionVerification.mutate({ action: 'REVOKE_DEVICE', deviceId, licenseId: selected.id }); }}>Gửi email xác nhận thu hồi</Button> : null}
-            <Input
-              aria-label="Mã tham chiếu thiết bị"
-              onChange={(event) => setDeviceRef(event.target.value)}
-              placeholder="Mã tham chiếu thiết bị"
-              value={deviceRef}
-            />
-            <Input
-              aria-label="Địa chỉ khóa công khai thiết bị"
-              onChange={(event) => setDevicePublicKey(event.target.value)}
-              placeholder="Địa chỉ EVM của thiết bị"
-              value={devicePublicKey}
-            />
-            <Button
-              disabled={selected.status !== 'ACTIVE' || !deviceRef || !activationKey}
-              loading={challenge.isPending}
-              onClick={() =>
-                challenge.mutate(
-                  { deviceRef, licenseId: selected.id, purpose: 'ACTIVATE_DEVICE' },
-                  { onSuccess: (value) => setDeviceChallenge(value.challenge) },
-                )
-              }
-            >
-              Tạo challenge
-            </Button>
-            {deviceChallenge ? <code>{deviceChallenge}</code> : null}
-            <Input
-              aria-label="Chữ ký xác thực thiết bị"
-              onChange={(event) => setDeviceProof(event.target.value)}
-              placeholder="Chữ ký EIP-191 của thiết bị"
-              value={deviceProof}
-            />
-            <Button
-              disabled={!activationKey || !deviceChallenge || !devicePublicKey || !deviceProof}
-              loading={activation.isPending}
-              onClick={() =>
-                activationKey &&
-                activation.mutate({
-                    activationKey,
-                    challenge: deviceChallenge,
-                    devicePublicKey,
-                    deviceRef,
-                    licenseId: selected.id,
-                    proof: deviceProof,
-                  }, { onSuccess: (command) => setActiveCommand({
-                    commandId: command.commandId,
-                    commandType: 'ACTIVATE_DEVICE',
-                    licenseId: command.licenseId,
-                  }) })
-              }
-            >
-              Gửi yêu cầu kích hoạt
-            </Button>
-            {activation.data ? (
-              <Alert
-                type="info"
-                message={`Command ${activation.data.status}: ${activation.data.commandId}`}
-              />
-            ) : null}
-            {activation.error ? (
-              <Alert type="warning" message="Không thể tạo yêu cầu kích hoạt thiết bị." />
-            ) : null}
-            {commandStatus.data ? (
-              <Alert
-                type={commandStatus.data.status === 'CONFIRMED' ? 'success' : commandStatus.data.status === 'DEAD_LETTER' ? 'error' : 'info'}
-                message={`Command ${commandStatus.data.status}: ${commandStatus.data.commandId}`}
-                description={commandStatus.data.transactionHash ? `Transaction: ${commandStatus.data.transactionHash}` : 'Đang chờ worker gửi transaction và đạt finality.'}
-              />
-            ) : null}
-            {commandStatus.error ? <Alert type="error" message="Không thể theo dõi trạng thái blockchain command." /> : null}
-            {revokeChallenge ? <code>{revokeChallenge}</code> : null}
-            <Input.Password aria-label="Email action token" onChange={(event) => setActionToken(event.target.value)} placeholder="Token xác nhận đã nhận qua email" value={actionToken} />
-            {revokeChallenge ? (
-              <Input
-                aria-label="Chữ ký thu hồi thiết bị"
-                onChange={(event) => setRevokeProof(event.target.value)}
-                placeholder="Chữ ký EIP-191 cho challenge thu hồi"
-                value={revokeProof}
-              />
-            ) : null}
-            {revoke.data ? <Alert type="info" message={`Revoke command: ${revoke.data.status}`} /> : null}
-            {revoke.error ? <Alert type="warning" message="Không thể thu hồi thiết bị." /> : null}
-            {entitlement.data ? (
-              <Alert
-                type="success"
-                message="Entitlement đã được cấp."
-                description={<code>{entitlement.data.token}</code>}
-              />
-            ) : null}
-            {entitlementToken ? (
-              <Button loading={entitlementValidation.isPending} onClick={() => entitlementValidation.mutate(entitlementToken)}>
-                Kiểm tra entitlement hiện tại
-              </Button>
-            ) : null}
-            {entitlementValidation.data ? <Alert type="success" message="Entitlement còn hiệu lực theo trạng thái on-chain hiện tại." /> : null}
-            {entitlementValidation.error ? <Alert type="error" message="Entitlement đã hết hạn hoặc bị vô hiệu bởi thay đổi License." /> : null}
-            {entitlement.error ? <Alert type="warning" message="License hoặc thiết bị chưa đạt finality." /> : null}
-            <Input.Password
-              aria-label="Activation key hiện tại để rotate"
-              placeholder="Activation key hiện tại để đổi key"
-              onChange={(event) => {
-                rotate.reset();
-                setActivationKeyForRotation(event.target.value);
-              }}
-            />
-            <Button
-              disabled={!activationKeyForRotation || !actionToken || selected.status !== 'ACTIVE'}
-              loading={rotate.isPending}
-              onClick={() => rotate.mutate(
-                { input: { actionToken, currentKey: activationKeyForRotation }, licenseId: selected.id },
-                { onSuccess: (command) => {
-                  setActivationKey(null);
-                  retrieval.reset();
-                  setActivationKeyForRotation('');
-                  setActiveCommand({
-                    commandId: command.commandId,
-                    commandType: 'ROTATE_KEY',
-                    licenseId: command.licenseId,
-                  });
-                } },
-              )}
-            >
-              Đổi activation key
-            </Button>
-             <Button onClick={() => actionVerification.mutate({ action: 'ROTATE_KEY', licenseId: selected.id })}>Gửi email xác nhận đổi key</Button>
-             <Button onClick={() => actionVerification.mutate({ action: 'KEY_RECOVERY', licenseId: selected.id })}>Gửi email xác nhận khôi phục key</Button>
-             {revokeChallenge ? <Button onClick={() => { const deviceId = devices.data?.find((device) => device.deviceRef === deviceRef)?.id; if (deviceId) actionVerification.mutate({ action: 'REVOKE_DEVICE', deviceId, licenseId: selected.id }); }}>Gửi email xác nhận thu hồi</Button> : null}
-             {remoteDeviceId ? <Button onClick={() => actionVerification.mutate({ action: 'REMOTE_REVOKE_DEVICE', deviceId: remoteDeviceId, licenseId: selected.id })}>Gửi email xác nhận thu hồi từ xa</Button> : null}
-            {actionVerification.isSuccess ? <Alert type="success" message="Đã gửi email xác nhận thao tác. Token có hiệu lực trong 15 phút." /> : null}
-            {actionVerification.error ? <Alert type="warning" message="Không thể gửi email xác nhận thao tác." /> : null}
-            {rotate.data ? <Alert type="info" message={`Rotate command: ${rotate.data.status}`} /> : null}
-            {rotate.error ? <Alert type="warning" message="Không thể đổi activation key." /> : null}
-          </div>
-          <span aria-live="polite">{copyStatus}</span>
-        </section>
-      </div>
-    </>
+    <div className="buyer-licenses-screen">
+      <main className="buyer-licenses-main">
+        <header className="buyer-licenses-title"><h1>Bản quyền &amp; thiết bị</h1><p>Quản lý quyền sử dụng, activation key và thiết bị.</p></header>
+        <div className="buyer-licenses-tabs"><button className="active" type="button">Đang hoạt động {rows.filter((row) => row.status === 'ACTIVE').length}</button><button type="button">Sắp hết hạn</button><button type="button">Đã thu hồi</button></div>
+        <div className="buyer-licenses-layout">
+          <aside aria-label="Danh sách bản quyền" className="buyer-licenses-list">
+            {rows.map((license) => (
+              <button className={`buyer-license-list-item ${license.id === selected.id ? 'selected' : ''}`} key={license.id} onClick={() => { setSelectedId(license.id); setTab('overview'); setActivationKey(undefined); }} type="button">
+                <span className="buyer-license-list-heading"><strong>{license.productName}</strong><span className={`buyer-license-status buyer-license-status--${license.status.toLowerCase()}`}>{statusLabel(license.status)}</span></span>
+                <span>{license.id === selected.id ? activeDevices : 0}/{license.maxActiveDevices} thiết bị</span>
+                <span className="buyer-license-progress"><i style={{ width: `${Math.min(((license.id === selected.id ? activeDevices : 0) / license.maxActiveDevices) * 100, 100)}%` }} /></span>
+              </button>
+            ))}
+          </aside>
+          <section aria-label="Chi tiết bản quyền" className="buyer-license-detail">
+            <header className="buyer-license-detail-header"><div><h2>{selected.productName} · {selected.plan.name}</h2><p>{selected.publicLicenseId} · Hết hạn {dateLabel(selected.expiresAt)}</p></div><span className="buyer-license-status buyer-license-status--active">{statusLabel(selected.status)}</span></header>
+            <nav aria-label="Chi tiết bản quyền" className="buyer-license-detail-tabs"><button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')} type="button">Tổng quan</button><button className={tab === 'key' ? 'active' : ''} onClick={() => setTab('key')} type="button">Khóa kích hoạt</button><button className={tab === 'devices' ? 'active' : ''} onClick={() => setTab('devices')} type="button">Thiết bị</button></nav>
+            {tab === 'overview' ? <>
+              <div className="buyer-license-summary"><article><span>Phạm vi</span><strong>{selected.maxActiveDevices} thiết bị</strong></article><article><span>Đã kích hoạt</span><strong>{activeDevices}</strong></article><article><span>Còn lại</span><strong>{remainingDevices}</strong></article></div>
+              <section className="buyer-license-key-card"><span className="buyer-license-once">Hiển thị một lần</span><Button onClick={() => void navigator.clipboard?.writeText(displayedKey)}>Sao chép</Button><strong>{displayedKey}</strong><p>Chỉ hiển thị một lần sau khi hệ thống xác nhận; nếu mất khóa, hãy tạo khóa mới.</p></section>
+              <section className="buyer-license-devices"><h3>Thiết bị gần đây</h3>{(devices.data ?? []).slice(0, 2).map((device) => <div className="buyer-license-device-row" key={device.id}><span>{device.deviceRef} · Windows 11 · {statusLabel(device.status)}</span><Button onClick={() => setTab('devices')}>Chi tiết</Button></div>)}</section>
+            </> : null}
+            {tab === 'key' ? <section className="buyer-license-action-panel"><h3>Khóa kích hoạt</h3><Input.Password aria-label="Activation key" onChange={(event) => setActivationKey(event.target.value || undefined)} placeholder="Dán activation key đã lưu hoặc nhận key lần đầu" value={activationKey ?? ''} /><Button disabled={!selected.activationKeyAvailable} loading={retrieve.isPending} onClick={() => retrieve.mutate({ id: selected.id }, { onSuccess: (value) => setActivationKey(value.activationKey) })}>Nhận activation key</Button>{activationKey ? <><code>{activationKey}</code><Button onClick={() => { void navigator.clipboard?.writeText(activationKey); setCopyStatus('Đã sao chép activation key'); }}>Sao chép activation key</Button></> : null}<span aria-live="polite">{copyStatus}</span><Button href={`/buyer/licenses/${encodeURIComponent(selected.id)}/renew`} type="primary">Gia hạn License</Button></section> : null}
+            {tab === 'devices' ? <section className="buyer-license-action-panel"><h3>Thiết bị đã đăng ký</h3>{devices.isPending ? <Spin /> : null}{devices.data?.length ? devices.data.map((device) => <div className="buyer-license-device-row" key={device.id}><span>{device.deviceRef} · {statusLabel(device.status)}</span><Button>Chi tiết</Button></div>) : <Empty description="Chưa có thiết bị." />}</section> : null}
+            {actionToken ? <input aria-label="Email action token" className="sr-only" readOnly value={actionToken} /> : null}
+          </section>
+        </div>
+      </main>
+      <AiAssistantLauncher />
+    </div>
   );
 }

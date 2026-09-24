@@ -18,7 +18,7 @@ const customer: AuthPrincipal = {
 };
 
 describe('LicenseQueryService boundaries', () => {
-  it('rejects application callers outside the Customer and Provider roles', () => {
+  it('rejects application callers outside the Customer and Provider roles', async () => {
     const repository = {
       listProvider: vi.fn(),
     } as unknown as Mocked<LicenseProjectionRepository>;
@@ -28,9 +28,9 @@ describe('LicenseQueryService boundaries', () => {
       {} as Redis,
     );
 
-    expect(() =>
+    await expect(
       service.list({ ...provider, role: 'SYSTEM_ADMIN' }),
-    ).toThrowError(expect.objectContaining({ status: 403 }));
+    ).rejects.toThrowError(expect.objectContaining({ status: 403 }));
     expect(repository.listProvider.mock.calls).toHaveLength(0);
   });
 
@@ -87,5 +87,25 @@ describe('LicenseQueryService boundaries', () => {
       customer.sub,
       '00000000-0000-4000-8000-000000000401',
     ]);
+  });
+
+  it('exposes only safe activation-key availability metadata for a trusted customer license', async () => {
+    const license = {
+      id: '00000000-0000-4000-8000-000000000401',
+      status: 'ACTIVE',
+    };
+    const repository = {
+      listCustomer: vi.fn().mockResolvedValue([license]),
+      activationCommand: vi.fn().mockResolvedValue({ command_id: 'command-1' }),
+    } as unknown as Mocked<LicenseProjectionRepository>;
+    const envelopes = {
+      exists: vi.fn().mockResolvedValue(true),
+    } as unknown as Mocked<ActivationEnvelopePort>;
+    const service = new LicenseQueryService(repository, envelopes, {} as Redis);
+
+    await expect(service.list(customer)).resolves.toEqual([
+      { ...license, activationKeyAvailable: true },
+    ]);
+    expect(envelopes.exists).toHaveBeenCalledWith('command-1');
   });
 });

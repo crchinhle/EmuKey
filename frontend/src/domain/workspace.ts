@@ -10,6 +10,7 @@ export type StatusTone =
 
 export interface NavigationItem {
   readonly label: string;
+  readonly ariaLabel?: string;
   readonly to: string;
   readonly end?: boolean;
 }
@@ -22,6 +23,20 @@ export interface RoleShellConfig {
     | 'SYSTEM_ADMIN';
   readonly account?: string;
   readonly items: readonly NavigationItem[];
+}
+
+export function roleSettingsPath(role: string): string {
+  if (role === 'PROVIDER_ADMIN') return '/provider/profile';
+  if (role === 'SUPPORT_STAFF') return '/support/profile';
+  if (role === 'SYSTEM_ADMIN') return '/system/console/profile';
+  return '/buyer/profile';
+}
+
+export function roleHomePath(role: string): string {
+  if (role === 'PROVIDER_ADMIN') return '/provider';
+  if (role === 'SUPPORT_STAFF') return '/support';
+  if (role === 'SYSTEM_ADMIN') return '/system/console';
+  return '/buyer';
 }
 
 export type OrderStatus =

@@ -36,3 +36,15 @@ export function useAppendSupportMessage() {
     },
   });
 }
+
+export function useCloseSupportConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) =>
+      requestJson<ConversationDto>(`/conversations/${conversationId}/close`, { method: 'POST' }),
+    onSuccess: (_conversation, conversationId) => {
+      void queryClient.invalidateQueries({ queryKey: ['assistance', 'support-queue'] });
+      void queryClient.invalidateQueries({ queryKey: ['assistance', 'messages', conversationId] });
+    },
+  });
+}

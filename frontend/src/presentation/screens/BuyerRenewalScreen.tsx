@@ -68,7 +68,6 @@ export function BuyerRenewalScreen() {
     <div className="workspace-screen">
       <PageHeader
         title="Gia hạn License"
-        description="Tạo đơn gia hạn mới; thời hạn hiện tại chỉ thay đổi sau khi thanh toán và blockchain đạt finality."
       />
       <Steps
         current={renewalOrder ? 1 : 0}

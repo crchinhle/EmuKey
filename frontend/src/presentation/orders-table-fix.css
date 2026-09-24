@@ -1,0 +1,35 @@
+
+/* Orders table runtime alignment */
+.buyer-orders-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.buyer-orders-table th,
+.buyer-orders-table td {
+  overflow: hidden;
+}
+
+.buyer-orders-table td:nth-child(1) { width: 14%; }
+.buyer-orders-table td:nth-child(2) { width: 16%; }
+.buyer-orders-table td:nth-child(3) { width: 32%; }
+.buyer-orders-table td:nth-child(4) { width: 14%; }
+.buyer-orders-table td:nth-child(5) { width: 12%; }
+.buyer-orders-table td:nth-child(6) { width: 12%; }
+
+.buyer-orders-cell-text,
+.buyer-orders-id {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buyer-orders-table td:nth-child(4) {
+  text-align: right;
+}
+
+.buyer-orders-table td:nth-child(6) {
+  white-space: normal;
+}

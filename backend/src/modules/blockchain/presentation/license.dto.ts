@@ -13,6 +13,8 @@ export class LicenseProviderDto {
 }
 
 export class LicenseProjectionDto {
+  @ApiPropertyOptional()
+  activationKeyAvailable?: boolean;
   @ApiPropertyOptional({ nullable: true, type: Number }) blockNumber!:
     number | null;
   @ApiProperty() confirmationCount!: number;

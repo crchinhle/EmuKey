@@ -10,9 +10,9 @@ describe('Provider workspace', () => {
     render(<App initialEntries={['/provider']} />);
 
     expect(
-      screen.getByRole('heading', { name: 'Tổng quan Provider' }),
+      screen.getByRole('heading', { name: 'Trang chủ Provider' }),
     ).toBeTruthy();
-    expect(screen.getByText('Emukey').className).toContain('brand-wordmark');
+    expect(screen.getByText('EmuKey').className).toContain('brand-wordmark');
     expect(screen.getByRole('link', { name: 'Hồ sơ' })).toBeTruthy();
     expect(screen.getByText(/chưa có canonical Phase 1-7 API/i)).toBeTruthy();
   });
@@ -43,7 +43,7 @@ describe('Provider workspace', () => {
   it('exposes license lifecycle controls in the Provider workspace', async () => {
     render(<App initialEntries={['/provider/licenses']} />);
 
-    expect(await screen.findByRole('heading', { name: 'License' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bản quyền Provider' })).toBeTruthy();
     expect(await screen.findByText(/EMU-/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Suspend' }));
     expect(await screen.findByText(/Command PENDING/)).toBeTruthy();

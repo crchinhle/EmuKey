@@ -53,7 +53,6 @@ export function AccountProfileScreen() {
     <>
       <PageHeader
         title="Hồ sơ tài khoản"
-        description="Quản lý thông tin liên hệ gắn với tài khoản Emukey đang đăng nhập."
         action={<Tag color={user.status === 'ACTIVE' ? 'green' : 'orange'}>{user.status}</Tag>}
       />
       <div className="workspace-two-column profile-layout">
@@ -78,7 +77,7 @@ export function AccountProfileScreen() {
               <Input autoComplete="name" />
             </Form.Item>
             <Form.Item label="Email">
-              <Input disabled value={user.email} />
+              <span className="readonly-value">{user.email}</span>
             </Form.Item>
             <Form.Item label="Số điện thoại" name="phone" rules={[{ max: 30 }]}>
               <Input autoComplete="tel" />

@@ -31,7 +31,7 @@ export function ProviderLicensesScreen() {
 
   return (
     <>
-      <PageHeader title="License" description="Theo dõi trạng thái on-chain và quản lý suspend, resume hoặc revoke license của tổ chức." />
+      <PageHeader title="Bản quyền Provider" />
       {licenses.isPending ? <Spin aria-label="Đang tải license của nhà cung cấp" /> : null}
       {licenses.isError ? <Alert showIcon type="error" message="Không thể tải danh sách license." action={<Button onClick={() => void licenses.refetch()}>Thử lại</Button>} /> : null}
       {lifecycle.error ? <Alert showIcon type="error" message="Không thể gửi lifecycle command." description="Kiểm tra trạng thái license và thử lại." /> : null}

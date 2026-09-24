@@ -104,7 +104,7 @@ export function ProviderCatalogScreen() {
   return (
     <>
       {contextHolder}
-      <PageHeader title="Danh mục sản phẩm" description="Quản lý sản phẩm và các phiên bản gói được công bố." action={<Button type="primary" onClick={() => openProduct()}>Tạo sản phẩm</Button>} />
+      <PageHeader title="Danh mục sản phẩm" action={<Button type="primary" onClick={() => openProduct()}>Tạo sản phẩm</Button>} />
       {catalogError ? <Alert showIcon type="error" message="Không thể tải danh mục quản trị." description={describeApiError(catalogError, 'Kiểm tra quyền PROVIDER_ADMIN hoặc thử lại.')} action={<Button onClick={() => { void products.refetch(); void plans.refetch(); }}>Thử lại</Button>} /> : null}
       {mutationError ? <Alert showIcon type="error" message={describeApiError(mutationError, 'Không thể cập nhật danh mục.')} /> : null}
       <section className="workspace-card table-card">

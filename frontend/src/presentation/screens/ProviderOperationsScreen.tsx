@@ -25,7 +25,6 @@ export function ProviderOperationsScreen() {
     <>
       <PageHeader
         title="Vận hành"
-        description="Theo dõi provisioning, đối soát và các job tích hợp."
       />
       <div className="inline-filter">
         <Input.Search

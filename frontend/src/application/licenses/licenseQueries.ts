@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type {
   ActivateDeviceDto,
@@ -24,19 +24,35 @@ export function useLicenses() {
   });
 }
 
-export function useOrderLicense(orderId: string, enabled: boolean) {
+export function useOrderLicense(
+  orderId: string,
+  enabled: boolean,
+  licenseId?: string | null,
+  continuePollingAfterReady = false,
+) {
   return useQuery({
     enabled: Boolean(orderId) && enabled,
-    queryKey: ['licenses', 'order', orderId],
+    queryKey: ['licenses', 'order', orderId, licenseId ?? null],
     queryFn: async () => {
+      if (licenseId) {
+        return requestJson<LicenseProjectionDto>(
+          `/licenses/${encodeURIComponent(licenseId)}`,
+        );
+      }
       const licenses = await requestJson<LicenseProjectionDto[]>('/licenses');
       return licenses.find((license) => license.originOrderId === orderId) ?? null;
     },
     refetchInterval: (query) => {
       const license = query.state.data;
-      if (license?.status === 'ACTIVE' && license.activationKeyTrustStatus === 'TRUSTED') return false;
+      if (
+        !continuePollingAfterReady &&
+        license?.status === 'ACTIVE' &&
+        license.activationKeyTrustStatus === 'TRUSTED'
+      ) return false;
+      if (license && ['SUSPENDED', 'EXPIRED', 'REVOKED'].includes(license.status)) return false;
       return 2_000;
     },
+    refetchIntervalInBackground: true,
   });
 }
 
@@ -113,6 +129,16 @@ export function useLicenseDevices(licenseId: string | undefined) {
     enabled: Boolean(licenseId),
     queryKey: ['licenses', licenseId, 'devices'],
     queryFn: () => requestJson<LicenseDeviceDto[]>(`/licenses/${encodeURIComponent(licenseId!)}/devices`),
+  });
+}
+
+export function useAllLicenseDevices(licenseIds: readonly string[]) {
+  return useQueries({
+    queries: licenseIds.map((licenseId) => ({
+      enabled: Boolean(licenseId),
+      queryKey: ['licenses', licenseId, 'devices'],
+      queryFn: () => requestJson<LicenseDeviceDto[]>(`/licenses/${encodeURIComponent(licenseId)}/devices`),
+    })),
   });
 }
 

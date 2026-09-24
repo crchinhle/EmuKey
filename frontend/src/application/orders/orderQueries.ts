@@ -31,8 +31,10 @@ export function useOrder(id: string) {
     queryKey: ['orders', id],
     queryFn: () => requestJson<OrderDetail>(`/orders/${encodeURIComponent(id)}`),
     enabled: Boolean(id),
+    // Keep the return page in sync until the payment callback projects the
+    // accepted state. Downstream chain state is polled by useOrderLicense.
     refetchInterval: (query) =>
-      query.state.data?.orderStatus === 'WAITING_PAYMENT' ? 5_000 : false,
+      query.state.data?.orderStatus === 'WAITING_PAYMENT' ? 2_000 : false,
   });
 }
 

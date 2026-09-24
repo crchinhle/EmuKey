@@ -315,7 +315,7 @@ export type LicenseProviderDto = {
 };
 
 export type LicenseProjectionDto = {
-  activationKeyTrustStatus: 'PENDING_FINALITY' | 'TRUSTED' | 'UNTRUSTED_REORG';
+  activationKeyAvailable?: boolean;
   blockNumber?: number | null;
   confirmationCount: number;
   createdAt: string;
@@ -324,6 +324,7 @@ export type LicenseProjectionDto = {
   finality: string;
   id: string;
   keyVersion: number;
+  activationKeyTrustStatus?: 'PENDING_FINALITY' | 'TRUSTED' | 'UNTRUSTED_REORG';
   maxActiveDevices: number;
   originOrderId: string;
   periodStart: string;

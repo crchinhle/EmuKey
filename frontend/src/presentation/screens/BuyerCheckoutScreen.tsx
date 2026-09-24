@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Input, Result, Spin, Steps } from 'antd';
+import { Alert, Button, Checkbox, Result, Spin, Steps } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -11,6 +11,7 @@ import {
 } from '../../application/orders/orderQueries';
 import { OrderSummary } from '../components/OrderSummary';
 import { PageHeader } from '../components/WorkspacePrimitives';
+import { NotificationCenter } from '../components/NotificationCenter';
 
 export function BuyerCheckoutScreen() {
   const navigate = useNavigate();
@@ -71,8 +72,7 @@ export function BuyerCheckoutScreen() {
     <div className="workspace-screen">
       <PageHeader
         title="Hoàn tất mua bản quyền"
-        description="Backend tạo snapshot đơn hàng trước, sau đó bạn đọc và chấp nhận đúng phiên bản điều khoản đã lưu."
-        action={<Button>Thông báo</Button>}
+        action={<NotificationCenter />}
       />
       <Steps
         current={order ? 1 : 0}
@@ -91,19 +91,15 @@ export function BuyerCheckoutScreen() {
           />
           <section className="workspace-card section-card">
             <h2>Cấu hình đơn hàng</h2>
-            <div className="form-grid">
-              <label>
-                Gói
-                <Input aria-label="Gói" value={selectedPlan.label} readOnly />
-              </label>
-              <label>
-                Số thiết bị tối đa
-                <Input
-                  aria-label="Số thiết bị tối đa"
-                  value={`${selectedPlan.devices} thiết bị`}
-                  readOnly
-                />
-              </label>
+            <div className="form-grid checkout-facts">
+              <div>
+                <span className="fact-label">Gói</span>
+                <strong className="readonly-value">{selectedPlan.label}</strong>
+              </div>
+              <div>
+                <span className="fact-label">Số thiết bị tối đa</span>
+                <strong className="readonly-value">{selectedPlan.devices} thiết bị</strong>
+              </div>
             </div>
           </section>
           <section className="workspace-card section-card">
@@ -160,7 +156,7 @@ export function BuyerCheckoutScreen() {
             <p>Quay lại danh mục nếu bạn muốn chọn một gói khác.</p>
           </section>
           <div className="workspace-actions">
-            <Button onClick={() => void navigate('/products/securedesk')}>
+            <Button onClick={() => void navigate(`/products/${encodeURIComponent(productSlug)}`)}>
               Quay lại
             </Button>
               <Button

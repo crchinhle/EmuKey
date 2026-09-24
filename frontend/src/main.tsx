@@ -6,6 +6,9 @@ import '@fontsource/ibm-plex-mono/vietnamese-400.css';
 import '@fontsource/ibm-plex-mono/latin-500.css';
 import '@fontsource/ibm-plex-mono/vietnamese-500.css';
 import './presentation/styles.css';
+import './presentation/runtime-scale-fixes.css';
+import './presentation/mobile-header-fix.css';
+import './presentation/orders-table-fix.css';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
