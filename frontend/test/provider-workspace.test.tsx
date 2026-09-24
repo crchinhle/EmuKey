@@ -1,33 +1,23 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/presentation/app/App';
 
 afterEach(cleanup);
 
 describe('Provider workspace', () => {
-  it('renders the updated Figma provider dashboard hierarchy', () => {
+  it('renders the provider dashboard without fabricated aggregates', () => {
     render(<App initialEntries={['/provider']} />);
 
     expect(
-      screen.getByRole('heading', { name: 'Tổng quan Provider' }),
+      screen.getByRole('heading', { name: 'Trang chủ Provider' }),
     ).toBeTruthy();
-    expect(screen.getByText('LicenseHub')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Cài đặt' })).toBeTruthy();
-    expect(
-      screen.getByRole('alert', { name: 'Còn 2 bước để sẵn sàng publish' }),
-    ).toBeTruthy();
-    expect(screen.getByText('128,4 triệu ₫')).toBeTruthy();
-    expect(screen.getByText('ORD-0221')).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { name: 'Hàng đợi cần xử lý' }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('heading', { name: 'Blockchain status' }),
-    ).toBeTruthy();
+    expect(screen.getByText('EmuKey').className).toContain('brand-wordmark');
+    expect(screen.getByRole('link', { name: 'Hồ sơ' })).toBeTruthy();
+    expect(screen.getByText(/chưa có canonical Phase 1-7 API/i)).toBeTruthy();
   });
 
-  it('adds an allowed knowledge file to the local list', () => {
+  it('does not display a local-only knowledge file as uploaded', () => {
     render(<App initialEntries={['/provider/knowledge']} />);
 
     const file = new File(['demo'], 'huong-dan-demo.pdf', {
@@ -36,17 +26,34 @@ describe('Provider workspace', () => {
     fireEvent.change(screen.getByLabelText('Chọn tài liệu kiến thức'), {
       target: { files: [file] },
     });
-    expect(screen.getByText('huong-dan-demo.pdf')).toBeTruthy();
+    expect(screen.queryByText('huong-dan-demo.pdf')).toBeNull();
   });
 
-  it('filters provider operations from the typed arrays', () => {
+  it('filters provider payment history loaded from the backend', async () => {
     render(<App initialEntries={['/provider/operations']} />);
 
     fireEvent.change(screen.getByLabelText('Tìm dữ liệu vận hành'), {
-      target: { value: 'P024' },
+      target: { value: '0218' },
     });
 
-    expect(screen.getByText(/ORD-0224/)).toBeTruthy();
-    expect(screen.queryByText(/ORD-0225/)).toBeNull();
+    expect(await screen.findByText(/ORD-2026-0218/)).toBeTruthy();
+    expect(screen.getByText('MATCHED')).toBeTruthy();
+  });
+
+  it('exposes license lifecycle controls in the Provider workspace', async () => {
+    render(<App initialEntries={['/provider/licenses']} />);
+
+    expect(await screen.findByRole('heading', { name: 'Bản quyền Provider' })).toBeTruthy();
+    expect(await screen.findByText(/EMU-/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    expect(await screen.findByText(/Command PENDING/)).toBeTruthy();
+    await waitFor(() => expect(
+      vi.mocked(fetch).mock.calls.some(([input]) => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        return url.endsWith('/commands/00000000-0000-4000-8000-000000000902');
+      }),
+    ).toBe(true));
+    expect(await screen.findByText(/Command CONFIRMED/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('ACTIVE')).toBeTruthy());
   });
 });

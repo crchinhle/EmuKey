@@ -1,15 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-  MaxLength,
-  Min,
-  MinLength,
-} from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 export class CreateOrderDto {
   @ApiProperty({ format: 'uuid' })
@@ -22,16 +12,10 @@ export class CreateOrderDto {
   targetLicenseId?: string;
 }
 
-export class AcceptTermsDto {
-  @ApiProperty({ minimum: 1 })
-  @IsInt()
-  @Min(1)
-  termsVersion!: number;
-
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' })
-  @IsString()
-  @Matches(/^0x[0-9a-fA-F]{64}$/)
-  termsHash!: `0x${string}`;
+export class AcceptServiceTermsDto {
+  @ApiProperty({ enum: [true] })
+  @IsIn([true])
+  accepted!: true;
 }
 
 export class ReviewPaymentDto {
@@ -47,7 +31,7 @@ export class ReviewPaymentDto {
 }
 
 const ORDER_STATUSES = [
-  'WAITING_TERMS_ACCEPTANCE',
+  'WAITING_SERVICE_TERMS_ACCEPTANCE',
   'WAITING_PAYMENT',
   'PAYMENT_ACCEPTED',
   'CANCELLED',
@@ -91,20 +75,19 @@ export class OrderDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String })
   targetLicenseId!: string | null;
   @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String })
-  termsAcceptedAt!: string | null;
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' }) termsHashSnapshot!: string;
-  @ApiProperty() termsVersionSnapshot!: number;
+  serviceTermsAcceptedAt!: string | null;
 }
 
 export class OrderTermsDto {
   @ApiProperty() content!: string;
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' }) hash!: string;
-  @ApiProperty() version!: number;
 }
 
 export class CheckoutSessionDto {
   @ApiProperty() amountVnd!: number;
   @ApiProperty({ format: 'uuid' }) attemptId!: string;
+  @ApiProperty({ additionalProperties: { type: 'string' }, type: 'object' })
+  checkoutFields!: Record<string, string>;
+  @ApiProperty({ enum: ['POST'] }) checkoutMethod!: 'POST';
   @ApiProperty() checkoutReference!: string;
   @ApiProperty({ format: 'uri' }) checkoutUrl!: string;
   @ApiProperty({ format: 'date-time' }) expiresAt!: string;

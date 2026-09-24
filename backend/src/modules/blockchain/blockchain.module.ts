@@ -78,8 +78,10 @@ import {
         const signer = new LocalPrivateKeyChainSigner(
           config.getOrThrow<string>('EVM_RELAYER_PRIVATE_KEY'),
         );
+        const fallbackRpcUrl = config.get<string>('EVM_RPC_FALLBACK_HTTP_URL');
         return new ViemChainRelayer({
           chainId: config.getOrThrow<number>('EVM_CHAIN_ID'),
+          ...(fallbackRpcUrl ? { fallbackRpcUrl } : {}),
           network: config.getOrThrow<string>('EVM_NETWORK'),
           rpcUrl: config.getOrThrow<string>('EVM_RPC_HTTP_URL'),
           signer,
@@ -156,6 +158,7 @@ import {
         }
         const { ViemChainEventSource } =
           await import('./infrastructure/viem-chain-event-source.js');
+        const fallbackRpcUrl = config.get<string>('EVM_RPC_FALLBACK_HTTP_URL');
         const options = {
           batchSize: config.getOrThrow<number>('EVM_INDEXER_BATCH_SIZE'),
           chainId: config.getOrThrow<number>('EVM_CHAIN_ID'),
@@ -170,6 +173,7 @@ import {
           new ViemChainEventSource({
             chainId: options.chainId,
             contractAddress: options.contractAddress as `0x${string}`,
+            ...(fallbackRpcUrl ? { fallbackRpcUrl } : {}),
             network: options.network,
             rpcUrl: config.getOrThrow<string>('EVM_RPC_HTTP_URL'),
           }),
@@ -219,6 +223,7 @@ import {
     CHAIN_RPC_INDEXER,
     BlockchainReconciliationService,
     LicenseQueryService,
+    LicenseProjectionRepository,
   ],
 })
 export class BlockchainModule {}

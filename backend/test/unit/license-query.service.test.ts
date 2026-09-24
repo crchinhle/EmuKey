@@ -18,7 +18,7 @@ const customer: AuthPrincipal = {
 };
 
 describe('LicenseQueryService boundaries', () => {
-  it('rejects application callers outside the Customer and Provider roles', () => {
+  it('rejects application callers outside the Customer and Provider roles', async () => {
     const repository = {
       listProvider: vi.fn(),
     } as unknown as Mocked<LicenseProjectionRepository>;
@@ -28,9 +28,9 @@ describe('LicenseQueryService boundaries', () => {
       {} as Redis,
     );
 
-    expect(() =>
+    await expect(
       service.list({ ...provider, role: 'SYSTEM_ADMIN' }),
-    ).toThrowError(expect.objectContaining({ status: 403 }));
+    ).rejects.toThrowError(expect.objectContaining({ status: 403 }));
     expect(repository.listProvider.mock.calls).toHaveLength(0);
   });
 
@@ -59,5 +59,53 @@ describe('LicenseQueryService boundaries', () => {
     await expect(
       service.retrieveActivation(customer, licenseId),
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('lists devices only for the authenticated customer license owner', async () => {
+    const repository = {
+      listCustomerDevices: vi.fn().mockResolvedValue([
+        {
+          activatedAt: null,
+          bindingGeneration: 1,
+          deviceRef: 'device-1',
+          finality: 'CONFIRMED',
+          id: '00000000-0000-4000-8000-000000000902',
+          revokedAt: null,
+          status: 'ACTIVE',
+        },
+      ]),
+    } as unknown as Mocked<LicenseProjectionRepository>;
+    const service = new LicenseQueryService(
+      repository,
+      {} as Mocked<ActivationEnvelopePort>,
+      {} as Redis,
+    );
+
+    await expect(service.listDevices(customer, '00000000-0000-4000-8000-000000000401'))
+      .resolves.toHaveLength(1);
+    expect(repository.listCustomerDevices.mock.calls[0]).toEqual([
+      customer.sub,
+      '00000000-0000-4000-8000-000000000401',
+    ]);
+  });
+
+  it('exposes only safe activation-key availability metadata for a trusted customer license', async () => {
+    const license = {
+      id: '00000000-0000-4000-8000-000000000401',
+      status: 'ACTIVE',
+    };
+    const repository = {
+      listCustomer: vi.fn().mockResolvedValue([license]),
+      activationCommand: vi.fn().mockResolvedValue({ command_id: 'command-1' }),
+    } as unknown as Mocked<LicenseProjectionRepository>;
+    const envelopes = {
+      exists: vi.fn().mockResolvedValue(true),
+    } as unknown as Mocked<ActivationEnvelopePort>;
+    const service = new LicenseQueryService(repository, envelopes, {} as Redis);
+
+    await expect(service.list(customer)).resolves.toEqual([
+      { ...license, activationKeyAvailable: true },
+    ]);
+    expect(envelopes.exists).toHaveBeenCalledWith('command-1');
   });
 });

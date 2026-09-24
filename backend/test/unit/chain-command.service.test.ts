@@ -44,6 +44,29 @@ const preparedCommand = {
 };
 
 describe('ChainCommandService durable submission handling', () => {
+  it('reopens a retryable command before submitting it', async () => {
+    const retryable = { ...command, status: 'RETRYABLE_FAILED' as const };
+    const repository = {
+      claimNext: vi.fn().mockResolvedValue(retryable),
+      markPending: vi.fn().mockResolvedValue(undefined),
+      markPrepared: vi.fn().mockResolvedValue(preparedCommand),
+      markSubmitted: vi.fn().mockResolvedValue(undefined),
+      reserveNonce: vi.fn().mockResolvedValue(7),
+    } as unknown as Mocked<ChainCommandRepository>;
+    const relayer = {
+      broadcast: vi.fn().mockResolvedValue(undefined),
+      getSubmissionContext: vi.fn().mockResolvedValue({ pendingNonce: 5, relayerAddress: transaction.relayerAddress }),
+      prepare: vi.fn().mockResolvedValue(transaction),
+      receipt: vi.fn(),
+    } satisfies Mocked<ChainRelayerPort>;
+    const service = new ChainCommandService(repository, relayer, {} as Mocked<ActivationEnvelopePort>);
+
+    await service.processNext('worker-retry');
+
+    expect(repository.markPending.mock.calls).toEqual([[command.commandId, 'worker-retry']]);
+    expect(repository.markPrepared.mock.calls.length).toBeGreaterThan(0);
+  });
+
   it('persists nonce and signed transaction before broadcasting', async () => {
     const repository = {
       claimNext: vi.fn().mockResolvedValue(command),
@@ -170,5 +193,29 @@ describe('ChainCommandService durable submission handling', () => {
       [command.commandId, receipt],
     ]);
     expect(relayer.broadcast.mock.calls).toHaveLength(0);
+  });
+
+  it('delegates an operator dead-letter recovery without preparing a replacement transaction', async () => {
+    const repository = {
+      recoverDeadLetter: vi.fn().mockResolvedValue({ ...preparedCommand, status: 'SUBMITTED_UNKNOWN' as const }),
+    } as unknown as Mocked<ChainCommandRepository>;
+    const service = new ChainCommandService(
+      repository,
+      {} as Mocked<ChainRelayerPort>,
+      {} as Mocked<ActivationEnvelopePort>,
+    );
+
+    await expect(service.recoverDeadLetter(
+      command.commandId,
+      'RECONCILE_SAME_RAW',
+      'RPC timeout requires same-raw reconciliation',
+    )).resolves.toMatchObject({ status: 'SUBMITTED_UNKNOWN' });
+    expect(repository.recoverDeadLetter.mock.calls).toEqual([[
+      command.commandId,
+      'RECONCILE_SAME_RAW',
+      'RPC timeout requires same-raw reconciliation',
+      undefined,
+      undefined,
+    ]]);
   });
 });

@@ -10,8 +10,9 @@ import { AuditWriter } from './audit/audit-writer.js';
 import { DatabasePool } from './database/database-pool.js';
 import { REDACTED_LOG_PATHS } from './observability/log-redaction.js';
 import { RedisClient } from './redis/redis-client.js';
-import { TermsLoader } from './terms/terms-loader.js';
+import { ServiceTermsContent } from './terms/service-terms-content.js';
 import { LocalPrivateStorage } from './storage/local-private-storage.js';
+import { CloudinaryPrivateStorage } from './storage/cloudinary-private-storage.js';
 import {
   PRIVATE_STORAGE,
   type PrivateStoragePort,
@@ -50,31 +51,27 @@ const queueImports =
   ],
   providers: [
     AuditWriter,
+    ServiceTermsContent,
     DatabasePool,
     RedisClient,
-    {
-      provide: TermsLoader,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) =>
-        new TermsLoader(
-          undefined,
-          config.getOrThrow<string>('NODE_ENV'),
-          config.get<string>('TERMS_APPROVED_HASH'),
-        ),
-    },
     {
       provide: PRIVATE_STORAGE,
       inject: [ConfigService],
       useFactory: (config: ConfigService): PrivateStoragePort => {
         const adapter = config.getOrThrow<string>('STORAGE_ADAPTER');
-        if (adapter !== 'local')
-          throw new Error(`Storage adapter ${adapter} is not configured`);
-        return new LocalPrivateStorage('data/storage');
+         if (adapter === 'local') return new LocalPrivateStorage('data/storage');
+         if (adapter === 'cloudinary') return new CloudinaryPrivateStorage({
+           cloudName: config.getOrThrow<string>('CLOUDINARY_CLOUD_NAME'),
+           apiKey: config.getOrThrow<string>('CLOUDINARY_API_KEY'),
+           apiSecret: config.getOrThrow<string>('CLOUDINARY_API_SECRET'),
+           folder: config.getOrThrow<string>('CLOUDINARY_FOLDER'),
+         });
+         throw new Error(`Storage adapter ${adapter} is not configured`);
       },
     },
     { provide: Pool, useExisting: DatabasePool },
     { provide: Redis, useExisting: RedisClient },
   ],
-  exports: [AuditWriter, ConfigModule, Pool, Redis, PRIVATE_STORAGE, TermsLoader],
+  exports: [AuditWriter, ConfigModule, Pool, Redis, PRIVATE_STORAGE, ServiceTermsContent],
 })
 export class PlatformCoreModule {}

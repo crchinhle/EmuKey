@@ -50,10 +50,11 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const traceId = incomingTraceId?.trim() || randomUUID();
 
     const payload = exception instanceof HttpException ? errorPayload(exception) : {};
+    const safeMessage = status >= 500 ? publicMessage(status) : payload.message ?? publicMessage(status);
     response.status(status).json({
       error: {
         code: payload.code ?? errorCode(status),
-        message: payload.message ?? publicMessage(status),
+        message: safeMessage,
         ...(payload.details === undefined ? {} : { details: payload.details }),
         traceId,
       },

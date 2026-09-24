@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Pool } from 'pg';
 
 import { AuditWriter } from '../../../platform/audit/audit-writer.js';
@@ -17,6 +17,7 @@ export class BlockchainReconciliationService {
     private readonly projections: Pick<
       ChainEventRepository,
       'reconcileCanonicalProjections'
+      | 'deriveExpiredFromCanonicalChain'
     >,
     private readonly audit: AuditWriter,
   ) {}
@@ -30,6 +31,33 @@ export class BlockchainReconciliationService {
 
   runAutomatic(workerId: string) {
     return this.reconcile(workerId);
+  }
+
+  async recoverDeadLetter(
+    actor: AuthPrincipal,
+    commandId: string,
+    request: {
+      evidence?: Record<string, unknown>;
+      mode: 'REQUEUE_NO_SUBMISSION' | 'RECONCILE_SAME_RAW' | 'ABANDON_REVERTED' | 'ABANDON_NO_EFFECT';
+      reason: string;
+    },
+  ) {
+    if (actor.role !== 'SYSTEM_ADMIN' && actor.role !== 'SUPPORT_STAFF') {
+      throw new ForbiddenException();
+    }
+    try {
+      return await this.commands.recoverDeadLetter(
+        commandId,
+        request.mode,
+        request.reason,
+        request.evidence,
+        { role: actor.role, userId: actor.sub },
+      );
+    } catch (error) {
+      const code = error instanceof Error ? error.message : 'CHAIN_COMMAND_RECOVERY_FAILED';
+      if (code === 'CHAIN_COMMAND_NOT_FOUND') throw new NotFoundException({ code, message: 'Chain command was not found.' });
+      throw new ConflictException({ code, message: 'The dead-letter command cannot be recovered in its current state.' });
+    }
   }
 
   private async reconcile(workerId: string, actor?: AuthPrincipal) {
@@ -51,6 +79,8 @@ export class BlockchainReconciliationService {
       indexedEvents += count;
     }
     const projection = await this.projections.reconcileCanonicalProjections();
+    const canonicalTime = await this.indexer.canonicalTime();
+    const expiredLicenseIds = await this.projections.deriveExpiredFromCanonicalChain(canonicalTime);
     const health = await this.pool.query<{
       active_without_finality: number;
       pending_events: number;
@@ -70,7 +100,8 @@ export class BlockchainReconciliationService {
       reconciledCommandIds.length > 0 ||
       indexedEvents > 0 ||
       projection.commandRepairs > 0 ||
-      projection.licenseRepairs > 0;
+      projection.licenseRepairs > 0 ||
+      expiredLicenseIds.length > 0;
     if (actor || processed) {
       const client = await this.pool.connect();
       try {
@@ -79,9 +110,12 @@ export class BlockchainReconciliationService {
           action: 'BLOCKCHAIN_RECONCILIATION_COMPLETED',
           ...(actor
             ? { actorRole: actor.role, actorUserId: actor.sub }
-            : { actorRole: 'SYSTEM_WORKER' }),
+            : {}),
           metadata: {
+            ...(!actor ? { source: 'SYSTEM_WORKER', workerId } : {}),
             indexedEvents,
+            canonicalTime: canonicalTime.toISOString(),
+            expiredLicenseIds,
             projection,
             reconciledCommandIds,
             ...health.rows[0],
@@ -99,6 +133,8 @@ export class BlockchainReconciliationService {
     return {
       health: health.rows[0],
       indexedEvents,
+      canonicalTime: canonicalTime.toISOString(),
+      expiredLicenseIds,
       processed,
       projection,
       reconciledCommandIds,

@@ -5,6 +5,8 @@ engineStrict: true
 autoInstallPeers: true
 strictPeerDependencies: true
 strictDepBuilds: true
+overrides:
+  multer: '>=2.3.0'
 allowBuilds:
   '@google/genai': false
   '@parcel/watcher': true

@@ -7,26 +7,33 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
 } from 'react-router-dom';
 
 import { AuthScreen } from '../screens/AuthScreen';
+import { AccountProfileScreen } from '../screens/AccountProfileScreen';
 import { BuyerCheckoutScreen } from '../screens/BuyerCheckoutScreen';
 import { BuyerHomeScreen } from '../screens/BuyerHomeScreen';
 import { BuyerAssistanceScreen } from '../screens/BuyerAssistanceScreen';
 import { BuyerLicenseHubScreen } from '../screens/BuyerLicenseHubScreen';
 import { BuyerOrdersScreen } from '../screens/BuyerOrdersScreen';
+import { BuyerRenewalScreen } from '../screens/BuyerRenewalScreen';
 import { CatalogScreen } from '../screens/CatalogScreen';
+import { PublicHomeScreen } from '../screens/PublicHomeScreen';
+import { ComparePlansScreen } from '../screens/ComparePlansScreen';
 import { PaymentStatusScreen } from '../screens/PaymentStatusScreen';
 import { ProductDetailScreen } from '../screens/ProductDetailScreen';
 import { PublicVerificationScreen } from '../screens/PublicVerificationScreen';
 import { AiKnowledgeScreen } from '../screens/AiKnowledgeScreen';
 import { ProviderCatalogScreen } from '../screens/ProviderCatalogScreen';
+import { ProviderLicensesScreen } from '../screens/ProviderLicensesScreen';
 import { ProviderDashboardScreen } from '../screens/ProviderDashboardScreen';
 import { ProviderOperationsScreen } from '../screens/ProviderOperationsScreen';
 import { SupportConsoleScreen } from '../screens/SupportConsoleScreen';
 import { SystemConsoleScreen } from '../screens/SystemConsoleScreen';
+import { PublicHelpScreen } from '../screens/PublicHelpScreen';
+import { CustomerLayout } from '../components/CustomerLayout';
 import {
-  buyerShell,
   providerShell,
   RoleShell,
   supportShell,
@@ -59,39 +66,53 @@ function testUserForEntries(initialEntries: readonly string[] | undefined) {
 
 function ProtectedRoute({ children, roles }: { readonly children: ReactElement; readonly roles: string[] }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <div role="status">Đang khôi phục phiên đăng nhập...</div>;
-  return user && roles.includes(user.role) ? children : <Navigate replace to="/auth" />;
+  if (user && roles.includes(user.role)) return children;
+  const redirect = `${location.pathname}${location.search}`;
+  return <Navigate replace to={`/auth?redirect=${encodeURIComponent(redirect)}`} />;
 }
 
 function AppRoutes() {
   return (
     <Routes>
+      <Route element={<PublicHomeScreen />} path="/" />
       <Route element={<AuthScreen />} path="/auth" />
       <Route element={<CatalogScreen />} path="/products" />
+      <Route element={<ComparePlansScreen />} path="/compare" />
       <Route element={<ProductDetailScreen />} path="/products/:slug" />
       <Route element={<PublicVerificationScreen />} path="/verify" />
-      <Route element={<ProtectedRoute roles={['CUSTOMER']}><RoleShell config={buyerShell} /></ProtectedRoute>} path="/buyer">
+      <Route element={<PublicHelpScreen />} path="/help" />
+      <Route element={<ProtectedRoute roles={['CUSTOMER']}><CustomerLayout /></ProtectedRoute>} path="/buyer">
         <Route index element={<BuyerHomeScreen />} />
+        <Route element={<CatalogScreen authenticated />} path="products" />
+        <Route element={<ProductDetailScreen authenticated />} path="products/:slug" />
         <Route element={<BuyerCheckoutScreen />} path="checkout" />
         <Route element={<PaymentStatusScreen />} path="orders/:id/payment" />
         <Route element={<BuyerOrdersScreen />} path="orders" />
         <Route element={<BuyerLicenseHubScreen />} path="licenses" />
+        <Route element={<BuyerRenewalScreen />} path="licenses/:licenseId/renew" />
         <Route element={<BuyerAssistanceScreen />} path="support" />
+        <Route element={<AccountProfileScreen />} path="profile" />
       </Route>
       <Route element={<ProtectedRoute roles={['PROVIDER_ADMIN']}><RoleShell config={providerShell} /></ProtectedRoute>} path="/provider">
         <Route index element={<ProviderDashboardScreen />} />
         <Route element={<ProviderCatalogScreen />} path="catalog" />
+        <Route element={<ProviderLicensesScreen />} path="licenses" />
+        <Route element={<AccountProfileScreen />} path="profile" />
         <Route element={<AiKnowledgeScreen />} path="knowledge" />
         <Route element={<ProviderOperationsScreen />} path="operations" />
       </Route>
       <Route element={<ProtectedRoute roles={['SUPPORT_STAFF']}><RoleShell config={supportShell} /></ProtectedRoute>} path="/support">
         <Route index element={<SupportConsoleScreen />} />
+        <Route element={<AccountProfileScreen />} path="profile" />
       </Route>
       <Route
         element={<ProtectedRoute roles={['SYSTEM_ADMIN']}><RoleShell config={systemShell} /></ProtectedRoute>}
         path="/system/console"
       >
         <Route index element={<SystemConsoleScreen />} />
+        <Route element={<AccountProfileScreen />} path="profile" />
       </Route>
       <Route element={<Navigate replace to="/auth" />} path="*" />
     </Routes>

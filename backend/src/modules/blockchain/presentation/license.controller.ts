@@ -28,6 +28,7 @@ import { LicenseQueryService } from '../application/license-query.service.js';
 import {
   ActivationKeyDto,
   LicenseProjectionDto,
+  LicenseDeviceDto,
   PublicLicenseVerificationDto,
 } from './license.dto.js';
 
@@ -55,6 +56,18 @@ export class LicenseController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.service.find(actor, id);
+  }
+
+  @Get(':id/devices')
+  @UseGuards(AuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Roles('CUSTOMER')
+  @ApiOkResponse({ type: LicenseDeviceDto, isArray: true })
+  listDevices(
+    @CurrentUser() actor: AuthPrincipal,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.listDevices(actor, id);
   }
 
   @Post(':id/activation-key/retrieve')

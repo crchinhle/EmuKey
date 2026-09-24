@@ -13,6 +13,8 @@ export class LicenseProviderDto {
 }
 
 export class LicenseProjectionDto {
+  @ApiPropertyOptional()
+  activationKeyAvailable?: boolean;
   @ApiPropertyOptional({ nullable: true, type: Number }) blockNumber!:
     number | null;
   @ApiProperty() confirmationCount!: number;
@@ -22,6 +24,7 @@ export class LicenseProjectionDto {
   @ApiProperty() finality!: string;
   @ApiProperty() id!: string;
   @ApiProperty() keyVersion!: number;
+  @ApiProperty({ enum: ['PENDING_FINALITY', 'TRUSTED', 'UNTRUSTED_REORG'] }) activationKeyTrustStatus!: string;
   @ApiProperty() maxActiveDevices!: number;
   @ApiProperty({ format: 'uuid' }) originOrderId!: string;
   @ApiProperty() periodStart!: string;
@@ -41,6 +44,16 @@ export class LicenseProjectionDto {
 export class ActivationKeyDto {
   @ApiProperty() activationKey!: string;
   @ApiProperty() keyVersion!: number;
+}
+
+export class LicenseDeviceDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty() deviceRef!: string;
+  @ApiProperty({ enum: ['PENDING_ONCHAIN', 'ACTIVE', 'REVOKED'] }) status!: string;
+  @ApiProperty() bindingGeneration!: number;
+  @ApiPropertyOptional({ nullable: true }) activatedAt!: string | null;
+  @ApiPropertyOptional({ nullable: true }) revokedAt!: string | null;
+  @ApiPropertyOptional({ nullable: true }) finality!: string | null;
 }
 
 export class PublicLicenseVerificationDto {

@@ -1,6 +1,10 @@
 import { ForbiddenException } from '@nestjs/common';
 
 import { BlockchainReconciliationService } from '../../src/modules/blockchain/application/blockchain-reconciliation.service.js';
+import type {
+  AuditEvent,
+  TransactionClient,
+} from '../../src/platform/audit/audit-writer.js';
 
 function fixture() {
   const client = {
@@ -28,9 +32,11 @@ function fixture() {
       .mockResolvedValue(null),
   };
   const indexer = {
+    canonicalTime: vi.fn().mockResolvedValue(new Date('2026-09-17T00:00:00.000Z')),
     poll: vi.fn().mockResolvedValueOnce(2).mockResolvedValue(null),
   };
   const projections = {
+    deriveExpiredFromCanonicalChain: vi.fn().mockResolvedValue([]),
     reconcileCanonicalProjections: vi.fn().mockResolvedValue({
       commandRepairs: 1,
       licenseIds: ['00000000-0000-4000-8000-000000000401'],
@@ -38,7 +44,11 @@ function fixture() {
       remainingMismatches: 0,
     }),
   };
-  const audit = { write: vi.fn().mockResolvedValue(undefined) };
+  const audit = {
+    write: vi
+      .fn<(client: TransactionClient, event: AuditEvent) => Promise<void>>()
+      .mockResolvedValue(undefined),
+  };
   return {
     audit,
     client,
@@ -81,6 +91,9 @@ describe('BlockchainReconciliationService', () => {
 
     expect(setup.indexer.poll).toHaveBeenCalledTimes(2);
     expect(setup.projections.reconcileCanonicalProjections).toHaveBeenCalled();
+    expect(setup.projections.deriveExpiredFromCanonicalChain).toHaveBeenCalledWith(
+      new Date('2026-09-17T00:00:00.000Z'),
+    );
     expect(setup.audit.write).toHaveBeenCalledWith(
       setup.client,
       expect.objectContaining({
@@ -121,5 +134,23 @@ describe('BlockchainReconciliationService', () => {
 
     expect(setup.audit.write).not.toHaveBeenCalled();
     expect(setup.pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('records automatic reconciliation as a system source without a user role', async () => {
+    const setup = fixture();
+
+    await setup.service.runAutomatic('worker-automatic');
+
+    expect(setup.audit.write).toHaveBeenCalledTimes(1);
+    const auditEvent = setup.audit.write.mock.calls[0]?.[1];
+    expect(auditEvent).toMatchObject({
+      action: 'BLOCKCHAIN_RECONCILIATION_COMPLETED',
+      metadata: {
+        source: 'SYSTEM_WORKER',
+        workerId: 'worker-automatic',
+      },
+    });
+    expect(auditEvent).not.toHaveProperty('actorRole');
+    expect(auditEvent).not.toHaveProperty('actorUserId');
   });
 });

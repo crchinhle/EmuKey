@@ -32,6 +32,80 @@ export type ApiErrorEnvelopeDto = {
   error: ApiErrorDto;
 };
 
+export type ConversationDto = {
+  id: string;
+  customerUserId: string;
+  assignedSupportUserId?: string | null;
+  status: 'AI_ACTIVE' | 'WAITING_SUPPORT' | 'SUPPORT_ACTIVE' | 'CLOSED';
+  contextType: 'GENERAL' | 'PRODUCT' | 'PLAN' | 'ORDER' | 'LICENSE';
+  contextId?: string | null;
+  title?: {
+    [key: string]: unknown;
+  } | null;
+};
+
+export type CreateConversationDto = {
+  contextId?: string;
+  contextType?: 'GENERAL' | 'PRODUCT' | 'PLAN' | 'ORDER' | 'LICENSE';
+  title?: string;
+};
+
+export type AppendMessageDto = {
+  clientMessageId: string;
+  content: string;
+};
+
+export type MessageDto = {
+  id: string;
+  conversationId: string;
+  clientMessageId: string;
+  serverSequence: number;
+  senderType: 'CUSTOMER' | 'SUPPORT' | 'AI' | 'SYSTEM';
+  content: string;
+  grounded?: {
+    [key: string]: unknown;
+  } | null;
+  sources?: Array<string>;
+};
+
+export type AiAskDto = {
+  clientMessageId?: string;
+  question: string;
+};
+
+export type AiAnswerDto = {
+  answer: string;
+  citedSourceIds: Array<string>;
+  grounded: boolean;
+};
+
+export type KnowledgeDocumentDto = {
+  id: string;
+  title: string;
+  logicalDocumentKey: string;
+  version: number;
+  status: string;
+  isCurrent: boolean;
+};
+
+export type CreateKnowledgeDocumentDto = {
+  productId: string;
+  logicalDocumentKey: string;
+  sourceType: 'FAQ' | 'PDF' | 'TXT';
+  title: string;
+  chunks?: Array<string>;
+  version?: number;
+};
+
+export type KnowledgeQueryDto = {
+  question: string;
+};
+
+export type KnowledgeSourceDto = {
+  id: string;
+  content: string;
+};
+
 export type RegisterDto = {
   email: string;
   password: string;
@@ -71,6 +145,11 @@ export type ProfileDto = {
 
 export type StateDto = {
   reason: string;
+};
+
+export type RegisterPushTokenDto = {
+  token: string;
+  provider: 'FCM' | 'EXPO';
 };
 
 export type AdminProductDto = {
@@ -162,8 +241,6 @@ export type AdminPlanDto = {
   productId: string;
   publishedAt?: string | null;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-  termsHash: string;
-  termsVersion: number;
   updatedAt: string;
   version: number;
 };
@@ -190,6 +267,40 @@ export type UpdatePlanDto = {
   entitlements?: {
     [key: string]: unknown;
   };
+};
+
+export type BlockchainHealthDto = {
+  active_without_finality: number;
+  pending_events: number;
+  reorged_events: number;
+  unknown_commands: number;
+};
+
+export type BlockchainProjectionRepairDto = {
+  commandRepairs: number;
+  licenseIds: Array<string>;
+  licenseRepairs: number;
+  remainingMismatches: number;
+};
+
+export type BlockchainReconciliationDto = {
+  health: BlockchainHealthDto;
+  indexedEvents: number;
+  processed: boolean;
+  projection: BlockchainProjectionRepairDto;
+  reconciledCommandIds: Array<string>;
+};
+
+export type DeadLetterRecoveryDto = {
+  evidence?: {
+    [key: string]: unknown;
+  };
+  mode:
+    | 'REQUEUE_NO_SUBMISSION'
+    | 'RECONCILE_SAME_RAW'
+    | 'ABANDON_REVERTED'
+    | 'ABANDON_NO_EFFECT';
+  reason: string;
 };
 
 export type LicensePlanDto = {
@@ -222,6 +333,22 @@ export type LicenseProjectionDto = {
   status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'SUSPENDED' | 'EXPIRED' | 'REVOKED';
   transactionHash?: string | null;
   updatedAt: string;
+};
+
+export type LicenseDeviceDto = {
+  id: string;
+  deviceRef: string;
+  status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'REVOKED';
+  bindingGeneration: number;
+  activatedAt?: {
+    [key: string]: unknown;
+  } | null;
+  revokedAt?: {
+    [key: string]: unknown;
+  } | null;
+  finality?: {
+    [key: string]: unknown;
+  } | null;
 };
 
 export type ActivationKeyDto = {
@@ -267,7 +394,7 @@ export type OrderDto = {
   maxActiveDevicesSnapshot: number;
   orderNumber: string;
   orderStatus:
-    | 'WAITING_TERMS_ACCEPTANCE'
+    | 'WAITING_SERVICE_TERMS_ACCEPTANCE'
     | 'WAITING_PAYMENT'
     | 'PAYMENT_ACCEPTED'
     | 'CANCELLED'
@@ -285,25 +412,24 @@ export type OrderDto = {
   providerUserId: string;
   publicLicenseId?: string | null;
   targetLicenseId?: string | null;
-  termsAcceptedAt?: string | null;
-  termsHashSnapshot: string;
-  termsVersionSnapshot: number;
+  serviceTermsAcceptedAt?: string | null;
 };
 
 export type OrderTermsDto = {
   content: string;
-  hash: string;
-  version: number;
 };
 
-export type AcceptTermsDto = {
-  termsVersion: number;
-  termsHash: string;
+export type AcceptServiceTermsDto = {
+  accepted: true;
 };
 
 export type CheckoutSessionDto = {
   amountVnd: number;
   attemptId: string;
+  checkoutFields: {
+    [key: string]: string;
+  };
+  checkoutMethod: 'POST';
   checkoutReference: string;
   checkoutUrl: string;
   expiresAt: string;
@@ -367,6 +493,165 @@ export type PaymentReceiptDto = {
   transactionId: string;
 };
 
+export type ActivationChallengeDto = {
+  licenseId: string;
+  purpose:
+    | 'ACTIVATE_DEVICE'
+    | 'SELF_REVOKE_DEVICE'
+    | 'ISSUE_ENTITLEMENT'
+    | 'REFRESH_ENTITLEMENT';
+  deviceRef: string;
+  /**
+   * Set when requesting a challenge to revoke an existing device
+   */
+  deviceId?: string;
+};
+
+export type DeviceChallengeDto = {
+  challenge: string;
+  expiresAt: string;
+  bindingGeneration: number;
+  keyVersion: number;
+  purpose:
+    | 'ACTIVATE_DEVICE'
+    | 'SELF_REVOKE_DEVICE'
+    | 'ISSUE_ENTITLEMENT'
+    | 'REFRESH_ENTITLEMENT';
+};
+
+export type ActivateDeviceDto = {
+  licenseId: string;
+  activationKey: string;
+  challenge: string;
+  deviceRef: string;
+  /**
+   * EVM address corresponding to the device signing key
+   */
+  devicePublicKey: string;
+  /**
+   * EIP-191 signature over the activation challenge
+   */
+  proof: string;
+};
+
+export type Phase6CommandDto = {
+  commandId: string;
+  status:
+    | 'PENDING'
+    | 'SUBMITTED'
+    | 'SUBMITTED_UNKNOWN'
+    | 'CONFIRMED'
+    | 'RETRYABLE_FAILED'
+    | 'DEAD_LETTER'
+    | 'ABANDONED'
+    | 'SUPERSEDED';
+  licenseId: string;
+  deviceId?: string | null;
+};
+
+export type LicensingActionVerificationDto = {
+  action:
+    'ROTATE_KEY' | 'REVOKE_DEVICE' | 'REMOTE_REVOKE_DEVICE' | 'KEY_RECOVERY';
+  licenseId: string;
+  /**
+   * Required for device-scoped revoke actions
+   */
+  deviceId?: string;
+};
+
+export type Phase6CommandStatusDto = {
+  commandId: string;
+  status:
+    | 'PENDING'
+    | 'SUBMITTED'
+    | 'SUBMITTED_UNKNOWN'
+    | 'CONFIRMED'
+    | 'RETRYABLE_FAILED'
+    | 'DEAD_LETTER'
+    | 'ABANDONED'
+    | 'SUPERSEDED';
+  licenseId: string;
+  deviceId?: string | null;
+  commandType:
+    | 'ISSUE_LICENSE'
+    | 'RENEW_LICENSE'
+    | 'SUSPEND_LICENSE'
+    | 'RESUME_LICENSE'
+    | 'REVOKE_LICENSE'
+    | 'ROTATE_KEY'
+    | 'ACTIVATE_DEVICE'
+    | 'REVOKE_DEVICE';
+  confirmedAt?: string | null;
+  transactionHash?: string | null;
+};
+
+export type RevokeDeviceDto = {
+  actionToken: string;
+  activationKey: string;
+  challenge: string;
+  /**
+   * EIP-191 signature over the revoke challenge
+   */
+  proof: string;
+};
+
+export type RemoteRevokeDeviceDto = {
+  actionToken: string;
+  currentPassword: string;
+};
+
+export type RotateActivationKeyDto = {
+  actionToken: string;
+  currentKey: string;
+};
+
+export type ActivationKeyRecoveryDto = {
+  actionToken: string;
+  currentPassword: string;
+};
+
+export type LicenseLifecycleDto = {
+  command: 'SUSPEND_LICENSE' | 'RESUME_LICENSE' | 'REVOKE_LICENSE';
+  reason?: string;
+};
+
+export type EntitlementRefreshDto = {
+  licenseId: string;
+  deviceId: string;
+  challenge: string;
+  /**
+   * EIP-191 device signature over the entitlement challenge
+   */
+  proof: string;
+};
+
+export type EntitlementDto = {
+  token: string;
+  expiresAt: string;
+  licenseId: string;
+  deviceId: string;
+  entitlementVersion: number;
+};
+
+export type EntitlementVerifyDto = {
+  /**
+   * Signed entitlement JWT returned by issue or refresh
+   */
+  token: string;
+};
+
+export type EntitlementValidationDto = {
+  valid: true;
+  expiresAt: string;
+  licenseId: string;
+  deviceId: string;
+  entitlementVersion: number;
+  keyVersion: number;
+  rights: {
+    [key: string]: unknown;
+  };
+};
+
 export type HealthControllerLiveData = {
   body?: never;
   path?: never;
@@ -401,6 +686,218 @@ export type HealthControllerReadyResponses = {
 
 export type HealthControllerReadyResponse =
   HealthControllerReadyResponses[keyof HealthControllerReadyResponses];
+
+export type AssistanceSupportControllerListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/conversations';
+};
+
+export type AssistanceSupportControllerListResponses = {
+  200: Array<ConversationDto>;
+};
+
+export type AssistanceSupportControllerListResponse =
+  AssistanceSupportControllerListResponses[keyof AssistanceSupportControllerListResponses];
+
+export type AssistanceSupportControllerCreateData = {
+  body: CreateConversationDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/conversations';
+};
+
+export type AssistanceSupportControllerCreateResponses = {
+  201: ConversationDto;
+};
+
+export type AssistanceSupportControllerCreateResponse =
+  AssistanceSupportControllerCreateResponses[keyof AssistanceSupportControllerCreateResponses];
+
+export type AssistanceSupportControllerQueueData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/conversations/queue';
+};
+
+export type AssistanceSupportControllerQueueResponses = {
+  200: Array<ConversationDto>;
+};
+
+export type AssistanceSupportControllerQueueResponse =
+  AssistanceSupportControllerQueueResponses[keyof AssistanceSupportControllerQueueResponses];
+
+export type AssistanceSupportControllerFindData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}';
+};
+
+export type AssistanceSupportControllerFindResponses = {
+  200: ConversationDto;
+};
+
+export type AssistanceSupportControllerFindResponse =
+  AssistanceSupportControllerFindResponses[keyof AssistanceSupportControllerFindResponses];
+
+export type AssistanceSupportControllerMessagesData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/messages';
+};
+
+export type AssistanceSupportControllerMessagesResponses = {
+  200: Array<MessageDto>;
+};
+
+export type AssistanceSupportControllerMessagesResponse =
+  AssistanceSupportControllerMessagesResponses[keyof AssistanceSupportControllerMessagesResponses];
+
+export type AssistanceSupportControllerAppendData = {
+  body: AppendMessageDto;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/messages';
+};
+
+export type AssistanceSupportControllerAppendResponses = {
+  201: MessageDto;
+};
+
+export type AssistanceSupportControllerAppendResponse =
+  AssistanceSupportControllerAppendResponses[keyof AssistanceSupportControllerAppendResponses];
+
+export type AssistanceSupportControllerAskAiData = {
+  body: AiAskDto;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/ai-ask';
+};
+
+export type AssistanceSupportControllerAskAiResponses = {
+  200: AiAnswerDto;
+};
+
+export type AssistanceSupportControllerAskAiResponse =
+  AssistanceSupportControllerAskAiResponses[keyof AssistanceSupportControllerAskAiResponses];
+
+export type AssistanceSupportControllerRequestSupportData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/request-support';
+};
+
+export type AssistanceSupportControllerRequestSupportResponses = {
+  200: ConversationDto;
+};
+
+export type AssistanceSupportControllerRequestSupportResponse =
+  AssistanceSupportControllerRequestSupportResponses[keyof AssistanceSupportControllerRequestSupportResponses];
+
+export type AssistanceSupportControllerClaimData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/claim';
+};
+
+export type AssistanceSupportControllerClaimResponses = {
+  200: ConversationDto;
+};
+
+export type AssistanceSupportControllerClaimResponse =
+  AssistanceSupportControllerClaimResponses[keyof AssistanceSupportControllerClaimResponses];
+
+export type AssistanceSupportControllerCloseData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/close';
+};
+
+export type AssistanceSupportControllerCloseResponses = {
+  200: ConversationDto;
+};
+
+export type AssistanceSupportControllerCloseResponse =
+  AssistanceSupportControllerCloseResponses[keyof AssistanceSupportControllerCloseResponses];
+
+export type KnowledgeControllerListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/knowledge/documents';
+};
+
+export type KnowledgeControllerListResponses = {
+  200: Array<KnowledgeDocumentDto>;
+};
+
+export type KnowledgeControllerListResponse =
+  KnowledgeControllerListResponses[keyof KnowledgeControllerListResponses];
+
+export type KnowledgeControllerCreateData = {
+  body: CreateKnowledgeDocumentDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/knowledge/documents';
+};
+
+export type KnowledgeControllerCreateResponses = {
+  200: KnowledgeDocumentDto;
+};
+
+export type KnowledgeControllerCreateResponse =
+  KnowledgeControllerCreateResponses[keyof KnowledgeControllerCreateResponses];
+
+export type KnowledgeControllerPublishData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: '/api/v1/knowledge/documents/{id}/publish';
+};
+
+export type KnowledgeControllerPublishResponses = {
+  200: KnowledgeDocumentDto;
+};
+
+export type KnowledgeControllerPublishResponse =
+  KnowledgeControllerPublishResponses[keyof KnowledgeControllerPublishResponses];
+
+export type KnowledgeControllerQueryData = {
+  body: KnowledgeQueryDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/knowledge/query';
+};
+
+export type KnowledgeControllerQueryResponses = {
+  200: Array<KnowledgeSourceDto>;
+};
+
+export type KnowledgeControllerQueryResponse =
+  KnowledgeControllerQueryResponses[keyof KnowledgeControllerQueryResponses];
 
 export type IdentityControllerRegisterData = {
   body: RegisterDto;
@@ -594,6 +1091,63 @@ export type IdentityControllerUserDetailData = {
 };
 
 export type IdentityControllerUserDetailResponses = {
+  200: unknown;
+};
+
+export type NotificationControllerListData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/notifications';
+};
+
+export type NotificationControllerListResponses = {
+  200: unknown;
+};
+
+export type NotificationControllerMarkReadData = {
+  body?: never;
+  path: {
+    notificationId: string;
+  };
+  query?: never;
+  url: '/api/v1/notifications/{notificationId}/read';
+};
+
+export type NotificationControllerMarkReadResponses = {
+  200: unknown;
+};
+
+export type NotificationControllerRegisterPushTokenData = {
+  body: RegisterPushTokenDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/notifications/push-tokens';
+};
+
+export type NotificationControllerRegisterPushTokenResponses = {
+  201: unknown;
+};
+
+export type NotificationControllerUnregisterPushTokenData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/notifications/push-tokens/remove';
+};
+
+export type NotificationControllerUnregisterPushTokenResponses = {
+  201: unknown;
+};
+
+export type OperationsHealthControllerAssistanceData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/operations/health/assistance';
+};
+
+export type OperationsHealthControllerAssistanceResponses = {
   200: unknown;
 };
 
@@ -927,7 +1481,23 @@ export type BlockchainOperationsControllerReconcileData = {
 };
 
 export type BlockchainOperationsControllerReconcileResponses = {
-  201: unknown;
+  200: BlockchainReconciliationDto;
+};
+
+export type BlockchainOperationsControllerReconcileResponse =
+  BlockchainOperationsControllerReconcileResponses[keyof BlockchainOperationsControllerReconcileResponses];
+
+export type BlockchainOperationsControllerRecoverDeadLetterData = {
+  body: DeadLetterRecoveryDto;
+  path: {
+    commandId: string;
+  };
+  query?: never;
+  url: '/api/v1/operations/blockchain/dead-letters/{commandId}/recover';
+};
+
+export type BlockchainOperationsControllerRecoverDeadLetterResponses = {
+  200: unknown;
 };
 
 export type LicenseControllerListData = {
@@ -959,6 +1529,22 @@ export type LicenseControllerFindResponses = {
 
 export type LicenseControllerFindResponse =
   LicenseControllerFindResponses[keyof LicenseControllerFindResponses];
+
+export type LicenseControllerListDevicesData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{id}/devices';
+};
+
+export type LicenseControllerListDevicesResponses = {
+  200: Array<LicenseDeviceDto>;
+};
+
+export type LicenseControllerListDevicesResponse =
+  LicenseControllerListDevicesResponses[keyof LicenseControllerListDevicesResponses];
 
 export type LicenseControllerRetrieveData = {
   body?: never;
@@ -1044,41 +1630,41 @@ export type CommerceControllerFindResponses = {
 export type CommerceControllerFindResponse =
   CommerceControllerFindResponses[keyof CommerceControllerFindResponses];
 
-export type CommerceControllerTermsData = {
+export type CommerceControllerServiceTermsData = {
   body?: never;
   path: {
     id: string;
   };
   query?: never;
-  url: '/api/v1/orders/{id}/terms';
+  url: '/api/v1/orders/{id}/service-terms';
 };
 
-export type CommerceControllerTermsErrors = {
+export type CommerceControllerServiceTermsErrors = {
   404: unknown;
 };
 
-export type CommerceControllerTermsResponses = {
+export type CommerceControllerServiceTermsResponses = {
   200: OrderTermsDto;
 };
 
-export type CommerceControllerTermsResponse =
-  CommerceControllerTermsResponses[keyof CommerceControllerTermsResponses];
+export type CommerceControllerServiceTermsResponse =
+  CommerceControllerServiceTermsResponses[keyof CommerceControllerServiceTermsResponses];
 
-export type CommerceControllerAcceptTermsData = {
-  body: AcceptTermsDto;
+export type CommerceControllerAcceptServiceTermsData = {
+  body: AcceptServiceTermsDto;
   path: {
     id: string;
   };
   query?: never;
-  url: '/api/v1/orders/{id}/accept-terms';
+  url: '/api/v1/orders/{id}/accept-service-terms';
 };
 
-export type CommerceControllerAcceptTermsResponses = {
+export type CommerceControllerAcceptServiceTermsResponses = {
   200: OrderDto;
 };
 
-export type CommerceControllerAcceptTermsResponse =
-  CommerceControllerAcceptTermsResponses[keyof CommerceControllerAcceptTermsResponses];
+export type CommerceControllerAcceptServiceTermsResponse =
+  CommerceControllerAcceptServiceTermsResponses[keyof CommerceControllerAcceptServiceTermsResponses];
 
 export type CommerceControllerCheckoutData = {
   body?: never;
@@ -1115,7 +1701,7 @@ export type CommerceControllerCancelResponse =
 export type PaymentControllerIngestData = {
   body?: never;
   headers: {
-    'x-emukey-payment-signature': string;
+    'x-secret-key': string;
   };
   path?: never;
   query?: never;
@@ -1201,3 +1787,182 @@ export type PaymentControllerGetReceiptResponses = {
 
 export type PaymentControllerGetReceiptResponse =
   PaymentControllerGetReceiptResponses[keyof PaymentControllerGetReceiptResponses];
+
+export type LicensingControllerChallengeData = {
+  body: ActivationChallengeDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/activations/challenge';
+};
+
+export type LicensingControllerChallengeResponses = {
+  201: DeviceChallengeDto;
+};
+
+export type LicensingControllerChallengeResponse =
+  LicensingControllerChallengeResponses[keyof LicensingControllerChallengeResponses];
+
+export type LicensingControllerActivateData = {
+  body: ActivateDeviceDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/activations';
+};
+
+export type LicensingControllerActivateResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerActivateResponse =
+  LicensingControllerActivateResponses[keyof LicensingControllerActivateResponses];
+
+export type LicensingControllerRequestActionVerificationData = {
+  body: LicensingActionVerificationDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/licenses/action-verification';
+};
+
+export type LicensingControllerRequestActionVerificationResponses = {
+  201: unknown;
+};
+
+export type LicensingControllerCommandStatusData = {
+  body?: never;
+  path: {
+    commandId: string;
+  };
+  query?: never;
+  url: '/api/v1/commands/{commandId}';
+};
+
+export type LicensingControllerCommandStatusResponses = {
+  200: Phase6CommandStatusDto;
+};
+
+export type LicensingControllerCommandStatusResponse =
+  LicensingControllerCommandStatusResponses[keyof LicensingControllerCommandStatusResponses];
+
+export type LicensingControllerRevokeDeviceData = {
+  body: RevokeDeviceDto;
+  path: {
+    licenseId: string;
+    deviceId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/devices/{deviceId}/revoke';
+};
+
+export type LicensingControllerRevokeDeviceResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerRevokeDeviceResponse =
+  LicensingControllerRevokeDeviceResponses[keyof LicensingControllerRevokeDeviceResponses];
+
+export type LicensingControllerRemoteRevokeDeviceData = {
+  body: RemoteRevokeDeviceDto;
+  path: {
+    licenseId: string;
+    deviceId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/devices/{deviceId}/remote-revoke';
+};
+
+export type LicensingControllerRemoteRevokeDeviceResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerRemoteRevokeDeviceResponse =
+  LicensingControllerRemoteRevokeDeviceResponses[keyof LicensingControllerRemoteRevokeDeviceResponses];
+
+export type LicensingControllerRotateData = {
+  body: RotateActivationKeyDto;
+  path: {
+    licenseId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/activation-key/rotate';
+};
+
+export type LicensingControllerRotateResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerRotateResponse =
+  LicensingControllerRotateResponses[keyof LicensingControllerRotateResponses];
+
+export type LicensingControllerRecoverActivationKeyData = {
+  body: ActivationKeyRecoveryDto;
+  path: {
+    licenseId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/activation-key/recover';
+};
+
+export type LicensingControllerRecoverActivationKeyResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerRecoverActivationKeyResponse =
+  LicensingControllerRecoverActivationKeyResponses[keyof LicensingControllerRecoverActivationKeyResponses];
+
+export type LicensingControllerLifecycleData = {
+  body: LicenseLifecycleDto;
+  path: {
+    licenseId: string;
+  };
+  query?: never;
+  url: '/api/v1/licenses/{licenseId}/lifecycle';
+};
+
+export type LicensingControllerLifecycleResponses = {
+  201: Phase6CommandDto;
+};
+
+export type LicensingControllerLifecycleResponse =
+  LicensingControllerLifecycleResponses[keyof LicensingControllerLifecycleResponses];
+
+export type LicensingControllerIssueEntitlementData = {
+  body: EntitlementRefreshDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/entitlements/issue';
+};
+
+export type LicensingControllerIssueEntitlementResponses = {
+  201: EntitlementDto;
+};
+
+export type LicensingControllerIssueEntitlementResponse =
+  LicensingControllerIssueEntitlementResponses[keyof LicensingControllerIssueEntitlementResponses];
+
+export type LicensingControllerRefreshEntitlementData = {
+  body: EntitlementRefreshDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/entitlements/refresh';
+};
+
+export type LicensingControllerRefreshEntitlementResponses = {
+  201: EntitlementDto;
+};
+
+export type LicensingControllerRefreshEntitlementResponse =
+  LicensingControllerRefreshEntitlementResponses[keyof LicensingControllerRefreshEntitlementResponses];
+
+export type LicensingControllerVerifyEntitlementData = {
+  body: EntitlementVerifyDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/entitlements/verify';
+};
+
+export type LicensingControllerVerifyEntitlementResponses = {
+  200: EntitlementValidationDto;
+};
+
+export type LicensingControllerVerifyEntitlementResponse =
+  LicensingControllerVerifyEntitlementResponses[keyof LicensingControllerVerifyEntitlementResponses];

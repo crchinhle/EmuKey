@@ -7,11 +7,12 @@ configure({ asyncUtilTimeout: 5_000 });
 vi.stubGlobal('crypto', webcrypto);
 
 const testOrderId = '00000000-0000-4000-8000-000000000501';
+const acceptedOrderId = '00000000-0000-4000-8000-000000000502';
 beforeEach(() => localStorage.clear());
 
 const publicProducts = [
   {
-    code: 'securedesk',
+    slug: 'securedesk',
     imageUrl: 'https://picsum.photos/seed/emukey-securedesk/1200/800',
     name: 'SecureDesk Pro',
     summary:
@@ -32,7 +33,7 @@ const publicProducts = [
     ],
   },
   {
-    code: 'cloudstudio-ai',
+    slug: 'cloudstudio-ai',
     name: 'CloudStudio AI',
     summary: 'Bộ công cụ sáng tạo có trợ lý AI theo ngữ cảnh.',
     plans: [
@@ -45,7 +46,7 @@ const publicProducts = [
     ],
   },
   {
-    code: 'dataguard-sdk',
+    slug: 'dataguard-sdk',
     name: 'DataGuard SDK',
     summary: 'SDK xác thực license cho ứng dụng và API.',
     plans: [
@@ -109,14 +110,14 @@ const orders = [
     productNameSnapshot: 'SecureDesk Pro',
     orderStatus: 'WAITING_PAYMENT',
     priceVndSnapshot: 2_082_500,
-    termsHashSnapshot: `0x${'ef'.repeat(32)}`,
-    termsVersionSnapshot: 1,
     paymentDueAt: '2026-10-02T00:00:00.000Z',
     createdAt: '2026-09-30T00:00:00.000Z',
   },
 ] as const;
 
 const license = {
+  activationKeyAvailable: true,
+  activationKeyTrustStatus: 'TRUSTED',
   blockNumber: 42,
   confirmationCount: 2,
   createdAt: '2026-09-08T00:00:00.000Z',
@@ -131,14 +132,33 @@ const license = {
   plan: { commitment: `0x${'ab'.repeat(32)}`, name: 'Business', version: 1 },
   productName: 'SecureDesk Pro',
   provider: {
-    displayName: 'EmuKey Provider',
-    organizationName: 'EmuKey Software',
+    displayName: 'Emukey Provider',
+    organizationName: 'Emukey Software',
   },
   publicLicenseId: 'EMU-TEST-LICENSE',
   status: 'ACTIVE',
   transactionHash: `0x${'cd'.repeat(32)}`,
   updatedAt: '2026-09-08T00:00:00.000Z',
 } as const;
+
+const assistanceConversation = {
+  assignedSupportUserId: null,
+  contextId: null,
+  contextType: 'GENERAL',
+  customerUserId: 'test-user',
+  id: '00000000-0000-4000-8000-000000000701',
+  status: 'AI_ACTIVE',
+  title: 'Hội thoại hỗ trợ',
+};
+
+const assistanceMessages: Array<{
+  clientMessageId: string;
+  content: string;
+  conversationId: string;
+  id: string;
+  senderType: 'CUSTOMER' | 'SUPPORT' | 'AI';
+  serverSequence: number;
+}> = [];
 
 function jsonResponse(body: unknown, status = 200) {
   return Promise.resolve({
@@ -165,14 +185,64 @@ vi.stubGlobal(
     const method = init?.method?.toUpperCase() ?? 'GET';
 
     if (path === '/auth/refresh') return jsonResponse(undefined, 401);
+    if (method === 'GET' && path === '/notifications') return jsonResponse([]);
+    if (method === 'GET' && path === '/knowledge/documents') return jsonResponse([]);
+    if (method === 'GET' && path === '/health/ready') return jsonResponse({ status: 'ok', dependencies: { postgres: 'up', redis: 'up', blockchain: 'up' } });
+    if (method === 'GET' && path === '/operations/health/assistance') return jsonResponse({ conversations: { supportActive: 0, waitingSupport: 0 }, notifications: { deadLetter: 0, pending: 0, retryableFailed: 0 } });
+    if (path === '/auth/profile' && method === 'PUT') {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : {};
+      return jsonResponse({
+        id: 'test-user',
+        email: 'test@example.com',
+        displayName: body.displayName ?? 'Test User',
+        phone: body.phone ?? null,
+        address: body.address ?? null,
+        organizationName: body.organizationName ?? null,
+        role: 'CUSTOMER',
+        status: 'ACTIVE',
+      });
+    }
+    if (method === 'GET' && path === '/conversations') {
+      return jsonResponse([assistanceConversation]);
+    }
+    if (method === 'GET' && path === `/conversations/${assistanceConversation.id}`) {
+      return jsonResponse(assistanceConversation);
+    }
+    if (method === 'GET' && path === `/conversations/${assistanceConversation.id}/messages`) {
+      return jsonResponse(assistanceMessages);
+    }
+    if (method === 'POST' && path === `/conversations/${assistanceConversation.id}/messages`) {
+      const body = typeof init?.body === 'string'
+        ? JSON.parse(init.body) as { clientMessageId: string; content: string }
+        : { clientMessageId: crypto.randomUUID(), content: '' };
+      const message = {
+        clientMessageId: body.clientMessageId,
+        content: body.content,
+        conversationId: assistanceConversation.id,
+        id: `message-${assistanceMessages.length + 1}`,
+        senderType: 'CUSTOMER' as const,
+        serverSequence: assistanceMessages.length + 1,
+      };
+      assistanceMessages.push(message);
+      return jsonResponse(message, 201);
+    }
+    if (method === 'POST' && path === '/conversations') {
+      return jsonResponse(assistanceConversation, 201);
+    }
+    if (method === 'POST' && path.endsWith('/ai-ask')) {
+      return jsonResponse({ answer: 'Không đủ nguồn chính thức để trả lời câu hỏi này.', citedSourceIds: [], grounded: false });
+    }
     if (path.startsWith('/auth/')) {
+      const authBody = typeof init?.body === 'string'
+        ? JSON.parse(init.body) as { email?: string }
+        : {};
       return jsonResponse({
         accessToken: 'test-access-token',
         user: {
           id: 'test-user',
-          email: 'test@example.com',
+          email: authBody.email ?? 'test@example.com',
           displayName: 'Test User',
-          role: 'PROVIDER_ADMIN',
+          role: authBody.email === 'customer@example.com' ? 'CUSTOMER' : 'PROVIDER_ADMIN',
           status: 'ACTIVE',
         },
       });
@@ -186,7 +256,7 @@ vi.stubGlobal(
     ) {
       const product = publicProducts.find(
         (item) =>
-          item.code === decodeURIComponent(path.split('/').at(-1) ?? ''),
+          item.slug === decodeURIComponent(path.split('/').at(-1) ?? ''),
       );
       return jsonResponse(product, product ? 200 : 404);
     }
@@ -194,26 +264,85 @@ vi.stubGlobal(
       return jsonResponse(providerProducts);
     if (method === 'GET' && path === '/plans')
       return jsonResponse(providerPlans);
-    if (method === 'GET' && path.endsWith('/terms'))
+    if (method === 'GET' && path === '/plans/compare') {
+      const ids = new URL(url, 'http://localhost').searchParams.get('ids')?.split(',') ?? [];
+      const catalogPlans: Array<{ id: string; maxActiveDevices: number; name: string; priceVnd: number }> = [];
+      for (const product of publicProducts) {
+        for (const plan of product.plans) catalogPlans.push(plan);
+      }
+      const selected = publicProducts.flatMap((product) =>
+        product.plans
+          .filter((plan) => ids.includes(plan.id))
+          .map((plan) => ({
+            billingCycle: 'YEARLY',
+            id: plan.id,
+            name: plan.name,
+            productId: `${product.slug}-id`,
+            productName: product.name,
+            version: 1,
+          })),
+      );
       return jsonResponse({
-        content: '# EmuKey License Terms\n\nThis is the deterministic Terms snapshot.',
-        hash: orders[0].termsHashSnapshot,
-        version: orders[0].termsVersionSnapshot,
+        dimensions: [
+          {
+            key: 'priceVnd',
+            label: 'Giá (VND)',
+            values: Object.fromEntries(catalogPlans.filter((plan) => ids.includes(plan.id)).map((plan) => [plan.id, plan.priceVnd])),
+          },
+          {
+            key: 'maxActiveDevices',
+            label: 'Thiết bị tối đa',
+            values: Object.fromEntries(catalogPlans.filter((plan) => ids.includes(plan.id)).map((plan) => [plan.id, plan.maxActiveDevices])),
+          },
+        ],
+        plans: selected,
       });
+    }
+    if (method === 'GET' && path.endsWith('/service-terms'))
+      return jsonResponse({ content: '# EmuKey Service Terms\n\nThese are the platform Service Terms.' });
     if (method === 'GET' && path === '/orders') return jsonResponse(orders);
+    if (method === 'GET' && path === '/payments/history') {
+      return jsonResponse([
+        {
+          amountVnd: 2_082_500,
+          classification: 'MATCHED',
+          orderId: testOrderId,
+          orderNumber: 'ORD-2026-0218',
+          orderType: 'NEW_PURCHASE',
+          planNameSnapshot: 'Business',
+          productNameSnapshot: 'SecureDesk Pro',
+          providerEventId: 'sepay-event-1',
+          providerTransactionReference: 'SEPAY-TX-1',
+          receivedAt: '2026-09-30T00:00:00.000Z',
+          reviewStatus: null,
+          transactionId: 'payment-transaction-1',
+        },
+      ]);
+    }
     if (method === 'GET' && path.startsWith('/orders/'))
-      return jsonResponse(orders[0]);
+      return jsonResponse(path.endsWith(acceptedOrderId)
+        ? { ...orders[0], id: acceptedOrderId, licenseId: license.id, orderStatus: 'PAYMENT_ACCEPTED' }
+        : orders[0]);
     if (method === 'POST' && path === '/orders')
       return jsonResponse(orders[0], 201);
-    if (method === 'POST' && path.endsWith('/accept-terms'))
+    if (method === 'POST' && path.endsWith('/accept-service-terms'))
       return jsonResponse({ ...orders[0], orderStatus: 'WAITING_PAYMENT' });
     if (method === 'POST' && path.endsWith('/checkout'))
       return jsonResponse(
         {
           amountVnd: orders[0].priceVndSnapshot,
           attemptId: 'payment-attempt-1',
+          checkoutFields: {
+            currency: 'VND',
+            merchant: 'SP-TEST-EMUKEY',
+            operation: 'PURCHASE',
+            order_amount: String(orders[0].priceVndSnapshot),
+            order_invoice_number: 'EMU-TEST-CHECKOUT',
+            signature: 'sandbox-signature',
+          },
+          checkoutMethod: 'POST',
           checkoutReference: 'EMU-TEST-CHECKOUT',
-          checkoutUrl: 'http://localhost:3000/fake-checkout/payment-attempt-1',
+          checkoutUrl: 'https://pay-sandbox.sepay.vn/v1/checkout/init',
           expiresAt: orders[0].paymentDueAt,
           expiresWithOrder: true,
         },
@@ -223,6 +352,19 @@ vi.stubGlobal(
       return jsonResponse({ ...orders[0], orderStatus: 'CANCELLED' });
     }
     if (method === 'GET' && path === '/licenses') return jsonResponse([license]);
+    if (method === 'GET' && path === `/licenses/${license.id}`) return jsonResponse(license);
+    if (method === 'POST' && path.endsWith('/lifecycle')) return jsonResponse({ commandId: '00000000-0000-4000-8000-000000000902', deviceId: null, licenseId: license.id, status: 'PENDING' }, 201);
+    if (method === 'GET' && path === '/commands/00000000-0000-4000-8000-000000000902') {
+      return jsonResponse({
+        commandId: '00000000-0000-4000-8000-000000000902',
+        commandType: 'SUSPEND_LICENSE',
+        confirmedAt: '2026-09-15T00:00:00.000Z',
+        deviceId: null,
+        licenseId: license.id,
+        status: 'CONFIRMED',
+        transactionHash: '0x' + '34'.repeat(32),
+      });
+    }
     if (method === 'POST' && path.endsWith('/activation-key/retrieve')) {
       return jsonResponse(
         { activationKey: '0x' + '12'.repeat(32), keyVersion: 1 },

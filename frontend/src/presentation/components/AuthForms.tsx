@@ -3,7 +3,7 @@ import { useState } from 'react';
 
 import type { AuthUser, RegisterInput } from '../../application/auth/authContext';
 
-export type AuthMode = 'forgot' | 'login' | 'register' | 'reset' | 'verify';
+export type AuthMode = 'forgot' | 'licensing-action' | 'login' | 'register' | 'reset' | 'verify';
 
 const emailRules = [
   { message: 'Vui lòng nhập email.', required: true },
@@ -18,10 +18,12 @@ export function LoginForm({
   onForgotPassword,
   onLogin,
   onSuccess,
+  submitLabel = 'Đăng nhập',
 }: {
   readonly onForgotPassword: () => void;
   readonly onLogin: (email: string, password: string) => Promise<AuthUser>;
   readonly onSuccess: (user: AuthUser) => void;
+  readonly submitLabel?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,7 @@ export function LoginForm({
         </Form.Item>
         <Button onClick={onForgotPassword} type="link">Quên mật khẩu?</Button>
       </div>
-      <Button block htmlType="submit" loading={loading} type="primary">Đăng nhập</Button>
+      <Button block htmlType="submit" loading={loading} type="primary">{submitLabel}</Button>
     </Form>
   );
 }

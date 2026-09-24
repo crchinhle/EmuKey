@@ -71,9 +71,15 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    restart: unless-stopped
     environment:
       PORT: 3000
+      NODE_ENV: ${NODE_ENV:-development}
+      PAYMENT_ADAPTER: ${PAYMENT_ADAPTER:-sepay}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+      SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: ${SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS:-0}
       REDIS_URL: redis://redis:6379
+      EVM_RPC_FALLBACK_HTTP_URL: ${EVM_RPC_FALLBACK_HTTP_URL:-https://ethereum-sepolia-rpc.publicnode.com}
     depends_on:
       redis:
         condition: service_healthy
@@ -100,9 +106,15 @@ services:
     command: ['node', 'dist/entrypoints/worker/main.js']
     env_file:
       - .env
+    restart: unless-stopped
     environment:
       PORT: 3000
+      NODE_ENV: ${NODE_ENV:-development}
+      PAYMENT_ADAPTER: ${PAYMENT_ADAPTER:-sepay}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-}
+      SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: ${SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS:-0}
       REDIS_URL: redis://redis:6379
+      EVM_RPC_FALLBACK_HTTP_URL: ${EVM_RPC_FALLBACK_HTTP_URL:-https://ethereum-sepolia-rpc.publicnode.com}
     depends_on:
       redis:
         condition: service_healthy

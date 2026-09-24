@@ -4,6 +4,7 @@ import { Pool, type PoolClient } from 'pg';
 import { keccak256, stringToHex, type Hex } from 'viem';
 
 import { AuditWriter } from '../../../platform/audit/audit-writer.js';
+import { NotificationRepository } from '../../operations/infrastructure/notification.repository.js';
 import { canonicalizeEntitlements } from '../../../platform/crypto/license-crypto.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { VerifiedPaymentEvent } from '../application/ports/payment-gateway.port.js';
@@ -33,14 +34,13 @@ export interface OrderRecord {
   providerUserId: string;
   publicLicenseId: string | null;
   targetLicenseId: string | null;
-  termsAcceptedAt: Date | null;
-  termsHashSnapshot: Hex;
-  termsVersionSnapshot: number;
+  serviceTermsAcceptedAt: Date | null;
 }
 
 export interface CheckoutPreparation {
   amountVnd: number;
   attemptId: string;
+  checkoutReference: string;
   existing: boolean;
   expiresAt: Date;
   orderId: string;
@@ -152,9 +152,7 @@ function mapOrder(row: Record<string, unknown>): OrderRecord {
       typeof row.public_license_id === 'string' ? row.public_license_id : null,
     targetLicenseId:
       typeof row.target_license_id === 'string' ? row.target_license_id : null,
-    termsAcceptedAt: optionalDate(row.terms_accepted_at),
-    termsHashSnapshot: hex(row.terms_hash_snapshot),
-    termsVersionSnapshot: Number(row.terms_version_snapshot),
+    serviceTermsAcceptedAt: optionalDate(row.service_terms_accepted_at),
   };
 }
 
@@ -179,7 +177,16 @@ export class CommerceRepository {
   constructor(
     private readonly pool: Pool,
     private readonly audit = new AuditWriter(),
-  ) {}
+    private readonly ipnDeliveryGraceSeconds = 86_400,
+    private readonly notifications = new NotificationRepository(pool),
+  ) {
+    if (
+      !Number.isSafeInteger(ipnDeliveryGraceSeconds) ||
+      ipnDeliveryGraceSeconds <= 0
+    ) {
+      throw new Error('IPN delivery grace must be a positive integer');
+    }
+  }
 
   async createOrder(
     customerUserId: string,
@@ -253,13 +260,14 @@ export class CommerceRepository {
            order_type, provider_name_snapshot, product_name_snapshot,
            plan_name_snapshot, plan_version_snapshot, price_vnd_snapshot,
            billing_cycle_snapshot, duration_months_snapshot,
-           max_active_devices_snapshot, entitlements_snapshot,
-           terms_version_snapshot, terms_hash_snapshot,
-           plan_commitment_snapshot, payment_due_at)
+            max_active_devices_snapshot, entitlements_snapshot,
+            plan_commitment_snapshot, payment_due_at, ipn_accept_until)
          VALUES
           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-           $13, $14, $15, $16, $17, $18, $19, decode($20, 'hex'),
-           decode($21, 'hex'), now() + interval '30 minutes')
+            $13, $14, $15, $16, $17, $18, decode($19, 'hex'),
+            statement_timestamp() + interval '30 minutes',
+            statement_timestamp() + interval '30 minutes' +
+              ($20::integer * interval '1 second'))
          RETURNING *`,
         [
           id,
@@ -279,10 +287,9 @@ export class CommerceRepository {
           plan.billing_cycle,
           plan.duration_months,
           plan.max_active_devices,
-          JSON.stringify(plan.entitlements),
-          plan.terms_version,
-          hex(plan.terms_hash).slice(2),
-          hex(plan.plan_commitment).slice(2),
+            JSON.stringify(plan.entitlements),
+            hex(plan.plan_commitment).slice(2),
+          this.ipnDeliveryGraceSeconds,
         ],
       );
       const order = mapOrder(result.rows[0] ?? {});
@@ -322,12 +329,7 @@ export class CommerceRepository {
     return result.rows.map(mapOrder);
   }
 
-  async acceptTerms(
-    customerUserId: string,
-    id: string,
-    version: number,
-    hash: Hex,
-  ): Promise<OrderRecord> {
+  async acceptServiceTerms(customerUserId: string, id: string): Promise<OrderRecord> {
     return this.withTransaction(async (client) => {
       const current = await client.query<Record<string, unknown>>(
         'SELECT * FROM orders WHERE id = $1 AND customer_user_id = $2 FOR UPDATE',
@@ -336,15 +338,13 @@ export class CommerceRepository {
       if (!current.rows[0]) throw new Error('ORDER_NOT_FOUND');
       const order = mapOrder(current.rows[0]);
       if (
-        order.orderStatus !== 'WAITING_TERMS_ACCEPTANCE' ||
-        order.termsVersionSnapshot !== version ||
-        order.termsHashSnapshot.toLowerCase() !== hash.toLowerCase()
+        order.orderStatus !== 'WAITING_SERVICE_TERMS_ACCEPTANCE'
       ) {
         throw new Error('ORDER_TERMS_MISMATCH');
       }
       const result = await client.query<Record<string, unknown>>(
         `UPDATE orders
-         SET order_status = 'WAITING_PAYMENT', terms_accepted_at = now(),
+         SET order_status = 'WAITING_PAYMENT', service_terms_accepted_at = statement_timestamp(),
              updated_at = now()
          WHERE id = $1
          RETURNING *`,
@@ -355,7 +355,7 @@ export class CommerceRepository {
         action: 'ORDER_TERMS_ACCEPTED',
         actorRole: 'CUSTOMER',
         actorUserId: customerUserId,
-        metadata: { termsHash: hash, termsVersion: version },
+        metadata: { accepted: true },
         targetId: id,
         targetType: 'ORDER',
       });
@@ -371,7 +371,7 @@ export class CommerceRepository {
       );
       if (!current.rows[0]) throw new Error('ORDER_NOT_FOUND');
       if (
-        !['WAITING_TERMS_ACCEPTANCE', 'WAITING_PAYMENT'].includes(
+        !['WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT'].includes(
           String(current.rows[0].order_status),
         )
       ) {
@@ -424,12 +424,14 @@ export class CommerceRepository {
         return {
           amountVnd: Number(existing.rows[0].amount_vnd),
           attemptId: String(existing.rows[0].id),
+          checkoutReference: String(existing.rows[0].provider_reference),
           existing: true,
           expiresAt: date(existing.rows[0].expires_at),
           orderId: id,
         };
       }
       const attemptId = randomUUID();
+      const checkoutReference = attemptId;
       const created = await client.query<Record<string, unknown>>(
         `INSERT INTO payment_attempts
           (id, order_id, attempt_no, provider_reference, amount_vnd, expires_at)
@@ -440,7 +442,7 @@ export class CommerceRepository {
         [
           attemptId,
           id,
-          `pending:${attemptId}`,
+          checkoutReference,
           row.price_vnd_snapshot,
           row.payment_due_at,
         ],
@@ -448,22 +450,12 @@ export class CommerceRepository {
       return {
         amountVnd: Number(created.rows[0]?.amount_vnd),
         attemptId,
+        checkoutReference,
         existing: false,
         expiresAt: date(created.rows[0]?.expires_at),
         orderId: id,
       };
     });
-  }
-
-  async completeCheckout(
-    attemptId: string,
-    providerReference: string,
-  ): Promise<void> {
-    await this.pool.query(
-      `UPDATE payment_attempts SET provider_reference = $2, updated_at = now()
-       WHERE id = $1 AND status = 'PENDING'`,
-      [attemptId, providerReference],
-    );
   }
 
   async failCheckout(attemptId: string): Promise<void> {
@@ -483,30 +475,19 @@ export class CommerceRepository {
   ): Promise<PaymentIngestResult> {
     return this.withTransaction(async (client) => {
       const transactionId = randomUUID();
-      const inserted = await client.query<{ id: string }>(
-        `INSERT INTO payment_transactions
-          (id, provider_event_id, provider_transaction_ref, amount_vnd,
-           classification, review_status, raw_payload, received_at)
-         VALUES ($1, $2, $3, $4, 'INVALID', 'OPEN', $5, $6)
-         ON CONFLICT (provider_event_id) DO NOTHING
-         RETURNING id`,
-        [
-          transactionId,
-          event.eventId,
-          event.transactionReference ?? null,
-          event.amountVnd,
-          JSON.stringify({
-            payload: rawPayload,
-            protocolVersion: event.protocolVersion,
-          }),
-          event.occurredAt,
-        ],
+      const evidencePayload = JSON.stringify({
+        payload: rawPayload,
+        protocolVersion: event.protocolVersion,
+      });
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+        [`payment-event:${event.eventId}`],
       );
-      if (!inserted.rows[0]) {
-        const previous = await client.query<{ id: string }>(
-          'SELECT id FROM payment_transactions WHERE provider_event_id = $1',
-          [event.eventId],
-        );
+      const previous = await client.query<{ id: string }>(
+        'SELECT id FROM payment_transactions WHERE provider_event_id = $1',
+        [event.eventId],
+      );
+      if (previous.rows[0]) {
         return {
           classification: 'DUPLICATE',
           transactionId: String(previous.rows[0]?.id),
@@ -515,7 +496,13 @@ export class CommerceRepository {
 
       const attemptResult = await client.query<Record<string, unknown>>(
         `SELECT pa.*, o.*, provider.provider_chain_address,
+                statement_timestamp() < o.ipn_accept_until AS received_before_cutoff,
                 pa.id AS payment_attempt_id,
+                pa.amount_vnd AS payment_attempt_amount_vnd,
+                pa.status AS payment_attempt_status,
+                pa.created_at AS payment_attempt_created_at,
+                pa.expires_at AS payment_attempt_expires_at,
+                pa.superseded_at AS payment_attempt_superseded_at,
                 o.id AS matched_order_id
          FROM payment_attempts pa
          JOIN orders o ON o.id = pa.order_id
@@ -526,82 +513,153 @@ export class CommerceRepository {
       );
       const row = attemptResult.rows[0];
       if (!row) {
-        await this.classifyException(
-          client,
-          transactionId,
-          'UNMATCHED',
-          null,
-          null,
+        await client.query(
+          `INSERT INTO payment_transactions
+            (id, provider_event_id, provider_transaction_ref, amount_minor,
+             currency, classification, review_status, review_reason,
+             raw_payload, provider_occurred_at)
+           VALUES ($1, $2, $3, $4, 'VND', 'UNMATCHED', 'OPEN',
+                   'NO_MATCHING_PAYMENT_ATTEMPT', $5, $6)`,
+          [
+            transactionId,
+            event.eventId,
+            event.transactionReference ?? null,
+            event.amountVnd,
+            evidencePayload,
+            event.occurredAt,
+          ],
         );
         return { classification: 'UNMATCHED', transactionId };
       }
       const orderId = String(row.matched_order_id);
       const attemptId = String(row.payment_attempt_id);
-      if (Number(row.amount_vnd) !== event.amountVnd) {
-        await this.classifyException(
-          client,
-          transactionId,
-          'AMOUNT_MISMATCH',
-          orderId,
-          attemptId,
+      if (Number(row.payment_attempt_amount_vnd) !== event.amountVnd) {
+        await client.query(
+          `INSERT INTO payment_transactions
+            (id, provider_event_id, provider_transaction_ref, order_id,
+             payment_attempt_id, amount_minor, currency, classification,
+             review_status, review_reason, raw_payload, provider_occurred_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'AMOUNT_MISMATCH',
+                   'OPEN', 'PAYMENT_AMOUNT_MISMATCH', $7, $8)`,
+          [
+            transactionId,
+            event.eventId,
+            event.transactionReference ?? null,
+            orderId,
+            attemptId,
+            event.amountVnd,
+            evidencePayload,
+            event.occurredAt,
+          ],
         );
         return { classification: 'AMOUNT_MISMATCH', transactionId };
       }
       if (
         row.order_status === 'PAYMENT_ACCEPTED' ||
-        row.status === 'SUCCEEDED'
+        row.payment_attempt_status === 'SUCCEEDED'
       ) {
+        const original = await client.query<{ id: string }>(
+          `SELECT id FROM payment_transactions
+           WHERE fulfillment_order_id = $1
+             AND fulfillment_payment_attempt_id = $2`,
+          [orderId, attemptId],
+        );
+        if (!original.rows[0]) throw new Error('PAYMENT_EFFECT_NOT_FOUND');
         await client.query(
-          `UPDATE payment_transactions
-           SET classification = 'DUPLICATE', review_status = NULL,
-               order_id = $2, payment_attempt_id = $3
-           WHERE id = $1`,
-          [transactionId, orderId, attemptId],
+          `INSERT INTO payment_transactions
+            (id, provider_event_id, provider_transaction_ref, order_id,
+             payment_attempt_id, amount_minor, currency, classification,
+             duplicate_of_transaction_id, raw_payload, provider_occurred_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'DUPLICATE', $7, $8, $9)`,
+          [
+            transactionId,
+            event.eventId,
+            event.transactionReference ?? null,
+            orderId,
+            attemptId,
+            event.amountVnd,
+            original.rows[0].id,
+            evidencePayload,
+            event.occurredAt,
+          ],
         );
         return { classification: 'DUPLICATE', transactionId };
       }
-      if (
-        row.status !== 'PENDING' ||
-        event.occurredAt.getTime() > date(row.expires_at).getTime() ||
-        event.occurredAt.getTime() > date(row.payment_due_at).getTime()
-      ) {
-        await this.classifyException(
-          client,
-          transactionId,
-          'UNMATCHED',
-          orderId,
-          attemptId,
-        );
-        return { classification: 'UNMATCHED', transactionId };
-      }
-      if (row.order_status !== 'WAITING_PAYMENT') {
-        await this.classifyException(
-          client,
-          transactionId,
-          'UNMATCHED',
-          orderId,
-          attemptId,
+      const occurredAt = event.occurredAt.getTime();
+      const eligible =
+        row.order_status === 'WAITING_PAYMENT' &&
+        ['PENDING', 'EXPIRED', 'SUPERSEDED'].includes(
+          String(row.payment_attempt_status),
+        ) &&
+        row.service_terms_accepted_at !== null &&
+        occurredAt >= date(row.service_terms_accepted_at).getTime() &&
+        occurredAt >= date(row.payment_attempt_created_at).getTime() &&
+        occurredAt < date(row.payment_attempt_expires_at).getTime() &&
+        occurredAt < date(row.payment_due_at).getTime() &&
+        (row.payment_attempt_status !== 'SUPERSEDED' ||
+          occurredAt < date(row.payment_attempt_superseded_at).getTime()) &&
+        row.received_before_cutoff === true;
+      if (!eligible) {
+        await client.query(
+          `INSERT INTO payment_transactions
+            (id, provider_event_id, provider_transaction_ref, order_id,
+             payment_attempt_id, amount_minor, currency, classification,
+             review_status, review_reason, raw_payload, provider_occurred_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'UNMATCHED', 'OPEN',
+                   'PAYMENT_OUTSIDE_ACCEPTED_WINDOW', $7, $8)`,
+          [
+            transactionId,
+            event.eventId,
+            event.transactionReference ?? null,
+            orderId,
+            attemptId,
+            event.amountVnd,
+            evidencePayload,
+            event.occurredAt,
+          ],
         );
         return { classification: 'UNMATCHED', transactionId };
       }
 
       await client.query(
-        `UPDATE payment_transactions
-         SET classification = 'MATCHED', review_status = NULL,
-             order_id = $2, payment_attempt_id = $3
-         WHERE id = $1`,
-        [transactionId, orderId, attemptId],
+        `INSERT INTO payment_transactions
+          (id, provider_event_id, provider_transaction_ref, order_id,
+           payment_attempt_id, amount_minor, currency, classification,
+           raw_payload, provider_occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'MATCHED', $7, $8)`,
+        [
+          transactionId,
+          event.eventId,
+          event.transactionReference ?? null,
+          orderId,
+          attemptId,
+          event.amountVnd,
+          evidencePayload,
+          event.occurredAt,
+        ],
       );
       await client.query(
         `UPDATE payment_attempts
-         SET status = 'SUCCEEDED', succeeded_at = now(), updated_at = now()
+         SET status = 'SUCCEEDED'
          WHERE id = $1`,
         [attemptId],
       );
       await client.query(
+        `UPDATE payment_attempts
+         SET status = 'EXPIRED'
+         WHERE order_id = $1 AND id <> $2 AND status = 'PENDING'
+           AND expires_at <= statement_timestamp()`,
+        [orderId, attemptId],
+      );
+      await client.query(
+        `UPDATE payment_attempts
+         SET status = 'SUPERSEDED'
+         WHERE order_id = $1 AND id <> $2 AND status = 'PENDING'`,
+        [orderId, attemptId],
+      );
+      await client.query(
         `UPDATE orders
-         SET order_status = 'PAYMENT_ACCEPTED', payment_accepted_at = now(),
-             updated_at = now()
+         SET order_status = 'PAYMENT_ACCEPTED'
          WHERE id = $1`,
         [orderId],
       );
@@ -618,8 +676,8 @@ export class CommerceRepository {
              plan_commitment, period_start, expires_at, max_active_devices,
              activation_commitment, activation_key_version)
            VALUES ($1, $2, $3, $4, $5, $6, $7, decode($8, 'hex'),
-                   now(), now() + make_interval(months => $9), $10,
-                   decode($11, 'hex'), 1)
+                   $9, $9::timestamptz + make_interval(months => $10), $11,
+                   decode($12, 'hex'), 1)
            RETURNING expires_at`,
           [
             licenseId,
@@ -630,6 +688,7 @@ export class CommerceRepository {
             row.product_id,
             row.plan_id,
             hex(row.plan_commitment_snapshot).slice(2),
+            event.occurredAt,
             Number(row.duration_months_snapshot),
             Number(row.max_active_devices_snapshot),
             issuance.activationCommitment.slice(2),
@@ -671,23 +730,61 @@ export class CommerceRepository {
       const commandPayloadHash = keccak256(
         stringToHex(canonicalizeEntitlements(commandPayload)),
       );
+      let commandSequence = 1;
+      let predecessorCommandId: string | null = null;
+      let basisChainEventId: string | null = null;
+      if (row.order_type === 'RENEWAL') {
+        const predecessor = await client.query<{
+          basis_chain_event_id: string | null;
+          id: string;
+          license_command_sequence: string;
+        }>(
+          `SELECT latest.id, latest.license_command_sequence,
+                  (
+                    SELECT confirmed.confirmation_chain_event_id
+                    FROM chain_commands confirmed
+                    WHERE confirmed.license_id = latest.license_id
+                      AND confirmed.status = 'CONFIRMED'
+                      AND confirmed.license_command_sequence <= latest.license_command_sequence
+                    ORDER BY confirmed.license_command_sequence DESC
+                    LIMIT 1
+                  ) AS basis_chain_event_id
+           FROM chain_commands latest
+           WHERE latest.license_id = $1
+           ORDER BY latest.license_command_sequence DESC
+           LIMIT 1
+           FOR UPDATE`,
+          [licenseId],
+        );
+        const previous = predecessor.rows[0];
+        if (!previous || !previous.basis_chain_event_id) {
+          throw new Error('RENEWAL_CANONICAL_BASIS_NOT_FOUND');
+        }
+        commandSequence = Number(previous.license_command_sequence) + 1;
+        predecessorCommandId = previous.id;
+        basisChainEventId = previous.basis_chain_event_id;
+      }
 
       await client.query(
         `INSERT INTO chain_commands
           (id, idempotency_key, command_type, provider_user_id, order_id,
-           license_id, network, chain_id, contract_address, payload,
+           license_id, license_command_sequence, predecessor_command_id,
+           basis_chain_event_id, network, chain_id, contract_address, payload,
            payload_hash)
-         VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                 decode($10, 'hex'))`,
+         VALUES ($1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                 decode($13, 'hex'))`,
         [
           issuance.commandId,
           row.order_type === 'NEW_PURCHASE' ? 'ISSUE_LICENSE' : 'RENEW_LICENSE',
           row.provider_user_id,
           orderId,
           licenseId,
-          chain.network,
+          commandSequence,
+          predecessorCommandId,
+          basisChainEventId,
+          chain.network.toLowerCase(),
           chain.chainId,
-          chain.contractAddress,
+          chain.contractAddress.toLowerCase(),
           JSON.stringify(commandPayload),
           commandPayloadHash.slice(2),
         ],
@@ -699,6 +796,17 @@ export class CommerceRepository {
         metadata: { classification: 'MATCHED', orderType: row.order_type },
         targetId: orderId,
         targetType: 'ORDER',
+      });
+      await this.notifications.enqueueInTransaction(client, {
+        channel: 'IN_APP',
+        content: row.order_type === 'NEW_PURCHASE'
+          ? 'Thanh toán đã được chấp nhận; license đang chờ blockchain finality.'
+          : 'Thanh toán gia hạn đã được chấp nhận; license đang chờ blockchain finality.',
+        data: { commandId: issuance.commandId, licenseId, orderId },
+        eventKey: `payment:${transactionId}:accepted`,
+        title: 'Thanh toán đã được chấp nhận',
+        type: 'PAYMENT_ACCEPTED',
+        userId: String(row.customer_user_id),
       });
       return {
         activationRequired: row.order_type === 'NEW_PURCHASE',
@@ -720,7 +828,8 @@ export class CommerceRepository {
     const parameters = scope === 'TRUE' ? [] : [actor.sub];
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT pt.id AS transaction_id, pt.provider_event_id,
-              pt.provider_transaction_ref, pt.amount_vnd, pt.classification,
+              pt.provider_transaction_ref, pt.amount_minor AS amount_vnd,
+              pt.classification,
               pt.review_status, pt.received_at, o.id AS order_id,
               o.order_number, o.order_type, o.product_name_snapshot,
               o.plan_name_snapshot
@@ -763,7 +872,7 @@ export class CommerceRepository {
     const parameters = scope === 'TRUE' ? [transactionId] : [transactionId, actor.sub];
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT pt.id AS transaction_id, pt.provider_transaction_ref,
-              pt.amount_vnd, pt.received_at, o.id AS order_id,
+              pt.amount_minor AS amount_vnd, pt.received_at, o.id AS order_id,
               o.order_number, o.order_type, o.currency,
               o.provider_name_snapshot, o.product_name_snapshot,
               o.plan_name_snapshot
@@ -794,7 +903,8 @@ export class CommerceRepository {
 
   async listPaymentReview(): Promise<PaymentReviewRecord[]> {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT id, provider_event_id, provider_transaction_ref, amount_vnd,
+      `SELECT id, provider_event_id, provider_transaction_ref,
+              amount_minor AS amount_vnd,
               classification, review_status, review_reason, received_at,
               reviewed_at
        FROM payment_transactions
@@ -815,7 +925,8 @@ export class CommerceRepository {
          SET review_status = $2, review_reason = $3,
              reviewed_by_user_id = $4, reviewed_at = now()
          WHERE id = $1 AND review_status = 'OPEN'
-         RETURNING id, provider_event_id, provider_transaction_ref, amount_vnd,
+         RETURNING id, provider_event_id, provider_transaction_ref,
+                   amount_minor AS amount_vnd,
                    classification, review_status, review_reason, received_at,
                    reviewed_at`,
         [id, status, reason, actor.sub],
@@ -832,22 +943,6 @@ export class CommerceRepository {
       });
       return mapPaymentReview(result.rows[0]);
     });
-  }
-
-  private async classifyException(
-    client: PoolClient,
-    transactionId: string,
-    classification: 'AMOUNT_MISMATCH' | 'UNMATCHED',
-    orderId: string | null,
-    attemptId: string | null,
-  ): Promise<void> {
-    await client.query(
-      `UPDATE payment_transactions
-       SET classification = $2, review_status = 'OPEN',
-           order_id = $3, payment_attempt_id = $4
-       WHERE id = $1`,
-      [transactionId, classification, orderId, attemptId],
-    );
   }
 
   private async withTransaction<T>(

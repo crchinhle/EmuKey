@@ -5,6 +5,7 @@ import type {
   CreateOrderDto,
   OrderDto,
   OrderTermsDto,
+  PaymentHistoryDto,
 } from '../../infrastructure/api/generated';
 
 export type OrderSummary = OrderDto;
@@ -18,13 +19,22 @@ export function useOrders() {
   });
 }
 
+export function usePaymentHistory() {
+  return useQuery({
+    queryKey: ['payments', 'history'],
+    queryFn: () => requestJson<PaymentHistoryDto[]>('/payments/history'),
+  });
+}
+
 export function useOrder(id: string) {
   return useQuery({
     queryKey: ['orders', id],
     queryFn: () => requestJson<OrderDetail>(`/orders/${encodeURIComponent(id)}`),
     enabled: Boolean(id),
+    // Keep the return page in sync until the payment callback projects the
+    // accepted state. Downstream chain state is polled by useOrderLicense.
     refetchInterval: (query) =>
-      query.state.data?.orderStatus === 'WAITING_PAYMENT' ? 5_000 : false,
+      query.state.data?.orderStatus === 'WAITING_PAYMENT' ? 2_000 : false,
   });
 }
 
@@ -32,7 +42,7 @@ export function useOrderTerms(id: string) {
   return useQuery({
     queryKey: ['orders', id, 'terms'],
     queryFn: () =>
-      requestJson<OrderTermsDto>(`/orders/${encodeURIComponent(id)}/terms`),
+      requestJson<OrderTermsDto>(`/orders/${encodeURIComponent(id)}/service-terms`),
     enabled: Boolean(id),
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -61,15 +71,14 @@ export function useOrderMutations() {
       },
       onSuccess: refresh,
     }),
-    acceptTerms: useMutation({
+    acceptServiceTerms: useMutation({
       mutationFn: (order: OrderDetail) =>
         requestJson<OrderDetail>(
-          `/orders/${encodeURIComponent(order.id)}/accept-terms`,
+          `/orders/${encodeURIComponent(order.id)}/accept-service-terms`,
           {
             method: 'POST',
             body: JSON.stringify({
-              termsHash: order.termsHashSnapshot,
-              termsVersion: order.termsVersionSnapshot,
+              accepted: true,
             }),
           },
         ),
@@ -97,8 +106,8 @@ export function useOrderMutations() {
 export function orderStatusLabel(
   order: Pick<OrderSummary, 'orderStatus'>,
 ): string {
-  if (order.orderStatus === 'WAITING_TERMS_ACCEPTANCE')
-    return 'Chờ đồng ý Terms';
+  if (order.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE')
+    return 'Chờ đồng ý Service Terms';
   if (order.orderStatus === 'WAITING_PAYMENT') return 'Chờ thanh toán';
   if (order.orderStatus === 'PAYMENT_ACCEPTED') return 'Đã nhận thanh toán';
   if (order.orderStatus === 'CANCELLED') return 'Đã hủy';

@@ -1,5 +1,5 @@
-import { Alert, Button, Checkbox, Input, Result, Spin, Steps } from 'antd';
-import { useState } from 'react';
+import { Alert, Button, Checkbox, Result, Spin, Steps } from 'antd';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useProduct } from '../../application/catalog/catalogQueries';
@@ -11,6 +11,7 @@ import {
 } from '../../application/orders/orderQueries';
 import { OrderSummary } from '../components/OrderSummary';
 import { PageHeader } from '../components/WorkspacePrimitives';
+import { NotificationCenter } from '../components/NotificationCenter';
 
 export function BuyerCheckoutScreen() {
   const navigate = useNavigate();
@@ -21,28 +22,25 @@ export function BuyerCheckoutScreen() {
   const [order, setOrder] = useState<OrderDetail>();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const orderStarted = useRef(false);
   const orderMutations = useOrderMutations();
   const createOrderMutation = orderMutations.create;
   const termsQuery = useOrderTerms(order?.id ?? '');
 
-  function createOrder() {
-    if (!planId) return;
-    setError(null);
-    createOrderMutation.mutate(
-      { planId },
-      {
-        onSuccess: setOrder,
-      },
-    );
-  }
+  useEffect(() => {
+    if (product && planId && !order && !orderStarted.current) {
+      orderStarted.current = true;
+      createOrderMutation.mutate({ planId }, { onSuccess: setOrder });
+    }
+  }, [createOrderMutation, order, planId, product]);
 
-  function acceptTerms() {
+  function acceptServiceTerms() {
     if (!accepted || !order) {
       setError('Bạn cần đọc và đồng ý điều khoản trước khi tiếp tục.');
       return;
     }
     setError(null);
-    orderMutations.acceptTerms.mutate(order, {
+    orderMutations.acceptServiceTerms.mutate(order, {
       onSuccess: (acceptedOrder) =>
         void navigate(`/buyer/orders/${acceptedOrder.id}/payment`),
     });
@@ -74,8 +72,7 @@ export function BuyerCheckoutScreen() {
     <div className="workspace-screen">
       <PageHeader
         title="Hoàn tất mua bản quyền"
-        description="Backend tạo snapshot đơn hàng trước, sau đó bạn đọc và chấp nhận đúng phiên bản điều khoản đã lưu."
-        action={<Button>Thông báo</Button>}
+        action={<NotificationCenter />}
       />
       <Steps
         current={order ? 1 : 0}
@@ -90,33 +87,23 @@ export function BuyerCheckoutScreen() {
           <Alert
             showIcon
             type="success"
-            message="Đơn hàng và License sẽ được gắn với tài khoản EmuKey đang đăng nhập. Activation key không cần thêm khóa riêng hay khóa dự phòng theo tài khoản."
+            message="Đơn hàng và License sẽ được gắn với tài khoản Emukey đang đăng nhập. Activation key không cần thêm khóa riêng hay khóa dự phòng theo tài khoản."
           />
           <section className="workspace-card section-card">
             <h2>Cấu hình đơn hàng</h2>
-            <div className="form-grid">
-              <label>
-                Gói
-                <Input aria-label="Gói" value={selectedPlan.label} readOnly />
-              </label>
-              <label>
-                Số thiết bị tối đa
-                <Input
-                  aria-label="Số thiết bị tối đa"
-                  value={`${selectedPlan.devices} thiết bị`}
-                  readOnly
-                />
-              </label>
+            <div className="form-grid checkout-facts">
+              <div>
+                <span className="fact-label">Gói</span>
+                <strong className="readonly-value">{selectedPlan.label}</strong>
+              </div>
+              <div>
+                <span className="fact-label">Số thiết bị tối đa</span>
+                <strong className="readonly-value">{selectedPlan.devices} thiết bị</strong>
+              </div>
             </div>
           </section>
           <section className="workspace-card section-card">
-            {!order ? (
-              <Alert
-                showIcon
-                type="info"
-                message="Tạo đơn hàng để backend khóa giá, quyền sử dụng và phiên bản điều khoản."
-              />
-            ) : termsQuery.isPending ? (
+            {!order || termsQuery.isPending ? (
               <Spin aria-label="Đang tải điều khoản" />
             ) : termsQuery.isError || !termsQuery.data ? (
               <Alert
@@ -128,9 +115,7 @@ export function BuyerCheckoutScreen() {
               <>
                 <h2>Điều khoản cấp phép</h2>
                 <pre className="terms-document">{termsQuery.data.content}</pre>
-                <p className="muted-copy">
-                  Phiên bản {termsQuery.data.version} · Hash {termsQuery.data.hash}
-                </p>
+                <p className="muted-copy">Service Terms áp dụng cho từng đơn hàng.</p>
                 <Checkbox
                   checked={accepted}
                   onChange={(event) => {
@@ -144,14 +129,14 @@ export function BuyerCheckoutScreen() {
             )}
             {error ||
             createOrderMutation.error ||
-            orderMutations.acceptTerms.error ||
+            orderMutations.acceptServiceTerms.error ||
             termsQuery.error ? (
               <Alert
                 message={
                   error ??
                   describeApiError(
                     createOrderMutation.error ??
-                      orderMutations.acceptTerms.error ??
+                      orderMutations.acceptServiceTerms.error ??
                       termsQuery.error,
                     'Không thể hoàn tất bước đơn hàng và điều khoản. Vui lòng thử lại.',
                   )
@@ -171,27 +156,19 @@ export function BuyerCheckoutScreen() {
             <p>Quay lại danh mục nếu bạn muốn chọn một gói khác.</p>
           </section>
           <div className="workspace-actions">
-            <Button onClick={() => void navigate('/products/securedesk')}>
+            <Button onClick={() => void navigate(`/products/${encodeURIComponent(productSlug)}`)}>
               Quay lại
             </Button>
-            <Button
-              type="primary"
-              disabled={
-                order
-                  ? !accepted || termsQuery.isPending
-                  : createOrderMutation.isPending
-              }
+              <Button
+                type="primary"
+                disabled={!order || !accepted || termsQuery.isPending}
               loading={
                 createOrderMutation.isPending ||
-                orderMutations.acceptTerms.isPending
+                orderMutations.acceptServiceTerms.isPending
               }
-              onClick={order ? acceptTerms : createOrder}
+              onClick={acceptServiceTerms}
             >
-              {order
-                ? 'Đồng ý và tiếp tục thanh toán'
-                : createOrderMutation.isPending
-                  ? 'Đang tạo...'
-                  : 'Tạo đơn hàng'}
+              Đồng ý và tiếp tục thanh toán
             </Button>
           </div>
         </aside>

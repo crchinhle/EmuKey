@@ -73,7 +73,7 @@ describe('ViemChainRelayer', () => {
 
     await expect(relayer.getSubmissionContext(input)).resolves.toEqual({
       pendingNonce: 9,
-      relayerAddress: account.address,
+      relayerAddress: account.address.toLowerCase(),
     });
     const transaction = await relayer.prepare(input, 9);
     await relayer.broadcast(transaction);

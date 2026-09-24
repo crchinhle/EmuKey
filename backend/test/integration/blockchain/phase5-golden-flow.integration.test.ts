@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
+import { createHmac } from 'node:crypto';
 import { resolve } from 'node:path';
+import { performance } from 'node:perf_hooks';
 
 import {
   PostgreSqlContainer,
@@ -10,16 +12,20 @@ import {
   type StartedRedisContainer,
 } from '@testcontainers/redis';
 import { Redis } from 'ioredis';
+import { ConflictException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { createPublicClient, defineChain, http, type Address } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 
 import { ActivationEnvelopeRecoveryService } from '../../../src/modules/blockchain/application/activation-envelope-recovery.service.js';
 import { ChainCommandService } from '../../../src/modules/blockchain/application/chain-command.service.js';
 import { ChainIndexerService } from '../../../src/modules/blockchain/application/chain-indexer.service.js';
 import { LicenseQueryService } from '../../../src/modules/blockchain/application/license-query.service.js';
+import { LicensingService } from '../../../src/modules/licensing/licensing.service.js';
 import { RpcChainIndexerService } from '../../../src/modules/blockchain/application/rpc-chain-indexer.service.js';
 import { ChainCommandRepository } from '../../../src/modules/blockchain/infrastructure/chain-command.repository.js';
 import { ChainEventRepository } from '../../../src/modules/blockchain/infrastructure/chain-event.repository.js';
+import { LicensingRepository } from '../../../src/modules/licensing/infrastructure/licensing.repository.js';
 import { ChainIndexerCheckpointRepository } from '../../../src/modules/blockchain/infrastructure/chain-indexer-checkpoint.repository.js';
 import { LicenseProjectionRepository } from '../../../src/modules/blockchain/infrastructure/license-projection.repository.js';
 import { LocalPrivateKeyChainSigner } from '../../../src/modules/blockchain/infrastructure/local-private-key-chain-signer.js';
@@ -118,16 +124,16 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       undefined,
       { planId },
     );
-    await commerce.acceptTerms(customer, order.id, {
-      termsHash: order.termsHashSnapshot,
-      termsVersion: order.termsVersionSnapshot,
-    });
+    await commerce.acceptServiceTerms(customer, order.id, { accepted: true });
     const checkout = await commerce.checkout(customer, order.id);
+    const purchaseProviderClock = await pool.query<{ occurred_at: Date }>(
+      "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
+    );
     const payment = await commerce.ingestIpn(
       {
         amountVnd: order.priceVndSnapshot,
         eventId: 'phase5-customer-event-1',
-        occurredAt: new Date().toISOString(),
+        occurredAt: purchaseProviderClock.rows[0]!.occurred_at.toISOString(),
         providerReference: checkout.checkoutReference,
       },
       webhookSecret,
@@ -149,6 +155,11 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       new ActivationEnvelopeRecoveryService(commandRepository, envelopes),
     );
     expect(await commands.processNext('anonymous-worker')).toBe(commandId);
+    const submittedIssue = await pool.query<{ last_error: string | null; status: string }>(
+      'SELECT status, last_error FROM chain_commands WHERE id=$1',
+      [commandId],
+    );
+    expect(submittedIssue.rows[0]).toEqual({ last_error: null, status: 'SUBMITTED' });
 
     const queries = new LicenseQueryService(
       new LicenseProjectionRepository(pool),
@@ -160,6 +171,9 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
     ).rejects.toMatchObject({ status: 404 });
 
     await commands.reconcileReceipt('receipt-worker');
+    await expect(
+      commandRepository.claimSubmitted('receipt-worker-repeat'),
+    ).resolves.toBeNull();
     await fetch(rpcUrl!, {
       body: JSON.stringify({
         id: 1,
@@ -214,26 +228,282 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
     const projection = await queries.find(customer, licenseId);
     expect(projection).toMatchObject({ id: licenseId, status: 'ACTIVE' });
 
-    await pool.query(
-      `UPDATE licenses SET status='SUSPENDED', suspended_at=now(),
-         last_applied_chain_event_id=NULL WHERE id=$1`,
-      [licenseId],
+    const licensingRepository = new LicensingRepository(pool);
+    const licensingProjection = new LicenseProjectionRepository(pool);
+    const identity = {
+      consumeLicensingActionVerification: vi.fn().mockResolvedValue(undefined),
+    };
+    const licensing = new LicensingService(
+      licensingRepository,
+      licensingProjection,
+      envelopes,
+      redis,
+      new TextEncoder().encode('phase5-test-jwt-secret'),
+      { chainId: 31_337, contractAddress: contractAddress!, network: 'hardhat' },
+      identity as never,
     );
-    await pool.query(
-      `UPDATE chain_commands SET status='SUBMITTED_UNKNOWN', confirmed_at=NULL
-       WHERE id=$1`,
-      [commandId],
+    const deviceAccount = privateKeyToAccount(`0x${'55'.repeat(32)}`);
+    const deviceRef = 'phase6-device-1';
+    const storedDeviceRef = createHmac(
+      'sha256',
+      new TextEncoder().encode('phase5-test-jwt-secret'),
+    ).update(`device-ref:${deviceRef}`).digest('hex');
+    const challenge = await licensing.challenge(customer, { deviceRef, licenseId, purpose: 'ACTIVATE_DEVICE' });
+    const proof = await deviceAccount.signMessage({ message: challenge.challenge });
+    const activation = await licensing.activate(customer, {
+      activationKey: retrieved.activationKey,
+      challenge: challenge.challenge,
+      devicePublicKey: deviceAccount.address,
+      deviceRef,
+      licenseId,
+      proof,
+    });
+    expect(await commands.processNext('phase6-activation-worker')).toBe(activation.commandId);
+    await commands.reconcileReceipt('phase6-activation-receipt');
+    await fetch(rpcUrl!, {
+      body: JSON.stringify({ id: 2, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    await fetch(rpcUrl!, {
+      body: JSON.stringify({ id: 3, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    await expect(rpcIndexer.poll('phase6-rpc-indexer')).resolves.toBeGreaterThanOrEqual(1);
+    const devices = await licensingProjection.listCustomerDevices(customer.sub, licenseId);
+    expect(devices).toHaveLength(1);
+    expect(devices[0]).toMatchObject({ deviceRef: storedDeviceRef, status: 'ACTIVE', finality: 'CONFIRMED' });
+    const activationLoadStarted = performance.now();
+    const activationChallenges = await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const requestStarted = performance.now();
+        const challenge = await licensing.challenge(customer, {
+          deviceId: devices[0]!.id,
+          deviceRef,
+          licenseId,
+          purpose: 'ISSUE_ENTITLEMENT',
+        });
+        return { challenge, elapsedMs: performance.now() - requestStarted };
+      }),
     );
+    const activationLoadElapsed = performance.now() - activationLoadStarted;
+    const activationLoadSamples = activationChallenges.map(({ elapsedMs }) => elapsedMs).sort((a, b) => a - b);
+    const percentile = (ratio: number) => activationLoadSamples[Math.min(activationLoadSamples.length - 1, Math.floor(activationLoadSamples.length * ratio))] ?? 0;
+    console.log(JSON.stringify({ phase8: 'LOAD_ACTIVATION', requests: activationChallenges.length, concurrency: activationChallenges.length, totalElapsedMs: Number(activationLoadElapsed.toFixed(2)), p50Ms: Number(percentile(0.5).toFixed(2)), p95Ms: Number(percentile(0.95).toFixed(2)), p99Ms: Number(percentile(0.99).toFixed(2)), errorRate: 0 }));
+    const entitlementChallenge = await licensing.challenge(customer, { deviceId: devices[0]!.id, deviceRef, licenseId, purpose: 'ISSUE_ENTITLEMENT' });
+    const entitlementProof = await deviceAccount.signMessage({ message: entitlementChallenge.challenge });
+    const entitlement = await licensing.issueEntitlement(customer, { licenseId, deviceId: devices[0]!.id, challenge: entitlementChallenge.challenge, proof: entitlementProof });
+    expect(entitlement).toMatchObject({ licenseId, deviceId: devices[0]!.id });
+
+    const rotation = await licensing.rotate(customer, licenseId, {
+      actionToken: 'rotation-action-token-with-at-least-32-characters',
+      currentKey: retrieved.activationKey,
+    });
+    expect(await commands.processNext('phase6-rotation-worker')).toBe(rotation.commandId);
+    await commands.reconcileReceipt('phase6-rotation-receipt');
+    for (let index = 0; index < 2; index += 1) {
+      await fetch(rpcUrl!, {
+        body: JSON.stringify({ id: 30 + index, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+    }
+    await expect(rpcIndexer.poll('phase6-rpc-indexer-rotation')).resolves.toBeGreaterThanOrEqual(1);
+    const rotated = await queries.retrieveActivation(customer, licenseId);
+    expect(rotated.keyVersion).toBe(2);
+    expect(rotated.activationKey).not.toBe(retrieved.activationKey);
+    await expect(
+      licensing.verifyEntitlement(customer, { token: entitlement.token }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const revokeChallenge = await licensing.challenge(customer, { deviceId: devices[0]!.id, deviceRef, licenseId, purpose: 'SELF_REVOKE_DEVICE' });
+    const revokeProof = await deviceAccount.signMessage({ message: revokeChallenge.challenge });
+    const revocation = await licensing.revokeDevice(customer, licenseId, devices[0]!.id, {
+      activationKey: rotated.activationKey,
+      actionToken: 'test-action-token',
+      challenge: revokeChallenge.challenge,
+      proof: revokeProof,
+    });
+    expect(await commands.processNext('phase6-revoke-worker')).toBe(revocation.commandId);
+    await commands.reconcileReceipt('phase6-revoke-receipt');
+    await fetch(rpcUrl!, {
+      body: JSON.stringify({ id: 4, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    await fetch(rpcUrl!, {
+      body: JSON.stringify({ id: 5, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    await expect(rpcIndexer.poll('phase6-rpc-indexer-revoke')).resolves.toBeGreaterThanOrEqual(1);
+    await expect(licensingProjection.listCustomerDevices(customer.sub, licenseId)).resolves.toMatchObject([
+      { deviceRef: storedDeviceRef, status: 'REVOKED', finality: 'CONFIRMED' },
+    ]);
+    await expect(
+      licensing.verifyEntitlement(customer, { token: entitlement.token }),
+    ).rejects.toBeInstanceOf(ConflictException);
+
+    const corruptionClient = await pool.connect();
+    try {
+      await corruptionClient.query('SET session_replication_role = replica');
+      await corruptionClient.query(
+        `UPDATE chain_commands SET status='SUBMITTED_UNKNOWN', confirmed_at=NULL,
+           confirmation_chain_event_id=NULL WHERE id=$1`,
+        [commandId],
+      );
+    } finally {
+      await corruptionClient.query('SET session_replication_role = origin');
+      corruptionClient.release();
+    }
     const repair = await eventRepository.reconcileCanonicalProjections();
     expect(repair).toMatchObject({
       commandRepairs: 1,
-      licenseIds: [licenseId],
-      licenseRepairs: 1,
+      licenseIds: [],
+      licenseRepairs: 0,
       remainingMismatches: 0,
     });
     await expect(queries.find(customer, licenseId)).resolves.toMatchObject({
       id: licenseId,
       status: 'ACTIVE',
     });
+
+    const beforeRenewal = await queries.find(customer, licenseId);
+    const renewalOrder = await commerce.createOrder(
+      customer,
+      '00000000-0000-4000-8000-000000000704',
+      rotated.activationKey,
+      { planId, targetLicenseId: licenseId },
+    );
+    await commerce.acceptServiceTerms(customer, renewalOrder.id, { accepted: true });
+    const renewalCheckout = await commerce.checkout(customer, renewalOrder.id);
+    const renewalProviderClock = await pool.query<{ occurred_at: Date }>(
+      "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
+    );
+    const renewalPayment = await commerce.ingestIpn(
+      {
+        amountVnd: renewalOrder.priceVndSnapshot,
+        eventId: 'phase6-renewal-event-1',
+        occurredAt: renewalProviderClock.rows[0]!.occurred_at.toISOString(),
+        providerReference: renewalCheckout.checkoutReference,
+      },
+      webhookSecret,
+    );
+    expect(await commands.processNext('phase6-renewal-worker')).toBe(renewalPayment.commandId);
+    await commands.reconcileReceipt('phase6-renewal-receipt');
+    for (let index = 0; index < 2; index += 1) {
+      await fetch(rpcUrl!, {
+        body: JSON.stringify({ id: 40 + index, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+    }
+    await expect(rpcIndexer.poll('phase6-rpc-indexer-renewal')).resolves.toBeGreaterThanOrEqual(1);
+    const afterRenewal = await queries.find(customer, licenseId);
+    expect(new Date(String(afterRenewal.expiresAt)).getTime()).toBeGreaterThan(
+      new Date(String(beforeRenewal.expiresAt)).getTime(),
+    );
+
+    const provider = {
+      role: 'PROVIDER_ADMIN' as const,
+      sessionVersion: 1,
+      sub: '00000000-0000-4000-8000-000000000002',
+    };
+    const suspend = await licensing.lifecycle(provider, licenseId, {
+      command: 'SUSPEND_LICENSE',
+      reason: 'phase6 production-like test',
+    });
+    expect(await commands.processNext('phase6-suspend-worker')).toBe(suspend.commandId);
+    await commands.reconcileReceipt('phase6-suspend-receipt');
+    for (let index = 0; index < 2; index += 1) {
+      await fetch(rpcUrl!, {
+        body: JSON.stringify({ id: 50 + index, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+    }
+    await expect(rpcIndexer.poll('phase6-rpc-indexer-suspend')).resolves.toBeGreaterThanOrEqual(1);
+    await expect(queries.find(customer, licenseId)).resolves.toMatchObject({ status: 'SUSPENDED' });
+
+    const resume = await licensing.lifecycle(provider, licenseId, {
+      command: 'RESUME_LICENSE',
+    });
+    expect(await commands.processNext('phase6-resume-worker')).toBe(resume.commandId);
+    await commands.reconcileReceipt('phase6-resume-receipt');
+    for (let index = 0; index < 2; index += 1) {
+      await fetch(rpcUrl!, {
+        body: JSON.stringify({ id: 60 + index, jsonrpc: '2.0', method: 'evm_mine', params: [] }),
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+    }
+    await expect(rpcIndexer.poll('phase6-rpc-indexer-resume')).resolves.toBeGreaterThanOrEqual(1);
+    await expect(queries.find(customer, licenseId)).resolves.toMatchObject({ status: 'ACTIVE' });
+
+    const concurrentDevices = await Promise.all(
+      ['66', '77'].map(async (byte, index) => {
+        const account = privateKeyToAccount(`0x${byte.repeat(32)}`);
+        const ref = `phase6-concurrent-device-${index}`;
+        const nonce = await licensing.challenge(customer, { deviceRef: ref, licenseId, purpose: 'ACTIVATE_DEVICE' });
+        const signature = await account.signMessage({ message: nonce.challenge });
+        return { account, nonce, ref, signature };
+      }),
+    );
+    const concurrentResults = await Promise.allSettled(
+      concurrentDevices.map(({ account, nonce, ref, signature }) =>
+        licensing.activate(customer, {
+          activationKey: rotated.activationKey,
+          challenge: nonce.challenge,
+          devicePublicKey: account.address,
+          deviceRef: ref,
+          licenseId,
+          proof: signature,
+        }),
+      ),
+    );
+    expect(concurrentResults.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(concurrentResults.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+
+    const replayDevice = privateKeyToAccount(`0x${'88'.repeat(32)}`);
+    const replayRef = 'phase6-replay-device';
+    const replayChallenge = await licensing.challenge(customer, { deviceRef: replayRef, licenseId, purpose: 'ACTIVATE_DEVICE' });
+    const replayProof = await replayDevice.signMessage({ message: replayChallenge.challenge });
+    await expect(licensing.activate(customer, {
+      activationKey: rotated.activationKey,
+      challenge: replayChallenge.challenge,
+      devicePublicKey: replayDevice.address,
+      deviceRef: replayRef,
+      licenseId,
+      proof: replayProof,
+    })).rejects.toBeInstanceOf(ConflictException);
+    await expect(licensing.activate(customer, {
+      activationKey: rotated.activationKey,
+      challenge: replayChallenge.challenge,
+      devicePublicKey: replayDevice.address,
+      deviceRef: replayRef,
+      licenseId,
+      proof: replayProof,
+    })).rejects.toMatchObject({ status: 401 });
+
+    await expect(
+      eventRepository.deriveExpiredFromCanonicalChain(
+        new Date(new Date(String(afterRenewal.expiresAt)).getTime() + 1_000),
+      ),
+    ).resolves.toContain(licenseId);
+    await expect(queries.find(customer, licenseId)).resolves.toMatchObject({ status: 'EXPIRED' });
+
+    const resumeEvent = await pool.query<{ id: string }>(
+      `SELECT id FROM chain_events WHERE chain_command_id=$1 AND finality_status='CONFIRMED'`,
+      [resume.commandId],
+    );
+    await eventRepository.markReorged(resumeEvent.rows[0]!.id);
+    await expect(licensingRepository.commandStatus(provider.sub, resume.commandId)).resolves.toMatchObject({
+      status: 'SUBMITTED_UNKNOWN',
+    });
+    await expect(pool.query(
+      'SELECT finality_status FROM chain_events WHERE id=$1',
+      [resumeEvent.rows[0]!.id],
+    )).resolves.toMatchObject({ rows: [{ finality_status: 'REORGED' }] });
   });
 });

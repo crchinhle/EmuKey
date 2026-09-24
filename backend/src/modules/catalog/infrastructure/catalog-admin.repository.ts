@@ -5,7 +5,6 @@ import type { Hex } from 'viem';
 
 import { AuditWriter } from '../../../platform/audit/audit-writer.js';
 import { planCommitment } from '../../../platform/crypto/license-crypto.js';
-import type { LicenseTerms } from '../../../platform/terms/terms-loader.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { BillingCycle } from '../presentation/catalog.dto.js';
 
@@ -37,8 +36,6 @@ export interface PlanRecord {
   providerUserId: string;
   publishedAt: Date | null;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-  termsHash: Hex;
-  termsVersion: number;
   updatedAt: Date;
   version: number;
 }
@@ -107,8 +104,6 @@ function mapPlan(row: Record<string, unknown>): PlanRecord {
     providerUserId: String(row.provider_user_id),
     publishedAt: dateOrNull(row.published_at),
     status: row.status as PlanRecord['status'],
-    termsHash: bufferHex(row.terms_hash),
-    termsVersion: Number(row.terms_version),
     updatedAt: new Date(String(row.updated_at)),
     version: Number(row.version),
   };
@@ -265,7 +260,6 @@ export class CatalogAdminRepository {
   async createPlan(
     actor: AuthPrincipal,
     input: Required<PlanInput>,
-    terms: LicenseTerms,
   ): Promise<PlanRecord> {
     return this.withTransaction(async (client) => {
       const productResult = await client.query<Record<string, unknown>>(
@@ -295,15 +289,14 @@ export class CatalogAdminRepository {
         planVersion: version,
         productId: input.productId,
         providerChainAddress: String(product.provider_chain_address) as `0x${string}`,
-        termsHash: terms.hash,
       });
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO plans
           (id, product_id, provider_user_id, code, version, name, billing_cycle,
-           duration_months, price_vnd, max_active_devices, entitlements,
-           terms_version, terms_hash, plan_commitment)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                 decode($13, 'hex'), decode($14, 'hex'))
+            duration_months, price_vnd, max_active_devices, entitlements,
+            plan_commitment)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                  decode($12, 'hex'))
          RETURNING *`,
         [
           id,
@@ -317,9 +310,7 @@ export class CatalogAdminRepository {
           input.priceVnd,
           input.maxActiveDevices,
           JSON.stringify(input.entitlements),
-          terms.version,
-          terms.hash.slice(2),
-          commitment.slice(2),
+           commitment.slice(2),
         ],
       );
       const plan = mapPlan(result.rows[0] ?? {});
@@ -358,8 +349,7 @@ export class CatalogAdminRepository {
         planId: current.id,
         planVersion: current.version,
         productId: current.productId,
-        providerChainAddress: providerChainAddress as `0x${string}`,
-        termsHash: current.termsHash,
+         providerChainAddress: providerChainAddress as `0x${string}`,
       });
       const result = await client.query<Record<string, unknown>>(
         `UPDATE plans
