@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Empty, Spin, Table, Tag } from 'antd';
+import { Alert, Button, Checkbox, Empty, Input, Spin, Table } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -32,6 +32,7 @@ export function ComparePlansScreen() {
     [searchParams],
   );
   const [selectedIds, setSelectedIds] = useState<string[]>(initialIds);
+  const [query, setQuery] = useState('');
   const products = useProducts();
   const comparison = useComparePlans(selectedIds);
   const choices = (products.data ?? []).flatMap((product) =>
@@ -52,13 +53,16 @@ export function ComparePlansScreen() {
         </nav>
         <section className="catalog-hero comparison-hero">
           <div>
-            <Tag color="blue">CAT-05</Tag>
             <h1>So sánh gói bản quyền</h1>
-            <p>Chọn từ hai đến bốn gói. Dữ liệu so sánh được lấy trực tiếp từ catalog đã công bố.</p>
+            <p>Chọn từ hai đến bốn gói để đối chiếu giá, thời hạn, số thiết bị và quyền lợi.</p>
+            <Input aria-label="Tìm gói so sánh" placeholder="Tìm sản phẩm hoặc tên gói" value={query} onChange={(event) => setQuery(event.target.value)} />
+            <p>Đã chọn {selectedIds.length}/4 gói</p>
+            {selectedIds.length ? <Button onClick={() => setSelectedIds([])}>Bỏ chọn tất cả</Button> : null}
           </div>
           <div className="comparison-selection" aria-label="Chọn gói để so sánh">
             {products.isLoading ? <Spin aria-label="Đang tải gói" /> : null}
-            {choices.map((choice) => (
+            {products.isError ? <Alert type="error" title="Không thể tải các gói" action={<Button onClick={() => void products.refetch()}>Thử lại</Button>} /> : null}
+            {choices.filter((choice) => selectedIds.includes(choice.id) || choice.label.toLocaleLowerCase('vi').includes(query.trim().toLocaleLowerCase('vi'))).map((choice) => (
               <Checkbox
                 checked={selectedIds.includes(choice.id)}
                 disabled={!selectedIds.includes(choice.id) && selectedIds.length >= 4}
@@ -107,7 +111,7 @@ export function ComparePlansScreen() {
                   : {})}
                 type="primary"
               >
-                Chọn {comparison.data.plans[0]!.name}
+                Chọn {firstSelectedChoice?.label}
               </Button>
             </div>
           </section>

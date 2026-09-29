@@ -26,6 +26,7 @@ export const providerShell: RoleShellConfig = {
   items: [
     { label: 'Tổng quan', to: '/provider', end: true },
     { label: 'Sản phẩm & gói', to: '/provider/catalog' },
+    { label: 'Bản quyền', to: '/provider/licenses' },
     { label: 'Đơn hàng & vận hành', to: '/provider/operations' },
     { label: 'Kho tri thức AI', to: '/provider/knowledge' },
     { label: 'Hồ sơ', to: '/provider/profile' },
@@ -46,10 +47,11 @@ export const systemShell: RoleShellConfig = {
   role: 'SYSTEM_ADMIN',
   account: 'sysadmin@demo.emukey.vn',
   items: [
-    { label: 'Tất cả sự kiện', to: '/system/console', end: true },
+    { label: 'Tổng quan', to: '/system/console', end: true },
     { label: 'Người dùng', to: '/system/console?view=users' },
     { label: 'Thanh toán', to: '/system/console?view=payments' },
     { label: 'Blockchain', to: '/system/console?view=blockchain' },
+    { label: 'Nhật ký', to: '/system/console?view=audit' },
   ],
 };
 
@@ -95,7 +97,7 @@ export function RoleShell({ config }: { readonly config: RoleShellConfig }) {
         <Link
           className={
             item.end
-              ? location.pathname === item.to
+              ? current === item.to
                 ? 'active'
                 : ''
               : current === item.to || (!item.to.includes('?') && location.pathname.startsWith(item.to))
@@ -135,6 +137,7 @@ export function RoleShell({ config }: { readonly config: RoleShellConfig }) {
           {auth?.user ? <NotificationCenter /> : null}
           <div className="role-account-row">
             <small>{auth?.user?.email ?? config.account}</small>
+            {auth?.user ? <Button type="text" onClick={() => void auth.logout()}>Đăng xuất</Button> : null}
             {auth?.user ? <Button aria-label="Cài đặt tài khoản" icon={<SettingOutlined />} onClick={() => void navigate(roleSettingsPath(auth.user!.role))} type="text" /> : null}
           </div>
         </div>
@@ -149,6 +152,7 @@ export function RoleShell({ config }: { readonly config: RoleShellConfig }) {
           />
           <div className="mobile-menu-panel role-mobile-menu" id="role-mobile-menu" role="dialog" aria-label={`Menu ${roleLabels[config.role]}`}>
             {navigation}
+            {auth?.user ? <div className="mobile-menu-actions"><NotificationCenter /><Button onClick={() => { setMenuOpen(false); void navigate(roleSettingsPath(auth.user!.role)); }}>Hồ sơ tài khoản</Button><Button onClick={() => { setMenuOpen(false); void auth.logout(); }}>Đăng xuất</Button></div> : null}
           </div>
         </>
       ) : null}

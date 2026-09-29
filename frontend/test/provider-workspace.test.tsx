@@ -10,11 +10,12 @@ describe('Provider workspace', () => {
     render(<App initialEntries={['/provider']} />);
 
     expect(
-      screen.getByRole('heading', { name: 'Trang chủ Provider' }),
+      screen.getByRole('heading', { name: 'Tổng quan nhà cung cấp' }),
     ).toBeTruthy();
     expect(screen.getByText('EmuKey').className).toContain('brand-wordmark');
     expect(screen.getByRole('link', { name: 'Hồ sơ' })).toBeTruthy();
-    expect(screen.getByText(/chưa có canonical Phase 1-7 API/i)).toBeTruthy();
+    expect(screen.queryByText(/canonical Phase 1-7 API/i)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Quản lý danh mục' })).toBeTruthy();
   });
 
   it('does not display a local-only knowledge file as uploaded', () => {
@@ -43,9 +44,9 @@ describe('Provider workspace', () => {
   it('exposes license lifecycle controls in the Provider workspace', async () => {
     render(<App initialEntries={['/provider/licenses']} />);
 
-    expect(await screen.findByRole('heading', { name: 'Bản quyền Provider' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Bản quyền nhà cung cấp' })).toBeTruthy();
     expect(await screen.findByText(/EMU-/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Suspend' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tạm ngưng' }));
     expect(await screen.findByText(/Command PENDING/)).toBeTruthy();
     await waitFor(() => expect(
       vi.mocked(fetch).mock.calls.some(([input]) => {
@@ -54,6 +55,6 @@ describe('Provider workspace', () => {
       }),
     ).toBe(true));
     expect(await screen.findByText(/Command CONFIRMED/)).toBeTruthy();
-    await waitFor(() => expect(screen.getByText('ACTIVE')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Hoạt động')).toBeTruthy());
   });
 });

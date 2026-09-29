@@ -29,6 +29,13 @@ const validEnvironment = {
 };
 
 describe('validateEnvironment', () => {
+  it('rejects receipt timing outside SePay sandbox and rejects mixing clock policies', () => {
+    const sepay = { ...validEnvironment, PAYMENT_ADAPTER: 'sepay', SEPAY_ENV: 'sandbox', SEPAY_MERCHANT_ID: 'test', SEPAY_SECRET_KEY: 'secret', WEB_APP_URL: 'https://demo.test', SEPAY_SANDBOX_RECEIPT_TIMING: 'true' };
+    expect(validateEnvironment(sepay).SEPAY_SANDBOX_RECEIPT_TIMING).toBe(true);
+    expect(() => validateEnvironment({ ...sepay, SEPAY_ENV: 'production' })).toThrow('SEPAY_SANDBOX_RECEIPT_TIMING requires non-production SePay sandbox');
+    expect(() => validateEnvironment({ ...sepay, NODE_ENV: 'production' })).toThrow('SEPAY_SANDBOX_RECEIPT_TIMING requires non-production SePay sandbox');
+    expect(() => validateEnvironment({ ...sepay, SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: '144' })).toThrow('Sandbox receipt timing cannot be combined with a clock offset');
+  });
   it('normalizes a complete local configuration', () => {
     const result = validateEnvironment(validEnvironment);
 

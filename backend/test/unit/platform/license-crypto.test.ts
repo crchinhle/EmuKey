@@ -11,6 +11,16 @@ import {
 } from '../../../src/platform/crypto/license-crypto.js';
 
 describe('license cryptographic protocol V2', () => {
+  it.each([
+    ['e02c3bd8-b66e-a31b-83bf-ecaf10af8c83', '0xe02c3bd8b66ea31b83bfecaf10af8c83'],
+    ['FEEB4F2C-3EA5-9838-0B4A-185D6E3DAB6F', '0xfeeb4f2c3ea598380b4a185d6e3dab6f'],
+    ['01900000-0000-7000-8000-000000000001', '0x01900000000070008000000000000001'],
+  ])('preserves all 128 bits of database UUID %s', (id, bytes) => {
+    expect(uuidToBytes16(id)).toBe(bytes);
+  });
+  it.each(['not-a-uuid', 'e02c3bd8b66ea31b83bfecaf10af8c83', 'g02c3bd8-b66e-a31b-83bf-ecaf10af8c83', 'e02c3bd8-b66e-a31b-83bf-ecaf10af8c830'])('rejects malformed database UUID %s', (id) => {
+    expect(() => uuidToBytes16(id)).toThrow('Invalid UUID');
+  });
   const vector = JSON.parse(
     readFileSync(resolve(process.cwd(), 'contracts/test-vectors/crypto-v2.json'), 'utf8'),
   ) as {

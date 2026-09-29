@@ -8,6 +8,7 @@ describe('worker platform contract', () => {
     LOG_LEVEL: 'fatal',
     OTEL_ENABLED: 'false',
     PAYMENT_ADAPTER: 'fake',
+    SEPAY_SANDBOX_RECEIPT_TIMING: 'false',
     PAYMENT_WEBHOOK_SECRET: 'test-payment-secret',
     AI_ADAPTER: 'fake',
     EMAIL_ADAPTER: 'fake',

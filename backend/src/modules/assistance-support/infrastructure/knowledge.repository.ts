@@ -4,6 +4,10 @@ import { PDFParse } from 'pdf-parse';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { PrivateStoragePort } from '../../../platform/storage/private-storage.port.js';
 
+function mapDocument(row: Record<string, unknown>) {
+  return { id: String(row.id), title: String(row.title), logicalDocumentKey: String(row.logical_document_key), version: Number(row.version), status: String(row.status), isCurrent: row.is_current === true };
+}
+
 export class KnowledgeRepository {
   constructor(private readonly pool: Pool, private readonly storage?: PrivateStoragePort, private readonly limits = { maxFileBytes: 10_485_760, maxChunks: 500, maxChunkBytes: 12_000, allowedMimeTypes: ['application/pdf', 'text/plain'] }) {}
   async create(actor: AuthPrincipal, input: { chunks?: string[]; file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }; logicalDocumentKey: string; productId: string; sourceType: string; title: string; version?: number }) {
@@ -11,24 +15,30 @@ export class KnowledgeRepository {
     let storageKey: string | null = null;
     try {
       await client.query('BEGIN');
-       const version = input.version ?? 1;
+       const owned = await client.query('SELECT id FROM products WHERE id = $1 AND provider_user_id = $2 FOR SHARE', [input.productId, actor.sub]);
+       if (!owned.rows[0]) throw new Error('KNOWLEDGE_PRODUCT_NOT_FOUND');
+       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`knowledge:${actor.sub}:${input.logicalDocumentKey}`]);
+       const versions = await client.query<{ next_version: number }>('SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM knowledge_documents WHERE provider_user_id = $1 AND logical_document_key = $2', [actor.sub, input.logicalDocumentKey]);
+       const version = input.version ?? Number(versions.rows[0]?.next_version ?? 1);
+       const duplicate = await client.query('SELECT id FROM knowledge_documents WHERE provider_user_id = $1 AND logical_document_key = $2 AND version = $3', [actor.sub, input.logicalDocumentKey, version]);
+       if (duplicate.rows[0]) throw new Error('KNOWLEDGE_VERSION_EXISTS');
        if (input.file && (!this.storage || input.file.size > this.limits.maxFileBytes || !this.limits.allowedMimeTypes.includes(input.file.mimetype) || !validFile(input.file) || (input.sourceType === 'PDF' && input.file.mimetype !== 'application/pdf') || (input.sourceType === 'TXT' && input.file.mimetype !== 'text/plain'))) throw new Error('KNOWLEDGE_FILE_NOT_ALLOWED');
         const chunks = input.chunks ?? (input.file ? await extractChunks(input.file) : []);
        if (chunks.length === 0 || chunks.length > this.limits.maxChunks || chunks.some((chunk) => Buffer.byteLength(chunk, 'utf8') > this.limits.maxChunkBytes)) throw new Error('KNOWLEDGE_CHUNK_LIMIT');
        storageKey = input.file ? `knowledge/${actor.sub}/${input.logicalDocumentKey}/${version}-${createHash('sha256').update(input.file.buffer).digest('hex')}` : null;
        if (input.file && storageKey) await this.storage!.put(storageKey, input.file.buffer, input.file.mimetype);
-       const document = await client.query<{ id: string }>(`INSERT INTO knowledge_documents (provider_user_id, product_id, logical_document_key, version, source_type, title, storage_key, storage_mime_type, storage_size_bytes, checksum, status) SELECT $1, id, $2, $3, $4, $5, $6, $7, $8, decode($9, 'hex'), 'PROCESSING' FROM products WHERE id = $10 AND provider_user_id = $1 RETURNING id`, [actor.sub, input.logicalDocumentKey, version, input.sourceType, input.title, storageKey, input.file?.mimetype ?? null, input.file?.size ?? null, input.file ? createHash('sha256').update(input.file.buffer).digest('hex') : null, input.productId]);
+       const document = await client.query<Record<string, unknown>>(`INSERT INTO knowledge_documents (provider_user_id, product_id, logical_document_key, version, source_type, title, storage_key, storage_mime_type, storage_size_bytes, checksum, status) SELECT $1, id, $2, $3, $4, $5, $6, $7, $8, decode($9, 'hex'), 'PROCESSING' FROM products WHERE id = $10 AND provider_user_id = $1 RETURNING id`, [actor.sub, input.logicalDocumentKey, version, input.sourceType, input.title, storageKey, input.file?.mimetype ?? null, input.file?.size ?? null, input.file ? createHash('sha256').update(input.file.buffer).digest('hex') : null, input.productId]);
        if (!document.rows[0]) throw new Error('KNOWLEDGE_PRODUCT_NOT_FOUND');
        for (const [index, content] of chunks.entries()) await client.query(`INSERT INTO knowledge_chunks (document_id, chunk_index, content, token_count) VALUES ($1, $2, $3, $4)`, [document.rows[0].id, index, content, content.split(/\s+/u).length]);
        await client.query(`UPDATE knowledge_documents SET status = 'READY', updated_at = now() WHERE id = $1`, [document.rows[0].id]);
       await client.query('COMMIT');
-      return document.rows[0];
+      return mapDocument({ ...document.rows[0], title: input.title, logical_document_key: input.logicalDocumentKey, version, status: 'READY', is_current: false });
     } catch (error) { await client.query('ROLLBACK'); if (storageKey) await this.storage?.delete(storageKey).catch(() => undefined); throw error; } finally { client.release(); }
   }
-  async list(actor: AuthPrincipal): Promise<Record<string, unknown>[]> { const result = await this.pool.query<Record<string, unknown>>(`SELECT * FROM knowledge_documents WHERE provider_user_id = $1 ORDER BY logical_document_key, version DESC`, [actor.sub]); return result.rows; }
+  async list(actor: AuthPrincipal): Promise<Record<string, unknown>[]> { const result = await this.pool.query<Record<string, unknown>>(`SELECT * FROM knowledge_documents WHERE provider_user_id = $1 ORDER BY logical_document_key, version DESC`, [actor.sub]); return result.rows.map(mapDocument); }
   async publish(actor: AuthPrincipal, id: string) {
     const client = await this.pool.connect();
-    try { await client.query('BEGIN'); await client.query(`UPDATE knowledge_documents SET is_current = FALSE, updated_at = now() WHERE provider_user_id = $1 AND logical_document_key = (SELECT logical_document_key FROM knowledge_documents WHERE id = $2 AND provider_user_id = $1)`, [actor.sub, id]); const result = await client.query<Record<string, unknown>>(`UPDATE knowledge_documents SET is_current = TRUE, updated_at = now() WHERE id = $1 AND provider_user_id = $2 AND status = 'READY' RETURNING *`, [id, actor.sub]); if (!result.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); await client.query('COMMIT'); return result.rows[0]; } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+    try { await client.query('BEGIN'); await client.query(`UPDATE knowledge_documents SET is_current = FALSE, updated_at = now() WHERE provider_user_id = $1 AND logical_document_key = (SELECT logical_document_key FROM knowledge_documents WHERE id = $2 AND provider_user_id = $1)`, [actor.sub, id]); const result = await client.query<Record<string, unknown>>(`UPDATE knowledge_documents SET is_current = TRUE, updated_at = now() WHERE id = $1 AND provider_user_id = $2 AND status = 'READY' RETURNING *`, [id, actor.sub]); if (!result.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'); await client.query('COMMIT'); return mapDocument(result.rows[0]); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
   }
   async search(actor: AuthPrincipal, question: string): Promise<Array<{ id: string; content: string }>> {
     const result = await this.pool.query<{ id: string; content: string }>(

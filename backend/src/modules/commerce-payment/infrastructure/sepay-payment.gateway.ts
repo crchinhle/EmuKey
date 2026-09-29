@@ -17,6 +17,7 @@ export interface SePayPaymentGatewayOptions {
   secretKey: string;
   webAppUrl: string;
   sandboxClockOffsetSeconds?: number;
+  sandboxReceiptTiming?: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -90,8 +91,16 @@ function resultUrl(
 
 export class SePayPaymentGateway implements PaymentGatewayPort {
   private readonly client: SePayPgClient;
+  readonly sandboxReceiptTiming: boolean;
 
   constructor(private readonly options: SePayPaymentGatewayOptions) {
+    this.sandboxReceiptTiming = options.sandboxReceiptTiming === true;
+    if (this.sandboxReceiptTiming && (options.environment !== 'sandbox' || process.env.NODE_ENV === 'production')) {
+      throw new Error('SANDBOX_RECEIPT_TIMING_NOT_ALLOWED');
+    }
+    if (this.sandboxReceiptTiming && options.sandboxClockOffsetSeconds) {
+      throw new Error('Sandbox receipt timing cannot be combined with a clock offset');
+    }
     this.client = new SePayPgClient({
       env: options.environment,
       merchant_id: options.merchantId,
@@ -155,6 +164,7 @@ export class SePayPaymentGateway implements PaymentGatewayPort {
        }
 
        return Promise.resolve({
+        ...(this.sandboxReceiptTiming ? { timingBasis: 'SANDBOX_RECEIPT' as const } : {}),
         amountVnd,
         eventId: nonEmptyString(transaction.id),
          occurredAt,

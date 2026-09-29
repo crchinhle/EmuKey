@@ -1,8 +1,10 @@
 import { Alert, Button, Empty, Spin } from 'antd';
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useOptionalAuth } from '../../application/auth/authContext';
 
 import { useAppendSupportMessage, useClaimConversation, useCloseSupportConversation, useSupportConversationMessages, useSupportQueue } from '../../application/assistance/supportQueries';
+import { conversationContextLabels, conversationStatusLabels } from '../../application/assistance/assistanceQueries';
 import { ConversationPanel } from '../components/ConversationPanel';
 import {
   FactList,
@@ -12,16 +14,16 @@ import {
 
 export function SupportConsoleScreen() {
   const location = useLocation();
-  const queue = useSupportQueue();
+  const auth = useOptionalAuth();
+  const queue = useSupportQueue(new URLSearchParams(location.search).get('view') === 'resolved');
   const [selectedId, setSelectedId] = useState<string>();
-  const [claimedId, setClaimedId] = useState<string>();
   const claim = useClaimConversation();
   const append = useAppendSupportMessage();
   const close = useCloseSupportConversation();
   const view = new URLSearchParams(location.search).get('view') ?? 'all';
   const queueData = (queue.data ?? []).filter((conversation) =>
     view === 'active'
-      ? conversation.status !== 'CLOSED'
+      ? conversation.status === 'SUPPORT_ACTIVE'
       : view === 'resolved'
         ? conversation.status === 'CLOSED'
         : true,
@@ -33,9 +35,10 @@ export function SupportConsoleScreen() {
     <>
       <PageHeader
         title="Hàng đợi hỗ trợ"
-        action={<StatusChip tone="realtime">Realtime · demo</StatusChip>}
+        action={<Button onClick={() => void queue.refetch()} loading={queue.isFetching}>Làm mới</Button>}
       />
       {queue.isError ? <Alert showIcon type="error" message="Không thể tải hàng đợi hỗ trợ." action={<Button onClick={() => void queue.refetch()}>Thử lại</Button>} /> : null}
+      {claim.isError || close.isError ? <Alert type="error" title="Không thể cập nhật hội thoại. Vui lòng thử lại." /> : null}
       {!queue.isLoading && !queue.isError && !selected ? <Empty description={view === 'resolved' ? 'Chưa có hội thoại đã giải quyết.' : view === 'active' ? 'Không có hội thoại đang xử lý.' : 'Hàng đợi trống'} /> : null}
       {selected ? <div className="console-grid support-console">
         <aside className="workspace-card queue-panel">
@@ -55,7 +58,7 @@ export function SupportConsoleScreen() {
                   <small>{conversation.title ?? conversation.id}</small>
               </span>
               <StatusChip tone="neutral">
-                {conversation.status}
+                {conversationStatusLabels[conversation.status]}
               </StatusChip>
             </Button>
           ))}
@@ -67,11 +70,11 @@ export function SupportConsoleScreen() {
             <div className="conversation-actions">
               {selected.status === 'CLOSED' ? <StatusChip tone="success">Đã hoàn tất</StatusChip> : (
                 <>
-                  <Button onClick={() => { setClaimedId(selected.id); claim.mutate(selected.id); }}>
-                    {selected.status === 'SUPPORT_ACTIVE' || claimedId === selected.id ? 'Đang xử lý bởi bạn' : 'Nhận xử lý'}
+                  <Button loading={claim.isPending} disabled={selected.status === 'SUPPORT_ACTIVE'} onClick={() => claim.mutate(selected.id)}>
+                    {selected.status === 'SUPPORT_ACTIVE' ? selected.assignedSupportUserId === auth?.user?.id ? 'Đang xử lý bởi bạn' : 'Đã có người xử lý' : 'Nhận xử lý'}
                   </Button>
                   <Button
-                    disabled={selected.status !== 'SUPPORT_ACTIVE' && claimedId !== selected.id}
+                    disabled={selected.status !== 'SUPPORT_ACTIVE' || selected.assignedSupportUserId !== auth?.user?.id}
                     loading={close.isPending}
                     onClick={() => close.mutate(selected.id)}
                   >
@@ -81,6 +84,7 @@ export function SupportConsoleScreen() {
               )}
             </div>
           </header>
+          {messages.isError ? <Alert type="error" title="Không thể tải tin nhắn" action={<Button onClick={() => void messages.refetch()}>Thử lại</Button>} /> : null}
           <ConversationPanel
             author="Support"
             initialMessages={(messages.data ?? []).map((message) => ({
@@ -89,18 +93,18 @@ export function SupportConsoleScreen() {
               id: message.id,
             }))}
             inputLabel="Phản hồi hỗ trợ"
-            onSubmit={(content) => append.mutate({ clientMessageId: crypto.randomUUID(), content, conversationId: selected.id })}
+            onSubmit={(content) => append.mutateAsync({ clientMessageId: crypto.randomUUID(), content, conversationId: selected.id })}
             readOnly={selected.status === 'CLOSED'}
             submitLabel="Gửi phản hồi"
           />
         </section>
         <aside className="workspace-card detail-card">
-          <h2>Ngữ cảnh Customer</h2>
+          <h2>Thông tin người mua</h2>
           <strong>{selected.customerUserId.startsWith('Người mua') ? selected.customerUserId : `Người mua #${selected.customerUserId.slice(0, 4)}`}</strong>
           <FactList
             facts={[
-              { label: 'Context', value: selected.contextType },
-              { label: 'Status', value: selected.status },
+              { label: 'Nội dung cần hỗ trợ', value: conversationContextLabels[selected.contextType] },
+              { label: 'Trạng thái', value: conversationStatusLabels[selected.status] },
             ]}
           />
           <p className="security-note">

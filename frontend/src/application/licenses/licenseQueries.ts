@@ -17,6 +17,18 @@ import type {
 } from '../../infrastructure/api/generated';
 import { requestJson } from '../auth/authContext';
 
+export function licenseStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    ACTIVE: 'Hoạt động',
+    PENDING_ONCHAIN: 'Đang chờ xác nhận',
+    PENDING: 'Đang chờ xác nhận',
+    SUSPENDED: 'Tạm ngưng',
+    EXPIRED: 'Đã hết hạn',
+    REVOKED: 'Đã thu hồi',
+  };
+  return labels[status] ?? status;
+}
+
 export function useLicenses() {
   return useQuery({
     queryKey: ['licenses'],
@@ -29,10 +41,11 @@ export function useOrderLicense(
   enabled: boolean,
   licenseId?: string | null,
   continuePollingAfterReady = false,
+  requiredExpiresAt?: string | null,
 ) {
   return useQuery({
     enabled: Boolean(orderId) && enabled,
-    queryKey: ['licenses', 'order', orderId, licenseId ?? null],
+    queryKey: ['licenses', 'order', orderId, licenseId ?? null, requiredExpiresAt ?? null],
     queryFn: async () => {
       if (licenseId) {
         return requestJson<LicenseProjectionDto>(
@@ -44,12 +57,15 @@ export function useOrderLicense(
     },
     refetchInterval: (query) => {
       const license = query.state.data;
+      // Chain timestamps are whole seconds; command payloads may retain milliseconds.
+      const expiryUpdated = !requiredExpiresAt || (license &&
+        Math.floor(Date.parse(license.expiresAt) / 1000) >= Math.floor(Date.parse(requiredExpiresAt) / 1000));
       if (
-        !continuePollingAfterReady &&
+        !continuePollingAfterReady && expiryUpdated &&
         license?.status === 'ACTIVE' &&
         license.activationKeyTrustStatus === 'TRUSTED'
       ) return false;
-      if (license && ['SUSPENDED', 'EXPIRED', 'REVOKED'].includes(license.status)) return false;
+      if (!continuePollingAfterReady && expiryUpdated && license && ['SUSPENDED', 'EXPIRED', 'REVOKED'].includes(license.status)) return false;
       return 2_000;
     },
     refetchIntervalInBackground: true,

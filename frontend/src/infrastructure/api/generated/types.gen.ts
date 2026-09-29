@@ -152,6 +152,28 @@ export type RegisterPushTokenDto = {
   provider: 'FCM' | 'EXPO';
 };
 
+export type Object = {
+  [key: string]: unknown;
+};
+
+export type AuditEntryDto = {
+  id: string;
+  action: string;
+  outcome: string;
+  actorUserId: string | null;
+  actorRole: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  reason: string | null;
+  createdAt: string;
+};
+
+export type AuditPageDto = {
+  items: Array<AuditEntryDto>;
+  hasMore: boolean;
+  page: number;
+};
+
 export type AdminProductDto = {
   code: string;
   createdAt: string;
@@ -324,7 +346,7 @@ export type LicenseProjectionDto = {
   finality: string;
   id: string;
   keyVersion: number;
-  activationKeyTrustStatus?: 'PENDING_FINALITY' | 'TRUSTED' | 'UNTRUSTED_REORG';
+  activationKeyTrustStatus: 'PENDING_FINALITY' | 'TRUSTED' | 'UNTRUSTED_REORG';
   maxActiveDevices: number;
   originOrderId: string;
   periodStart: string;
@@ -383,6 +405,14 @@ export type CreateOrderDto = {
 };
 
 export type OrderDto = {
+  /**
+   * Latest RENEW_LICENSE command status for this exact order, not the original issuance.
+   */
+  renewalStatus?: string | null;
+  /**
+   * Target expiry of this renewal; effective only after canonical chain confirmation.
+   */
+  renewalExpiresAt?: string | null;
   billingCycleSnapshot: string;
   createdAt: string;
   currency: string;
@@ -415,6 +445,22 @@ export type OrderDto = {
   publicLicenseId?: string | null;
   targetLicenseId?: string | null;
   serviceTermsAcceptedAt?: string | null;
+};
+
+export type RenewalPreviewDto = {
+  licenseId: string;
+  planId: string;
+  planName: string;
+  productName: string;
+  durationMonths: number;
+  priceVnd: number;
+  currentExpiresAt: string;
+  /**
+   * Estimate only; final expiry uses verified payment time.
+   */
+  estimatedExpiresAt: string;
+  canRenew: boolean;
+  pendingOrder: OrderDto | null;
 };
 
 export type OrderTermsDto = {
@@ -1153,6 +1199,24 @@ export type OperationsHealthControllerAssistanceResponses = {
   200: unknown;
 };
 
+export type AuditControllerListData = {
+  body?: never;
+  path?: never;
+  query?: {
+    page?: Object;
+    action?: string;
+    outcome?: 'SUCCESS' | 'DENIED' | 'FAILED';
+  };
+  url: '/api/v1/operations/audit-logs';
+};
+
+export type AuditControllerListResponses = {
+  200: AuditPageDto;
+};
+
+export type AuditControllerListResponse =
+  AuditControllerListResponses[keyof AuditControllerListResponses];
+
 export type CatalogControllerListAdminData = {
   body?: never;
   path?: never;
@@ -1597,7 +1661,6 @@ export type CommerceControllerListResponse =
 export type CommerceControllerCreateData = {
   body: CreateOrderDto;
   headers: {
-    'X-License-Key'?: string;
     'Idempotency-Key': string;
   };
   path?: never;
@@ -1611,6 +1674,26 @@ export type CommerceControllerCreateResponses = {
 
 export type CommerceControllerCreateResponse =
   CommerceControllerCreateResponses[keyof CommerceControllerCreateResponses];
+
+export type CommerceControllerRenewalPreviewData = {
+  body?: never;
+  path: {
+    licenseId: string;
+  };
+  query?: never;
+  url: '/api/v1/orders/renewal-preview/{licenseId}';
+};
+
+export type CommerceControllerRenewalPreviewErrors = {
+  404: unknown;
+};
+
+export type CommerceControllerRenewalPreviewResponses = {
+  200: RenewalPreviewDto;
+};
+
+export type CommerceControllerRenewalPreviewResponse =
+  CommerceControllerRenewalPreviewResponses[keyof CommerceControllerRenewalPreviewResponses];
 
 export type CommerceControllerFindData = {
   body?: never;

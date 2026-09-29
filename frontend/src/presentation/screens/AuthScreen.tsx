@@ -51,6 +51,8 @@ export function AuthScreen() {
   const mode = resolveAuthMode(searchParams.get('mode'));
   const redirectTarget = searchParams.get('redirect');
   const [verification, setVerification] = useState<'failed' | 'pending' | 'verified' | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<'sent' | 'failed' | null>(null);
   const verificationToken = searchParams.get('token');
   useEffect(() => {
     if (user && (mode === 'login' || mode === 'register')) {
@@ -133,7 +135,6 @@ export function AuthScreen() {
                 }}
                 submitLabel={mode === 'licensing-action' ? 'Đăng nhập và tiếp tục' : 'Đăng nhập'}
               />
-              {mode === 'login' ? <small>Bảo mật phiên đăng nhập và giới hạn thử sai được bật.</small> : null}
             </>
           ) : null}
           {mode === 'register' ? (
@@ -151,10 +152,11 @@ export function AuthScreen() {
               {verification === 'pending' ? <Alert showIcon title="Đang xác minh email..." type="info" /> : null}
               {verification === 'verified' ? <Alert showIcon title="Email đã được xác minh. Bạn có thể đăng nhập." type="success" /> : null}
               {verification === 'failed' ? <Alert showIcon title="Liên kết xác minh không hợp lệ hoặc đã hết hạn." type="error" /> : null}
+              {resendStatus ? <Alert showIcon type={resendStatus === 'sent' ? 'success' : 'error'} title={resendStatus === 'sent' ? 'Đã gửi yêu cầu. Vui lòng kiểm tra hộp thư và thư rác.' : 'Chưa gửi được email. Vui lòng thử lại.'} /> : null}
               {verification === 'verified' ? (
                 <Button block onClick={() => selectMode('login')} type="primary">Đăng nhập</Button>
               ) : (
-                <Button block disabled={!searchParams.get('email')} onClick={() => void resendVerification(searchParams.get('email') ?? '')} type="primary">Gửi lại email xác minh</Button>
+                <Button block disabled={!searchParams.get('email')} loading={resending} onClick={() => { setResending(true); setResendStatus(null); void resendVerification(searchParams.get('email') ?? '').then(() => setResendStatus('sent')).catch(() => setResendStatus('failed')).finally(() => setResending(false)); }} type="primary">Gửi lại email xác minh</Button>
               )}
             </>
           ) : null}
@@ -162,7 +164,7 @@ export function AuthScreen() {
             <ForgotPasswordForm onForgotPassword={forgotPassword} />
           ) : null}
           {mode === 'reset' ? (
-            <ResetPasswordForm onResetPassword={resetPassword} />
+            <ResetPasswordForm onResetPassword={resetPassword} token={verificationToken ?? ''} />
           ) : null}
         </div>
       </section>

@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { requestJson } from '../auth/authContext';
 import type { ConversationDto, MessageDto } from './assistanceQueries';
 
-export function useSupportQueue() {
-  return useQuery({ queryKey: ['assistance', 'support-queue'], queryFn: () => requestJson<ConversationDto[]>('/conversations/queue') });
+export function useSupportQueue(resolved = false) {
+  return useQuery({ queryKey: ['assistance', 'support-queue', resolved], queryFn: () => requestJson<ConversationDto[]>(resolved ? '/conversations' : '/conversations/queue') });
 }
 
 export function useClaimConversation() {

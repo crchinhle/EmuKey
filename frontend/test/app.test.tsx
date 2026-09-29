@@ -6,6 +6,22 @@ import { App } from '../src/presentation/app/App';
 afterEach(cleanup);
 
 describe('Emukey public web screens', () => {
+  it('provides public guides without requiring login to read them', () => {
+    render(<App initialEntries={['/help']} />);
+    expect(screen.getByRole('heading', { name: 'Hướng dẫn sử dụng EmuKey' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '3. Nhận mã và kích hoạt phần mềm' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '5. Xác minh công khai' })).toBeTruthy();
+  });
+
+  it('prefills the reset token and confirms successful password reset', async () => {
+    render(<App initialEntries={['/auth?mode=reset&token=reset-token-example']} />);
+    expect(screen.getByLabelText('Mã đặt lại mật khẩu')).toHaveProperty('value', 'reset-token-example');
+    fireEvent.change(screen.getByLabelText('Mật khẩu mới'), { target: { value: 'SecurePassword@123' } });
+    fireEvent.change(screen.getByLabelText('Xác nhận mật khẩu mới'), { target: { value: 'SecurePassword@123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Đặt lại mật khẩu' }));
+    expect(await screen.findByText('Đã đặt lại mật khẩu')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Đăng nhập bằng mật khẩu mới' })).toBeTruthy();
+  });
   it('keeps the AI assistant launcher available across routes', async () => {
     render(<App initialEntries={['/verify']} />);
     const launcher = screen.getByRole('button', { name: 'Mở chat chăm sóc khách hàng' });
@@ -34,7 +50,7 @@ describe('Emukey public web screens', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập và tiếp tục' }));
 
     expect(await screen.findByRole('heading', { name: 'Bản quyền & thiết bị' })).toBeTruthy();
-    expect(screen.getByLabelText('Email action token')).toHaveProperty('value', 'action-token-123');
+    expect(screen.getByLabelText('Mã xác nhận khôi phục')).toHaveProperty('value', 'action-token-123');
   });
 
   it('rejects a weak password for login', async () => {

@@ -61,6 +61,7 @@ export const themeCssVariables: ThemeCssVariables = {
   '--surface': colorPalette.surface,
   '--surface-selected': colorPalette.surfaceSelected,
   '--bg-subtle': colorPalette.subtle,
+  '--subtle': colorPalette.subtle,
   '--text': colorPalette.text,
   '--text-secondary': colorPalette.textSecondary,
   '--muted': colorPalette.muted,

@@ -1,4 +1,4 @@
-import { Alert, Button, Checkbox, Form, Input, Select } from 'antd';
+import { Alert, Button, Form, Input, Select } from 'antd';
 import { useState } from 'react';
 
 import type { AuthUser, RegisterInput } from '../../application/auth/authContext';
@@ -44,7 +44,6 @@ export function LoginForm({
         <Input autoComplete="email" inputMode="email" />
       </Form.Item>
       <Form.Item
-        extra="Tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt."
         label="Mật khẩu"
         name="password"
         rules={[
@@ -56,9 +55,6 @@ export function LoginForm({
         <Input.Password autoComplete="current-password" />
       </Form.Item>
       <div className="remember-row">
-        <Form.Item name="remember" noStyle valuePropName="checked">
-          <Checkbox>Ghi nhớ đăng nhập</Checkbox>
-        </Form.Item>
         <Button onClick={onForgotPassword} type="link">Quên mật khẩu?</Button>
       </div>
       <Button block htmlType="submit" loading={loading} type="primary">{submitLabel}</Button>
@@ -152,18 +148,24 @@ export function ForgotPasswordForm({
 
 export function ResetPasswordForm({
   onResetPassword,
+  token = '',
 }: {
   readonly onResetPassword: (token: string, password: string) => Promise<void>;
+  readonly token?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  if (submitted) return <Alert showIcon type="success" title="Đã đặt lại mật khẩu" description={<a href="/auth">Đăng nhập bằng mật khẩu mới</a>} />;
   return (
     <Form
       layout="vertical"
+      initialValues={{ token }}
       onFinish={(values: { password: string; passwordConfirmation: string; token: string }) => {
         setLoading(true);
         setError(null);
         void onResetPassword(values.token, values.password)
+          .then(() => setSubmitted(true))
           .catch(() => setError('Không thể đặt lại mật khẩu. Mã có thể đã hết hạn.'))
           .finally(() => setLoading(false));
       }}
@@ -174,6 +176,7 @@ export function ResetPasswordForm({
       </Form.Item>
       <Form.Item
         label="Mật khẩu mới"
+        extra="Mật khẩu mới cần ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt."
         name="password"
         rules={[{ required: true }, { min: 12 }, passwordComplexityRule]}
       >

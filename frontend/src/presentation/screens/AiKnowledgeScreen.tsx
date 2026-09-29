@@ -16,6 +16,10 @@ export function AiKnowledgeScreen() {
   const create = useCreateKnowledgeDocument();
   const publish = usePublishKnowledgeDocument();
   const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+    if (!/\.(pdf|txt)$/i.test(file.name) || file.size > 10 * 1024 * 1024) {
+      void messageApi.error('Vui lòng chọn tệp PDF hoặc TXT không quá 10 MB.');
+      return Upload.LIST_IGNORE;
+    }
     setFile(file);
     return false;
   };
@@ -23,7 +27,7 @@ export function AiKnowledgeScreen() {
   const upload = () => {
     if (!file || !productId) return;
     const title = file.name.replace(/\.[^.]+$/, '');
-    create.mutate({ file, productId, logicalDocumentKey: title.replace(/[^A-Za-z0-9/_-]/g, '-'), sourceType: file.name.toLocaleLowerCase('vi').endsWith('.pdf') ? 'PDF' : 'TXT', title }, {
+    create.mutate({ file, productId, logicalDocumentKey: `${productId}/${title.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 130) || 'document'}`, sourceType: file.name.toLocaleLowerCase('vi').endsWith('.pdf') ? 'PDF' : 'TXT', title }, {
       onSuccess: () => { setFile(undefined); void messageApi.success('Đã tải tài liệu lên.'); },
     });
   };
@@ -36,7 +40,7 @@ export function AiKnowledgeScreen() {
       <section className="workspace-card knowledge-upload">
         <div>
           <h2>Tải tài liệu</h2>
-          <p>Chấp nhận PDF hoặc TXT tối đa 10 MB trong bản giao diện.</p>
+          <p>Tải hướng dẫn sản phẩm để trợ lý AI có nguồn tham khảo. Chấp nhận PDF hoặc TXT tối đa 10 MB. Tải lại cùng tên cho cùng sản phẩm sẽ tạo phiên bản mới; phiên bản cũ vẫn được dùng cho đến khi bạn công bố bản mới.</p>
         </div>
         <div className="file-picker">
           <Select aria-label="Sản phẩm của tài liệu" onChange={setProductId} options={(products.data ?? []).filter((product) => product.status !== 'ARCHIVED').map((product) => ({ label: product.name, value: product.id }))} placeholder="Chọn sản phẩm" {...(productId ? { value: productId } : {})} />
@@ -50,9 +54,11 @@ export function AiKnowledgeScreen() {
             <Button>Chọn tệp</Button>
           </Upload>
           <Button disabled={!file || !productId} loading={create.isPending} onClick={upload} type="primary">Tải lên</Button>
-          {file ? <span>Đã chọn tài liệu</span> : null}
+          {file ? <span>Đã chọn: {file.name}</span> : null}
         </div>
       </section>
+      {products.isError ? <Alert type="error" title="Không thể tải danh sách sản phẩm" action={<Button onClick={() => void products.refetch()}>Thử lại</Button>} /> : null}
+      {create.isError || publish.isError ? <Alert type="error" title="Không thể lưu hoặc công bố tài liệu. Vui lòng thử lại." /> : null}
       <section className="workspace-card document-list">
         <div className="card-heading">
           <h2>Tài liệu đã nạp</h2>
@@ -69,7 +75,7 @@ export function AiKnowledgeScreen() {
         {visibleDocuments.map((document) => (
           <div className="data-row" key={document.id}>
             <span><strong>{document.title}</strong><small>{document.logicalDocumentKey} · v{document.version}</small></span>
-            <span className="table-actions"><span className="status-chip status-chip--neutral">{document.status}</span>{document.status !== 'PUBLISHED' ? <Button loading={publish.isPending} onClick={() => publish.mutate(document.id)}>Công bố</Button> : null}</span>
+            <span className="table-actions"><span className="status-chip status-chip--neutral">{document.isCurrent ? 'Đã công bố' : document.status === 'READY' ? 'Sẵn sàng' : document.status}</span>{document.status === 'READY' && !document.isCurrent ? <Button loading={publish.isPending} onClick={() => publish.mutate(document.id)}>Công bố</Button> : null}</span>
           </div>
         ))}
       </section>

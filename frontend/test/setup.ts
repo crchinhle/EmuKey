@@ -319,12 +319,15 @@ vi.stubGlobal(
         },
       ]);
     }
+    if (method === 'GET' && path.startsWith('/orders/renewal-preview/'))
+      return jsonResponse({ licenseId: license.id, planId: orders[0].planId, planName: 'Business', productName: license.productName,
+        durationMonths: 12, priceVnd: 2_500_000, currentExpiresAt: license.expiresAt, estimatedExpiresAt: '2028-09-08T00:00:00.000Z', canRenew: true, pendingOrder: null });
     if (method === 'GET' && path.startsWith('/orders/'))
       return jsonResponse(path.endsWith(acceptedOrderId)
         ? { ...orders[0], id: acceptedOrderId, licenseId: license.id, orderStatus: 'PAYMENT_ACCEPTED' }
         : orders[0]);
     if (method === 'POST' && path === '/orders')
-      return jsonResponse(orders[0], 201);
+      return jsonResponse({ ...orders[0], orderStatus: 'WAITING_SERVICE_TERMS_ACCEPTANCE' }, 201);
     if (method === 'POST' && path.endsWith('/accept-service-terms'))
       return jsonResponse({ ...orders[0], orderStatus: 'WAITING_PAYMENT' });
     if (method === 'POST' && path.endsWith('/checkout'))

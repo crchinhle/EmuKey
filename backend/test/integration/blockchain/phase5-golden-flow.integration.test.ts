@@ -370,12 +370,20 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
     });
 
     const beforeRenewal = await queries.find(customer, licenseId);
-    const renewalOrder = await commerce.createOrder(
-      customer,
-      '00000000-0000-4000-8000-000000000704',
-      rotated.activationKey,
-      { planId, targetLicenseId: licenseId },
-    );
+    await expect(commerce.renewalPreview(otherCustomer, licenseId)).rejects.toMatchObject({ status: 404 });
+    await expect(commerce.renewalPreview({ ...customer, role: 'PROVIDER_ADMIN' }, licenseId)).rejects.toMatchObject({ status: 403 });
+    const preview = await commerce.renewalPreview(customer, licenseId);
+    expect(preview).toMatchObject({ planId, canRenew: true, priceVnd: 120000, durationMonths: 1, pendingOrder: null });
+    expect(preview.estimatedExpiresAt.getTime()).toBeGreaterThan(new Date(String(beforeRenewal.expiresAt)).getTime());
+    await expect(commerce.createOrder(otherCustomer, '00000000-0000-4000-8000-000000000705', undefined,
+      { planId, targetLicenseId: licenseId })).rejects.toMatchObject({ status: 404 });
+    await expect(commerce.createOrder(customer, '00000000-0000-4000-8000-000000000706', undefined,
+      { planId: '00000000-0000-4000-8000-000000000302', targetLicenseId: licenseId })).rejects.toMatchObject({ status: 404 });
+    const repeats = await Promise.all(['704', '707', '708'].map((suffix) => commerce.createOrder(customer,
+      `00000000-0000-4000-8000-000000000${suffix}`, undefined, { planId, targetLicenseId: licenseId })));
+    const renewalOrder = repeats[0]!;
+    expect(new Set(repeats.map((item) => item.id)).size).toBe(1);
+    expect((await commerce.renewalPreview(customer, licenseId)).pendingOrder?.id).toBe(renewalOrder.id);
     await commerce.acceptServiceTerms(customer, renewalOrder.id, { accepted: true });
     const renewalCheckout = await commerce.checkout(customer, renewalOrder.id);
     const renewalProviderClock = await pool.query<{ occurred_at: Date }>(
@@ -390,6 +398,12 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       },
       webhookSecret,
     );
+    await expect(commerce.findOrder(customer, renewalOrder.id)).resolves.toMatchObject({
+      licenseId, targetLicenseId: licenseId, renewalStatus: 'PENDING',
+    });
+    expect((await commerce.listOrders(customer)).find((item) => item.id === renewalOrder.id)?.licenseId).toBe(licenseId);
+    expect((await commerce.createOrder(customer, '00000000-0000-4000-8000-000000000709', undefined,
+      { planId, targetLicenseId: licenseId })).id).toBe(renewalOrder.id);
     expect(await commands.processNext('phase6-renewal-worker')).toBe(renewalPayment.commandId);
     await commands.reconcileReceipt('phase6-renewal-receipt');
     for (let index = 0; index < 2; index += 1) {
@@ -401,6 +415,9 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
     }
     await expect(rpcIndexer.poll('phase6-rpc-indexer-renewal')).resolves.toBeGreaterThanOrEqual(1);
     const afterRenewal = await queries.find(customer, licenseId);
+    const completedRenewal = await commerce.findOrder(customer, renewalOrder.id);
+    expect(completedRenewal.renewalStatus).toBe('CONFIRMED');
+    expect(Math.floor(completedRenewal.renewalExpiresAt!.getTime() / 1000)).toBe(Math.floor(new Date(String(afterRenewal.expiresAt)).getTime() / 1000));
     expect(new Date(String(afterRenewal.expiresAt)).getTime()).toBeGreaterThan(
       new Date(String(beforeRenewal.expiresAt)).getTime(),
     );
@@ -492,6 +509,11 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       ),
     ).resolves.toContain(licenseId);
     await expect(queries.find(customer, licenseId)).resolves.toMatchObject({ status: 'EXPIRED' });
+    const expiredRenewal = await commerce.createOrder(customer, '00000000-0000-4000-8000-000000000710', undefined, { planId, targetLicenseId: licenseId });
+    expect(expiredRenewal.id).not.toBe(renewalOrder.id);
+    await commerce.cancelOrder(customer, expiredRenewal.id);
+    const replacement = await commerce.createOrder(customer, '00000000-0000-4000-8000-000000000711', undefined, { planId, targetLicenseId: licenseId });
+    expect(replacement.id).not.toBe(expiredRenewal.id);
 
     const resumeEvent = await pool.query<{ id: string }>(
       `SELECT id FROM chain_events WHERE chain_command_id=$1 AND finality_status='CONFIRMED'`,

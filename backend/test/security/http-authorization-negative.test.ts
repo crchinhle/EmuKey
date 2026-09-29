@@ -16,6 +16,7 @@ describe('Phase 8 HTTP authorization negative matrix', () => {
       LOG_LEVEL: 'fatal',
       OTEL_ENABLED: 'false',
       PAYMENT_ADAPTER: 'fake',
+      SEPAY_SANDBOX_RECEIPT_TIMING: 'false',
       PAYMENT_WEBHOOK_SECRET: 'test-payment-secret',
       AI_ADAPTER: 'fake',
       EMAIL_ADAPTER: 'fake',
@@ -45,6 +46,9 @@ describe('Phase 8 HTTP authorization negative matrix', () => {
 
   it.each([
     ['GET', '/api/v1/orders'],
+    ['POST', '/api/v1/orders'],
+    ['GET', '/api/v1/orders/renewal-preview/00000000-0000-4000-8000-000000000401'],
+    ['GET', '/api/v1/operations/audit-logs'],
     ['GET', '/api/v1/licenses'],
     ['GET', '/api/v1/payments/history'],
     ['GET', '/api/v1/payments/review'],

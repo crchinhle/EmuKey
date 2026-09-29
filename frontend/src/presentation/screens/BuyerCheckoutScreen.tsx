@@ -11,7 +11,6 @@ import {
 } from '../../application/orders/orderQueries';
 import { OrderSummary } from '../components/OrderSummary';
 import { PageHeader } from '../components/WorkspacePrimitives';
-import { NotificationCenter } from '../components/NotificationCenter';
 
 export function BuyerCheckoutScreen() {
   const navigate = useNavigate();
@@ -28,7 +27,7 @@ export function BuyerCheckoutScreen() {
   const termsQuery = useOrderTerms(order?.id ?? '');
 
   useEffect(() => {
-    if (product && planId && !order && !orderStarted.current) {
+    if (product && planId && product.plans.some((plan) => plan.id === planId) && !order && !orderStarted.current) {
       orderStarted.current = true;
       createOrderMutation.mutate({ planId }, { onSuccess: setOrder });
     }
@@ -64,7 +63,7 @@ export function BuyerCheckoutScreen() {
       />
     );
   const selectedPlan =
-    product.plans.find((plan) => plan.id === planId) ?? product.plans[0];
+    product.plans.find((plan) => plan.id === planId);
   if (!selectedPlan)
     return <Result status="info" title="Sản phẩm chưa có gói được công bố" />;
 
@@ -72,7 +71,6 @@ export function BuyerCheckoutScreen() {
     <div className="workspace-screen">
       <PageHeader
         title="Hoàn tất mua bản quyền"
-        action={<NotificationCenter />}
       />
       <Steps
         current={order ? 1 : 0}
@@ -87,7 +85,7 @@ export function BuyerCheckoutScreen() {
           <Alert
             showIcon
             type="success"
-            message="Đơn hàng và License sẽ được gắn với tài khoản Emukey đang đăng nhập. Activation key không cần thêm khóa riêng hay khóa dự phòng theo tài khoản."
+            message="Đơn hàng và bản quyền sẽ được lưu trong tài khoản EmuKey đang đăng nhập."
           />
           <section className="workspace-card section-card">
             <h2>Cấu hình đơn hàng</h2>
@@ -103,19 +101,20 @@ export function BuyerCheckoutScreen() {
             </div>
           </section>
           <section className="workspace-card section-card">
-            {!order || termsQuery.isPending ? (
+            {createOrderMutation.isError ? <Button onClick={() => createOrderMutation.mutate({ planId }, { onSuccess: setOrder })}>Thử tạo lại đơn hàng</Button> : !order || termsQuery.isPending ? (
               <Spin aria-label="Đang tải điều khoản" />
             ) : termsQuery.isError || !termsQuery.data ? (
               <Alert
                 showIcon
                 type="error"
                 message="Không thể tải đúng phiên bản điều khoản của đơn hàng."
+                action={<Button onClick={() => void termsQuery.refetch()}>Thử lại</Button>}
               />
             ) : (
               <>
                 <h2>Điều khoản cấp phép</h2>
                 <pre className="terms-document">{termsQuery.data.content}</pre>
-                <p className="muted-copy">Service Terms áp dụng cho từng đơn hàng.</p>
+                <p className="muted-copy">Điều khoản này áp dụng riêng cho đơn hàng hiện tại.</p>
                 <Checkbox
                   checked={accepted}
                   onChange={(event) => {
@@ -152,7 +151,7 @@ export function BuyerCheckoutScreen() {
             order={{ total: order?.priceVndSnapshot ?? selectedPlan.priceVnd }}
           />
           <section className="workspace-card section-card">
-            <StatusHold />
+            <span className="status-chip status-chip--warning">{order?.paymentDueAt ? `Hạn thanh toán: ${new Date(order.paymentDueAt).toLocaleString('vi-VN')}` : 'Đang chuẩn bị đơn hàng'}</span>
             <p>Quay lại danh mục nếu bạn muốn chọn một gói khác.</p>
           </section>
           <div className="workspace-actions">
@@ -161,7 +160,7 @@ export function BuyerCheckoutScreen() {
             </Button>
               <Button
                 type="primary"
-                disabled={!order || !accepted || termsQuery.isPending}
+                disabled={!order || !accepted || !termsQuery.data}
               loading={
                 createOrderMutation.isPending ||
                 orderMutations.acceptServiceTerms.isPending
@@ -174,13 +173,5 @@ export function BuyerCheckoutScreen() {
         </aside>
       </div>
     </div>
-  );
-}
-
-function StatusHold() {
-  return (
-    <span className="status-chip status-chip--warning">
-      Deadline được backend xác định sau khi tạo đơn
-    </span>
   );
 }

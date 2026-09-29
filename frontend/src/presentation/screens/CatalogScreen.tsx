@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Empty, Input, Select, Spin } from 'antd';
+import { Alert, Button, Card, Empty, Input, Pagination, Select, Spin } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -10,12 +10,13 @@ import { ProductArtwork } from '../components/ProductArtwork';
 import { SiteHeader } from '../components/SiteHeader';
 
 const sortOptions = [
-  { value: 'popular', label: 'Phổ biến nhất' },
+  { value: 'popular', label: 'Mặc định' },
   { value: 'price-asc', label: 'Giá tăng dần' },
 ] as const;
 
 export function CatalogScreen({ authenticated = false }: { readonly authenticated?: boolean }) {
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [sort, setSort] =
     useState<(typeof sortOptions)[number]['value']>('popular');
   const navigate = useNavigate();
@@ -32,10 +33,11 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
 
     return sort === 'price-asc'
       ? filtered.sort(
-          (left, right) => left.plans[0]!.priceVnd - right.plans[0]!.priceVnd,
+          (left, right) => Math.min(...left.plans.map((plan) => plan.priceVnd)) - Math.min(...right.plans.map((plan) => plan.priceVnd)),
         )
       : filtered;
   }, [products, search, sort]);
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(visibleProducts.length / 12)));
 
   return (
     <div className="page-shell">
@@ -55,7 +57,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
               aria-label="Tìm sản phẩm"
               placeholder="Tìm theo tên hoặc mô tả"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
             />
           </label>
           <div className="catalog-compare-action">
@@ -68,7 +70,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
               aria-label="Sắp xếp"
               options={[...sortOptions]}
               value={sort}
-              onChange={setSort}
+              onChange={(value) => { setSort(value); setPage(1); }}
             />
           </label>
         </section>
@@ -83,7 +85,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
           {!isLoading && !isError && products.length === 0 ? (
             <Empty description="Chưa có sản phẩm và gói giá được công bố." />
           ) : null}
-          {!isLoading && !isError && visibleProducts.map((product) => (
+          {!isLoading && !isError && visibleProducts.slice((currentPage - 1) * 12, currentPage * 12).map((product) => (
             <Card
               aria-label={`Mở chi tiết ${product.name}`}
               className="product-card"
@@ -101,7 +103,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
               <ProductArtwork imageUrl={product.imageUrl} productName={product.name} tone={product.tone} />
               <h2>{product.name}</h2>
               <p>{product.summary}</p>
-              <strong>Từ {formatVnd(product.plans[0]!.priceVnd)}</strong>
+              <strong>{product.plans.length ? `Từ ${formatVnd(Math.min(...product.plans.map((plan) => plan.priceVnd)))}` : 'Chưa có gói'}</strong>
               <div className="product-actions">
                 <Link
                   className="primary-link"
@@ -116,6 +118,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
             <Empty description="Không tìm thấy sản phẩm phù hợp" />
           ) : null}
         </section>
+        {!isLoading && !isError ? <Pagination current={currentPage} pageSize={12} total={visibleProducts.length} onChange={setPage} hideOnSinglePage showSizeChanger={false} /> : null}
       </main>
     </div>
   );

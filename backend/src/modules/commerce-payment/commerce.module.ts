@@ -67,6 +67,7 @@ const CHAIN_CONFIGURATION = Symbol('CHAIN_CONFIGURATION');
             merchantId: config.getOrThrow<string>('SEPAY_MERCHANT_ID'),
             secretKey: config.getOrThrow<string>('SEPAY_SECRET_KEY'),
             webAppUrl: config.getOrThrow<string>('WEB_APP_URL'),
+            sandboxReceiptTiming: config.get<boolean>('SEPAY_SANDBOX_RECEIPT_TIMING') === true,
             ...((config.get<number>('SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS') ?? 0) > 0
               ? { sandboxClockOffsetSeconds: config.getOrThrow<number>('SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS') }
               : {}),

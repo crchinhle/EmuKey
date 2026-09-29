@@ -31,12 +31,10 @@ export function AccountProfileScreen() {
     try {
       await updateProfile({
         displayName: values.displayName.trim(),
-        ...(values.phone?.trim() ? { phone: values.phone.trim() } : {}),
-        ...(values.address?.trim() ? { address: values.address.trim() } : {}),
+        phone: values.phone?.trim() ?? '',
+        address: values.address?.trim() ?? '',
         ...(user.role === 'PROVIDER_ADMIN'
-          ? values.organizationName?.trim()
-            ? { organizationName: values.organizationName.trim() }
-            : {}
+          ? { organizationName: values.organizationName?.trim() ?? '' }
           : {}),
       });
       setSaved(true);

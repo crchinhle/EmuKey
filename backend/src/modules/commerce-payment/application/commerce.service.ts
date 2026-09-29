@@ -18,8 +18,9 @@ import {
 } from '../../../platform/crypto/license-crypto.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { AcceptServiceTermsDto, CreateOrderDto } from '../presentation/commerce.dto.js';
-import type { PaymentGatewayPort } from './ports/payment-gateway.port.js';
+import type { PaymentGatewayPort, VerifiedPaymentEvent } from './ports/payment-gateway.port.js';
 import { ServiceTermsContent } from '../../../platform/terms/service-terms-content.js';
+import { renewalExpiry } from '../domain/renewal-policy.js';
 import {
   CommerceRepository,
   type ChainConfiguration,
@@ -42,7 +43,7 @@ export class CommerceService {
   async createOrder(
     actor: AuthPrincipal,
     idempotencyKey: string | undefined,
-    licenseKey: string | undefined,
+    _licenseKey: string | undefined,
     dto: CreateOrderDto,
   ) {
     this.requireCustomer(actor);
@@ -55,16 +56,12 @@ export class CommerceService {
         message: 'Idempotency-Key must be a UUID.',
       });
     }
-    const targetCommitment = dto.targetLicenseId
-      ? this.licenseCommitment(licenseKey)
-      : undefined;
     try {
       return await this.repository.createOrder(
         actor.sub,
         idempotencyKey,
         dto.planId,
         dto.targetLicenseId,
-        targetCommitment,
       );
     } catch (error) {
       this.translate(error);
@@ -72,16 +69,39 @@ export class CommerceService {
     }
   }
 
-  listOrders(actor: AuthPrincipal) {
+  async listOrders(actor: AuthPrincipal) {
     this.requireCustomer(actor);
+    await this.repository.cancelOverdueOrders(actor.sub);
     return this.repository.listCustomerOrders(actor.sub);
+  }
+
+  async renewalPreview(actor: AuthPrincipal, licenseId: string) {
+    this.requireCustomer(actor);
+    const offer = await this.repository.findRenewalOffer(actor.sub, licenseId);
+    if (!offer) this.notFound();
+    const pendingOrder = await this.repository.findPendingRenewal(actor.sub, licenseId);
+    const canRenew = ['ACTIVE', 'EXPIRED', 'SUSPENDED'].includes(offer.status)
+      && offer.planPublished && offer.productPublished;
+    const months = pendingOrder?.durationMonthsSnapshot ?? offer.durationMonths;
+    return {
+      licenseId, planId: offer.planId, planName: pendingOrder?.planNameSnapshot ?? offer.planName,
+      productName: offer.productName, currentExpiresAt: offer.expiresAt,
+      durationMonths: months, priceVnd: pendingOrder?.priceVndSnapshot ?? offer.priceVnd,
+      estimatedExpiresAt: pendingOrder?.renewalExpiresAt ?? renewalExpiry(offer.expiresAt, new Date(), months),
+      canRenew, pendingOrder: pendingOrder ?? null,
+    };
   }
 
   async findOrder(actor: AuthPrincipal, id: string) {
     this.requireCustomer(actor);
+    await this.repository.cancelOverdueOrders(actor.sub);
     const order = await this.repository.findOrder(actor.sub, id);
     if (!order) this.notFound();
     return order;
+  }
+
+  cancelOverdueOrders() {
+    return this.repository.cancelOverdueOrders();
   }
 
   async getServiceTerms(actor: AuthPrincipal, id: string) {
@@ -171,12 +191,31 @@ export class CommerceService {
       });
     }
 
+    return this.fulfillPayment(event, payload);
+  }
+
+  // Operator-only recovery of already-authenticated, durable sandbox evidence.
+  // This is deliberately not exposed through the unauthenticated IPN endpoint.
+  async reconcileSandboxPayment(actor: AuthPrincipal, id: string, reason: string) {
+    if (actor.role !== 'SYSTEM_ADMIN') this.forbidden();
+    if (this.payment.sandboxReceiptTiming !== true) {
+      throw new ConflictException('SANDBOX_RECEIPT_TIMING_NOT_ENABLED');
+    }
+    if (!reason.trim() || reason.length > 1000) throw new BadRequestException('A reconciliation reason is required.');
+    const evidence = await this.repository.findSandboxPaymentEvidence(id);
+    if (!evidence) throw new NotFoundException('SANDBOX_PAYMENT_EVIDENCE_NOT_FOUND');
+    return this.fulfillPayment({ ...evidence.event, timingBasis: 'SANDBOX_RECEIPT' }, evidence.payload, { transactionId: id, actor, reason: reason.trim() });
+  }
+
+  private async fulfillPayment(event: VerifiedPaymentEvent, payload: unknown,
+    reconciliation?: { transactionId: string; actor: AuthPrincipal; reason: string }) {
     const activation = this.newActivation(1);
     const result = await this.repository.ingestPayment(
       event,
       payload,
       activation.material,
       this.chain,
+      reconciliation,
     );
     if (
       result.classification === 'MATCHED' &&
@@ -282,16 +321,6 @@ export class CommerceService {
     if (!['CUSTOMER', 'PROVIDER_ADMIN', 'SYSTEM_ADMIN', 'SUPPORT_STAFF'].includes(actor.role)) {
       this.forbidden();
     }
-  }
-
-  private licenseCommitment(key: string | undefined): Hex {
-    if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
-      throw new UnauthorizedException({
-        code: 'INVALID_LICENSE_KEY',
-        message: 'A valid X-License-Key header is required for renewal.',
-      });
-    }
-    return activationCommitment(key as Hex);
   }
 
   private requireReviewRole(actor: AuthPrincipal): void {

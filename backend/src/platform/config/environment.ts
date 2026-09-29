@@ -45,6 +45,7 @@ export interface PlatformEnvironment {
   IPN_DELIVERY_GRACE_SECONDS: number;
   PAYMENT_WEBHOOK_SECRET?: string;
   SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: number;
+  SEPAY_SANDBOX_RECEIPT_TIMING: boolean;
   SEPAY_ENV?: SePayEnvironment;
   SEPAY_MERCHANT_ID?: string;
   SEPAY_SECRET_KEY?: string;
@@ -216,6 +217,10 @@ export function validateEnvironment(
       typeof environment.SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS === 'string' ? environment.SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS : '0',
       'SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS',
     ),
+    SEPAY_SANDBOX_RECEIPT_TIMING: oneOf(
+      typeof environment.SEPAY_SANDBOX_RECEIPT_TIMING === 'string' ? environment.SEPAY_SANDBOX_RECEIPT_TIMING : 'false',
+      'SEPAY_SANDBOX_RECEIPT_TIMING', ['true', 'false'] as const,
+    ) === 'true',
     IPN_DELIVERY_GRACE_SECONDS: parsePositiveInteger(
       typeof environment.IPN_DELIVERY_GRACE_SECONDS === 'string' &&
         environment.IPN_DELIVERY_GRACE_SECONDS.trim() !== ''
@@ -314,6 +319,14 @@ export function validateEnvironment(
   if (result.EMAIL_ADAPTER === 'brevo' || result.PAYMENT_ADAPTER === 'sepay') {
     result.WEB_APP_URL = requiredString(environment, 'WEB_APP_URL');
     assertHttpUrl(result.WEB_APP_URL, 'WEB_APP_URL');
+  }
+  if (result.SEPAY_SANDBOX_RECEIPT_TIMING) {
+    if (nodeEnvironment === 'production' || result.PAYMENT_ADAPTER !== 'sepay' || result.SEPAY_ENV !== 'sandbox') {
+      throw new Error('SEPAY_SANDBOX_RECEIPT_TIMING requires non-production SePay sandbox');
+    }
+    if (result.SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS !== 0) {
+      throw new Error('Sandbox receipt timing cannot be combined with a clock offset');
+    }
   }
   if (result.EVM_ADAPTER !== 'viem') {
     throw new Error('EVM_ADAPTER must use viem');

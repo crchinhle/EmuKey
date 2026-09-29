@@ -1,12 +1,12 @@
 import { Alert, Button, Input, Spin } from 'antd';
 import { useState } from 'react';
 
-import { usePublicLicenseVerification } from '../../application/licenses/licenseQueries';
+import { licenseStatusLabel, usePublicLicenseVerification } from '../../application/licenses/licenseQueries';
 import { SiteHeader } from '../components/SiteHeader';
 import { FactList, StatusChip } from '../components/WorkspacePrimitives';
 
 export function PublicVerificationScreen() {
-  const [code, setCode] = useState('EMU-TEST-LICENSE');
+  const [code, setCode] = useState('');
   const verification = usePublicLicenseVerification();
   const result = verification.data;
   const found = result && result.state !== 'NOT_FOUND';
@@ -18,13 +18,14 @@ export function PublicVerificationScreen() {
         <section className="verification-query" aria-labelledby="verify-title">
           <h1 id="verify-title">Xác minh Blockchain</h1>
           <p>
-            Nhập mã License công khai để kiểm tra trạng thái và finality, không
-            hiển thị dữ liệu người mua.
+            Nhập mã tra cứu công khai để kiểm tra trạng thái xác nhận trên blockchain.
+            Không nhập mã bản quyền dùng trong phần mềm. Kết quả không hiển thị dữ liệu người mua.
           </p>
           <label>
             Mã xác thực
             <Input
               aria-label="Mã xác thực"
+              placeholder="Nhập mã bản quyền công khai"
               value={code}
               onChange={(event) => {
                 setCode(event.target.value);
@@ -85,12 +86,13 @@ export function PublicVerificationScreen() {
                       result.state === 'CHAIN_CONFIRMED' ? 'success' : 'warning'
                     }
                   >
-                    {result.state}
+                    {result.state === 'CHAIN_CONFIRMED' ? 'Đã xác nhận trên blockchain' : result.state === 'REORGED' ? 'Đang xác minh lại sau thay đổi blockchain' : result.state === 'PROJECTION_STALE' ? 'Dữ liệu đang được đồng bộ lại' : 'Đang chờ xác nhận trên blockchain'}
                   </StatusChip>
                 </header>
                 <FactList
                   facts={[
                     { label: 'Sản phẩm', value: result.productName ?? '—' },
+                    { label: 'Trạng thái bản quyền', value: result.status ? licenseStatusLabel(result.status) : 'Chưa có thông tin' },
                     {
                       label: 'Nhà cung cấp',
                       value:
@@ -105,14 +107,14 @@ export function PublicVerificationScreen() {
                         : '—',
                     },
                     {
-                      label: 'Plan commitment',
+                      label: 'Mã đối chiếu gói',
                       value: result.plan?.commitment ?? '—',
                     },
                     {
-                      label: 'Block',
+                      label: 'Khối xác nhận',
                       value:
                         result.blockNumber == null
-                          ? 'Chưa finality'
+                          ? 'Chưa có xác nhận cuối cùng'
                           : String(result.blockNumber),
                     },
                   ]}

@@ -36,6 +36,7 @@ import {
   PaymentReceiptDto,
   PaymentReviewDto,
   ReviewPaymentDto,
+  RenewalPreviewDto,
 } from './commerce.dto.js';
 
 @ApiTags('commerce')
@@ -48,22 +49,27 @@ export class CommerceController {
 
   @Post()
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  @ApiHeader({ name: 'X-License-Key', required: false })
-  @ApiOperation({ summary: 'Create an authenticated idempotent purchase or renewal order' })
+  @ApiOperation({ summary: 'Create a purchase or resume an account-owned renewal. No license secret required.' })
   @ApiCreatedResponse({ type: OrderDto })
   create(
     @CurrentUser() actor: AuthPrincipal,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @Headers('x-license-key') licenseKey: string | undefined,
     @Body() dto: CreateOrderDto,
   ) {
-    return this.service.createOrder(actor, idempotencyKey, licenseKey, dto);
+    return this.service.createOrder(actor, idempotencyKey, undefined, dto);
   }
 
   @Get()
   @ApiOkResponse({ type: OrderDto, isArray: true })
   list(@CurrentUser() actor: AuthPrincipal) {
     return this.service.listOrders(actor);
+  }
+
+  @Get('renewal-preview/:licenseId')
+  @ApiOkResponse({ type: RenewalPreviewDto })
+  @ApiNotFoundResponse()
+  renewalPreview(@CurrentUser() actor: AuthPrincipal, @Param('licenseId', ParseUUIDPipe) licenseId: string) {
+    return this.service.renewalPreview(actor, licenseId);
   }
 
   @Get(':id')

@@ -17,6 +17,6 @@ describe('API-backed workspace screens', () => {
     render(<App initialEntries={['/system/console']} />);
 
     expect((await screen.findAllByText('up')).length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText('Platform readiness')).toBeTruthy();
+    expect(screen.getByText('Tình trạng dịch vụ')).toBeTruthy();
   });
 });

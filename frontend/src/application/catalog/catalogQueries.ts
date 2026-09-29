@@ -28,6 +28,8 @@ function mapProduct(product: PublicCatalogProductDto): Product {
       devices: plan.maxActiveDevices,
       label: plan.name,
       priceVnd: plan.priceVnd,
+      durationMonths: plan.durationMonths,
+      entitlements: plan.entitlements,
     })),
   };
 }

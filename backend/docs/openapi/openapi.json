@@ -1084,6 +1084,68 @@
         ]
       }
     },
+    "/api/v1/operations/audit-logs": {
+      "get": {
+        "operationId": "AuditController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUCCESS",
+                "DENIED",
+                "FAILED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/products/admin": {
       "get": {
         "operationId": "CatalogController_listAdmin",
@@ -1951,14 +2013,6 @@
         "operationId": "CommerceController_create",
         "parameters": [
           {
-            "name": "X-License-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "Idempotency-Key",
             "in": "header",
             "required": true,
@@ -1994,7 +2048,7 @@
             "bearer": []
           }
         ],
-        "summary": "Create an authenticated idempotent purchase or renewal order",
+        "summary": "Create a purchase or resume an account-owned renewal. No license secret required.",
         "tags": [
           "commerce"
         ]
@@ -2015,6 +2069,44 @@
                 }
               }
             }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/api/v1/orders/renewal-preview/{licenseId}": {
+      "get": {
+        "operationId": "CommerceController_renewalPreview",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenewalPreviewDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
           }
         },
         "security": [
@@ -3438,6 +3530,81 @@
           "provider"
         ]
       },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "AuditEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "actorRole": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetType": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "outcome",
+          "actorUserId",
+          "actorRole",
+          "targetType",
+          "targetId",
+          "reason",
+          "createdAt"
+        ]
+      },
+      "AuditPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryDto"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "hasMore",
+          "page"
+        ]
+      },
       "AdminProductDto": {
         "type": "object",
         "properties": {
@@ -4217,7 +4384,7 @@
         "properties": {
           "planId": {
             "type": "string",
-            "format": "uuid"
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
           },
           "targetLicenseId": {
             "type": "string",
@@ -4231,6 +4398,17 @@
       "OrderDto": {
         "type": "object",
         "properties": {
+          "renewalStatus": {
+            "type": "string",
+            "nullable": true,
+            "description": "Latest RENEW_LICENSE command status for this exact order, not the original issuance."
+          },
+          "renewalExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Target expiry of this renewal; effective only after canonical chain confirmation."
+          },
           "billingCycleSnapshot": {
             "type": "string"
           },
@@ -4355,6 +4533,64 @@
           "productNameSnapshot",
           "providerNameSnapshot",
           "providerUserId"
+        ]
+      },
+      "RenewalPreviewDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "planId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "planName": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "durationMonths": {
+            "type": "number"
+          },
+          "priceVnd": {
+            "type": "number"
+          },
+          "currentExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "estimatedExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Estimate only; final expiry uses verified payment time."
+          },
+          "canRenew": {
+            "type": "boolean"
+          },
+          "pendingOrder": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "licenseId",
+          "planId",
+          "planName",
+          "productName",
+          "durationMonths",
+          "priceVnd",
+          "currentExpiresAt",
+          "estimatedExpiresAt",
+          "canRenew",
+          "pendingOrder"
         ]
       },
       "OrderTermsDto": {

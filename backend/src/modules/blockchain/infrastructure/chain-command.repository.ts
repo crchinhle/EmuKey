@@ -140,7 +140,9 @@ export class ChainCommandRepository {
       let query: string;
       let values: unknown[];
       if (mode === 'REQUEUE_NO_SUBMISSION') {
-        if (hasRaw || row.nonce !== null) throw new Error('DEAD_LETTER_SUBMISSION_EVIDENCE_EXISTS');
+        // A reserved nonce is not a submitted transaction. Keep that reservation
+        // unchanged so prepareTransaction retries the same nonce, never a new one.
+        if (hasRaw) throw new Error('DEAD_LETTER_SUBMISSION_EVIDENCE_EXISTS');
         query = `UPDATE chain_commands
                  SET status='PENDING', next_attempt_at=NULL, last_error=NULL,
                      locked_by=NULL, locked_at=NULL, updated_at=now()

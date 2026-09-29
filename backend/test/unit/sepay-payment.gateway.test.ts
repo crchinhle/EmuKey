@@ -17,6 +17,16 @@ const sandboxOffsetGateway = new SePayPaymentGateway({
 });
 
 describe('SePayPaymentGateway', () => {
+  it('selects database receipt timing only for explicitly enabled sandbox, retaining provider evidence', async () => {
+    const receiptGateway = new SePayPaymentGateway({ environment: 'sandbox', merchantId: 'SP-TEST-EMUKEY', secretKey: 'sandbox-merchant-secret', webAppUrl: 'https://demo.emukey.test', sandboxReceiptTiming: true });
+    const result = await receiptGateway.verifyIpn({ signature: 'sandbox-merchant-secret', payload: {
+      notification_type: 'ORDER_PAID',
+      order: { order_amount: '199000', order_currency: 'VND', order_invoice_number: 'attempt-1', order_status: 'CAPTURED' },
+      transaction: { id: 'event-1', transaction_amount: '199000', transaction_currency: 'VND', transaction_id: 'bank-1', transaction_status: 'APPROVED', transaction_type: 'PAYMENT', transaction_date: '2026-09-28 16:30:34' },
+    } });
+    expect(result).toMatchObject({ timingBasis: 'SANDBOX_RECEIPT', occurredAt: new Date('2026-09-28T09:30:34Z') });
+    expect(() => new SePayPaymentGateway({ environment: 'production', merchantId: 'merchant', secretKey: 'secret', webAppUrl: 'https://demo.emukey.test', sandboxReceiptTiming: true })).toThrow('SANDBOX_RECEIPT_TIMING_NOT_ALLOWED');
+  });
   it('creates a signed Sandbox checkout form without exposing the secret key', async () => {
     const checkout = await gateway.createCheckout({
       amountVnd: 199_000,

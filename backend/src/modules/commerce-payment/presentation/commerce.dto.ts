@@ -1,9 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateOrderDto {
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID()
+  // Catalog IDs already persisted by the demo seed are PostgreSQL UUIDs,
+  // but may not carry RFC version/variant bits. Validate their full syntax;
+  // the repository still requires an existing published plan/product.
+  @ApiProperty({ pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: 'planId must be a canonical PostgreSQL UUID' })
   planId!: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
@@ -46,6 +50,10 @@ const PAYMENT_CLASSIFICATIONS = [
 ] as const;
 
 export class OrderDto {
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Latest RENEW_LICENSE command status for this exact order, not the original issuance.' })
+  renewalStatus?: string | null;
+  @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String, description: 'Target expiry of this renewal; effective only after canonical chain confirmation.' })
+  renewalExpiresAt?: string | null;
   @ApiProperty() billingCycleSnapshot!: string;
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
   @ApiProperty() currency!: string;
@@ -80,6 +88,19 @@ export class OrderDto {
 
 export class OrderTermsDto {
   @ApiProperty() content!: string;
+}
+
+export class RenewalPreviewDto {
+  @ApiProperty({ format: 'uuid' }) licenseId!: string;
+  @ApiProperty({ format: 'uuid' }) planId!: string;
+  @ApiProperty() planName!: string;
+  @ApiProperty() productName!: string;
+  @ApiProperty() durationMonths!: number;
+  @ApiProperty() priceVnd!: number;
+  @ApiProperty({ format: 'date-time' }) currentExpiresAt!: string;
+  @ApiProperty({ format: 'date-time', description: 'Estimate only; final expiry uses verified payment time.' }) estimatedExpiresAt!: string;
+  @ApiProperty() canRenew!: boolean;
+  @ApiProperty({ type: OrderDto, nullable: true }) pendingOrder!: OrderDto | null;
 }
 
 export class CheckoutSessionDto {

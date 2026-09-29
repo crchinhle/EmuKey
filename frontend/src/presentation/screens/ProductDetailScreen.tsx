@@ -71,8 +71,8 @@ export function ProductDetailScreen({ authenticated = false }: { readonly authen
 
         <section className="detail-lower">
           <article className="pricing-card">
-            <h2>Gói đã công bố</h2>
-            <p>Chọn một gói đang xuất bản để tiếp tục mua hàng.</p>
+            <h2>Chọn gói bản quyền</h2>
+            <p>Kiểm tra giá, thời hạn và số thiết bị trước khi mua. Bạn sẽ được đọc điều khoản của đơn hàng trước khi thanh toán.</p>
             <label>
               <span>Gói</span>
               <Select
@@ -88,7 +88,9 @@ export function ProductDetailScreen({ authenticated = false }: { readonly authen
             <div className="plan-summary">
               <strong>{selectedPlan.label}</strong>
               <p>{formatVnd(selectedPlan.priceVnd)}</p>
-              <p>{selectedPlan.devices} thiết bị được công bố</p>
+              <p>Tối đa {selectedPlan.devices} thiết bị</p>
+              <p>Thời hạn: {selectedPlan.durationMonths ? `${selectedPlan.durationMonths} tháng` : 'Chưa có thông tin'}</p>
+              {selectedPlan.entitlements ? <p>Quyền lợi: {Object.entries(selectedPlan.entitlements).filter(([, value]) => Boolean(value)).map(([key, value]) => `${key === 'desktop' ? 'Ứng dụng máy tính' : key}${value === true ? '' : `: ${String(value)}`}`).join(', ') || 'Không có quyền lợi bổ sung'}</p> : null}
             </div>
             <div className="plan-actions">
               <Button

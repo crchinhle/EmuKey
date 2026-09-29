@@ -9,7 +9,6 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 
 import { formatVnd, useProducts } from '../../application/catalog/catalogQueries';
-import { AiAssistantLauncher } from '../components/AiAssistantLauncher';
 import { ProductArtwork } from '../components/ProductArtwork';
 import { SiteHeader } from '../components/SiteHeader';
 import type { Product } from '../../domain/product';
@@ -419,6 +418,7 @@ const publicHomeStyles = `
   }
 
   @media (max-width: 760px) {
+    .public-home-content { width: 100%; }
     .public-home-hero {
       margin-inline: 16px;
       padding: 32px 16px;
@@ -438,8 +438,10 @@ const publicHomeStyles = `
     }
 
     .public-home-introduction h2 {
-      font-size: clamp(2rem, 9.5vw, 2.6rem);
+      font-size: clamp(1.75rem, 7vw, 2.1rem);
     }
+    .public-home-introduction-copy > p + p { display: none; }
+    .public-home-introduction-points { gap: 8px; }
 
     .public-home-featured-header {
       align-items: flex-start;
@@ -477,7 +479,12 @@ function cardsPerPage(): number {
 }
 
 function FeaturedCarousel({ products }: { readonly products: readonly Product[] }) {
-  const perPage = cardsPerPage();
+  const [perPage, setPerPage] = useState(cardsPerPage);
+  useEffect(() => {
+    const onResize = () => setPerPage(cardsPerPage());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const pageCount = Math.max(1, Math.ceil(products.length / perPage));
   const hasMorePages = pageCount > 1;
 
@@ -635,7 +642,7 @@ export function PublicHomeScreen() {
               thanh toán, nhận license và xác minh quyền sử dụng diễn ra liền mạch.
             </p>
             <p>
-              Thay vì quản lý đơn hàng, mã kích hoạt và tình trạng bản quyền ở nhiều nơi, bạn có thể theo dõi
+              Thay vì quản lý đơn hàng, mã bản quyền và tình trạng bản quyền ở nhiều nơi, bạn có thể theo dõi
               toàn bộ vòng đời license trong một tài khoản và chủ động kiểm tra trạng thái công khai khi cần.
             </p>
             <ul className="public-home-introduction-points">
@@ -684,7 +691,6 @@ export function PublicHomeScreen() {
           ) : null}
         </section>
       </main>
-      <AiAssistantLauncher />
     </div>
   );
 }

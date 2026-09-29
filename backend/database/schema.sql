@@ -218,12 +218,16 @@ CREATE TABLE orders (
         (order_status = 'PAYMENT_ACCEPTED' AND payment_accepted_at IS NOT NULL) OR
         (order_status <> 'PAYMENT_ACCEPTED' AND payment_accepted_at IS NULL)
     ),
+    auto_cancelled BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT ck_orders_auto_cancelled CHECK (NOT auto_cancelled OR
+        (cancelled_at IS NOT NULL AND cancelled_at >= payment_due_at AND order_status IN ('CANCELLED', 'PAYMENT_ACCEPTED'))),
     CONSTRAINT ck_orders_cancelled CHECK (
         (order_status = 'CANCELLED' AND cancelled_at IS NOT NULL AND expired_at IS NULL AND
             payment_accepted_at IS NULL) OR
         (order_status = 'EXPIRED' AND expired_at IS NOT NULL AND cancelled_at IS NULL AND
             payment_accepted_at IS NULL) OR
-        (order_status NOT IN ('CANCELLED', 'EXPIRED') AND cancelled_at IS NULL AND expired_at IS NULL)
+        (order_status NOT IN ('CANCELLED', 'EXPIRED') AND expired_at IS NULL AND
+            (cancelled_at IS NULL OR (auto_cancelled AND order_status = 'PAYMENT_ACCEPTED')))
     ),
     CONSTRAINT ck_orders_renewal_shape CHECK (
         (order_type = 'NEW_PURCHASE' AND target_license_id IS NULL) OR
@@ -242,7 +246,7 @@ BEGIN
        NEW.service_terms_accepted_at IS NOT NULL OR
        NEW.payment_accepted_at IS NOT NULL OR
        NEW.cancelled_at IS NOT NULL OR
-       NEW.expired_at IS NOT NULL THEN
+       NEW.expired_at IS NOT NULL OR NEW.auto_cancelled THEN
         RAISE EXCEPTION 'A new Order must enter in WAITING_SERVICE_TERMS_ACCEPTANCE state';
     END IF;
 
@@ -290,20 +294,33 @@ BEGIN
         (OLD.order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND
             NEW.order_status IN ('WAITING_PAYMENT', 'CANCELLED', 'EXPIRED')) OR
         (OLD.order_status = 'WAITING_PAYMENT' AND
-            NEW.order_status IN ('PAYMENT_ACCEPTED', 'CANCELLED', 'EXPIRED'))
+            NEW.order_status IN ('PAYMENT_ACCEPTED', 'CANCELLED', 'EXPIRED')) OR
+        (OLD.order_status = 'CANCELLED' AND OLD.auto_cancelled AND
+            OLD.service_terms_accepted_at IS NOT NULL AND NEW.order_status = 'PAYMENT_ACCEPTED' AND
+            statement_timestamp() < OLD.ipn_accept_until)
     ) THEN
         RAISE EXCEPTION 'Invalid Order status transition: % -> %',
             OLD.order_status, NEW.order_status;
     END IF;
 
+    IF NEW.auto_cancelled IS DISTINCT FROM OLD.auto_cancelled AND NOT (
+        NOT OLD.auto_cancelled AND NEW.auto_cancelled AND
+        OLD.order_status IN ('WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT') AND
+        NEW.order_status = 'CANCELLED' AND statement_timestamp() >= OLD.payment_due_at
+    ) THEN
+        RAISE EXCEPTION 'Automatic cancellation requires an unpaid overdue Order';
+    END IF;
+
     IF OLD.order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND
        NEW.order_status IN ('WAITING_PAYMENT', 'CANCELLED') AND
+       NOT (NEW.order_status = 'CANCELLED' AND NEW.auto_cancelled) AND
        statement_timestamp() >= OLD.payment_due_at THEN
         RAISE EXCEPTION 'Terms acceptance or cancellation is closed at payment_due_at';
     END IF;
 
     IF OLD.order_status = 'WAITING_PAYMENT' AND
        NEW.order_status = 'CANCELLED' AND
+       NOT NEW.auto_cancelled AND
        statement_timestamp() >= OLD.payment_due_at THEN
         RAISE EXCEPTION 'Order cancellation is closed at payment_due_at';
     END IF;
@@ -353,7 +370,8 @@ BEGIN
     END IF;
 
     IF OLD.payment_accepted_at IS NULL AND NEW.payment_accepted_at IS NOT NULL AND NOT (
-        OLD.order_status = 'WAITING_PAYMENT' AND NEW.order_status = 'PAYMENT_ACCEPTED'
+        (OLD.order_status = 'WAITING_PAYMENT' OR (OLD.order_status = 'CANCELLED' AND OLD.auto_cancelled))
+        AND NEW.order_status = 'PAYMENT_ACCEPTED'
     ) THEN
         RAISE EXCEPTION 'Payment may be accepted only on WAITING_PAYMENT -> PAYMENT_ACCEPTED';
     END IF;
@@ -449,14 +467,14 @@ BEGIN
             JOIN orders o ON o.id = pt.fulfillment_order_id
             WHERE pt.fulfillment_payment_attempt_id = OLD.id
               AND pt.fulfillment_order_id = OLD.order_id
-              AND o.order_status = 'WAITING_PAYMENT'
-              AND pt.provider_occurred_at >= o.service_terms_accepted_at
-              AND pt.provider_occurred_at >= OLD.created_at
-              AND pt.provider_occurred_at < OLD.expires_at
-              AND pt.provider_occurred_at < o.payment_due_at
+              AND (o.order_status = 'WAITING_PAYMENT' OR (o.order_status = 'CANCELLED' AND o.auto_cancelled))
+              AND payment_effective_time(pt) >= o.service_terms_accepted_at
+              AND payment_effective_time(pt) >= OLD.created_at
+              AND payment_effective_time(pt) < OLD.expires_at
+              AND payment_effective_time(pt) < o.payment_due_at
               AND pt.received_at < o.ipn_accept_until
               AND (OLD.status <> 'SUPERSEDED' OR
-                   pt.provider_occurred_at < OLD.superseded_at)
+                   payment_effective_time(pt) < OLD.superseded_at)
         ) INTO v_late_success;
     END IF;
 
@@ -574,6 +592,8 @@ CREATE TABLE payment_transactions (
     duplicate_of_transaction_id UUID,
     raw_payload JSONB NOT NULL,
     provider_occurred_at TIMESTAMPTZ NOT NULL,
+    timing_basis VARCHAR(30) NOT NULL DEFAULT 'PROVIDER'
+        CHECK (timing_basis IN ('PROVIDER', 'SANDBOX_RECEIPT')),
     received_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
     reviewed_by_user_id UUID,
     reviewed_by_role VARCHAR(30) GENERATED ALWAYS AS (
@@ -674,6 +694,32 @@ CREATE TABLE payment_transactions (
 );
 
 -- Ingress/processing timestamps are owned by PostgreSQL's statement clock.
+-- Sandbox receipt timing is an explicit EmuKey test policy, never a provider claim.
+CREATE FUNCTION payment_effective_time(payment payment_transactions)
+RETURNS TIMESTAMPTZ LANGUAGE sql IMMUTABLE STRICT AS $$
+    SELECT CASE WHEN payment.timing_basis = 'SANDBOX_RECEIPT'
+        THEN payment.received_at ELSE payment.provider_occurred_at END
+$$;
+
+CREATE FUNCTION guard_payment_timing_basis()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.timing_basis IS DISTINCT FROM OLD.timing_basis AND NOT COALESCE((
+        OLD.timing_basis = 'PROVIDER' AND NEW.timing_basis = 'SANDBOX_RECEIPT'
+        AND OLD.classification = 'UNMATCHED' AND OLD.review_status = 'OPEN'
+        AND OLD.review_reason = 'PAYMENT_OUTSIDE_ACCEPTED_WINDOW'
+        AND NEW.review_status = 'RESOLVED' AND NEW.review_resolution = 'ACCEPT_AND_FULFILL'
+        AND NEW.reviewed_by_user_id IS NOT NULL
+    ), FALSE) THEN
+        RAISE EXCEPTION 'Payment timing basis is immutable outside audited sandbox reconciliation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER trg_payment_transactions_timing_basis
+BEFORE UPDATE ON payment_transactions
+FOR EACH ROW EXECUTE FUNCTION guard_payment_timing_basis();
+
 -- Callers supply provider_occurred_at, but cannot backdate webhook receipt.
 CREATE FUNCTION stamp_payment_transaction_ingest()
 RETURNS TRIGGER
@@ -2468,6 +2514,7 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_order_status VARCHAR(40);
+    v_auto_cancelled BOOLEAN;
     v_service_terms_accepted_at TIMESTAMPTZ;
     v_payment_due_at TIMESTAMPTZ;
     v_ipn_accept_until TIMESTAMPTZ;
@@ -2491,9 +2538,9 @@ BEGIN
     END IF;
 
     IF v_new_effect AND (NOT v_old_effect OR v_effect_link_changed) THEN
-        SELECT o.order_status, o.service_terms_accepted_at, o.payment_due_at, o.ipn_accept_until,
+        SELECT o.order_status, o.auto_cancelled, o.service_terms_accepted_at, o.payment_due_at, o.ipn_accept_until,
                pa.status, pa.created_at, pa.expires_at, pa.superseded_at
-        INTO v_order_status, v_service_terms_accepted_at, v_payment_due_at, v_ipn_accept_until,
+        INTO v_order_status, v_auto_cancelled, v_service_terms_accepted_at, v_payment_due_at, v_ipn_accept_until,
              v_attempt_status, v_attempt_created_at, v_attempt_expires_at,
              v_attempt_superseded_at
         FROM orders o
@@ -2502,18 +2549,18 @@ BEGIN
         WHERE o.id = NEW.order_id
         FOR UPDATE OF o, pa;
 
-        IF NOT FOUND OR v_order_status <> 'WAITING_PAYMENT' OR
+        IF NOT FOUND OR NOT (v_order_status = 'WAITING_PAYMENT' OR (v_order_status = 'CANCELLED' AND v_auto_cancelled)) OR
            v_service_terms_accepted_at IS NULL OR
            v_attempt_status NOT IN ('PENDING', 'EXPIRED', 'SUPERSEDED') THEN
             RAISE EXCEPTION 'Payment fulfillment requires an eligible attempt on a terms-accepted WAITING_PAYMENT Order';
         END IF;
 
-        IF NEW.provider_occurred_at < v_service_terms_accepted_at OR
-           NEW.provider_occurred_at < v_attempt_created_at OR
-           NEW.provider_occurred_at >= v_payment_due_at OR
-           NEW.provider_occurred_at >= v_attempt_expires_at OR
+        IF payment_effective_time(NEW) < v_service_terms_accepted_at OR
+           payment_effective_time(NEW) < v_attempt_created_at OR
+           payment_effective_time(NEW) >= v_payment_due_at OR
+           payment_effective_time(NEW) >= v_attempt_expires_at OR
            (v_attempt_status = 'SUPERSEDED' AND
-                NEW.provider_occurred_at >= v_attempt_superseded_at) OR
+                payment_effective_time(NEW) >= v_attempt_superseded_at) OR
            NEW.received_at >= v_ipn_accept_until THEN
             RAISE EXCEPTION 'Payment provider occurrence time is outside the accepted checkout window';
         END IF;
@@ -2654,7 +2701,7 @@ BEGIN
         WHERE o.id = v_license.origin_order_id
           AND o.order_type = 'NEW_PURCHASE'
           AND o.order_status = 'PAYMENT_ACCEPTED'
-          AND pt.provider_occurred_at = v_license.period_start
+          AND payment_effective_time(pt) = v_license.period_start
           AND o.max_active_devices_snapshot = v_license.max_active_devices
     ) THEN
         RAISE EXCEPTION 'License origin requires the exact accepted payment effect, period start and device quota';

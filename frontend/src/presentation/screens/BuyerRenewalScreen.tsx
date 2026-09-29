@@ -1,145 +1,83 @@
-import { Alert, Button, Checkbox, Input, Result, Spin, Steps } from 'antd';
+import { Alert, Button, Checkbox, Result, Spin, Steps } from 'antd';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { describeApiError } from '../../application/auth/authContext';
-import { useLicenses } from '../../application/licenses/licenseQueries';
-import {
-  type OrderDetail,
-  useOrder,
-  useOrderMutations,
-  useOrderTerms,
-} from '../../application/orders/orderQueries';
+import { useOrder, useOrderMutations, useOrderTerms, useRenewalPreview } from '../../application/orders/orderQueries';
 import { OrderSummary } from '../components/OrderSummary';
-import { FactList, PageHeader, StatusChip } from '../components/WorkspacePrimitives';
+import { FactList, PageHeader } from '../components/WorkspacePrimitives';
 
 export function BuyerRenewalScreen() {
   const { licenseId = '' } = useParams();
   const navigate = useNavigate();
-  const licenses = useLicenses();
-  const license = licenses.data?.find((item) => item.id === licenseId);
-  const originOrder = useOrder(license?.originOrderId ?? '');
+  const preview = useRenewalPreview(licenseId);
   const mutations = useOrderMutations();
-  const [renewalOrder, setRenewalOrder] = useState<OrderDetail>();
-  const terms = useOrderTerms(renewalOrder?.id ?? '');
-  const [activationKey, setActivationKey] = useState('');
+  const [createdOrderId, setCreatedOrderId] = useState('');
+  const liveOrder = useOrder(createdOrderId || preview.data?.pendingOrder?.id || '');
+  const order = liveOrder.data ?? preview.data?.pendingOrder;
+  const waitingTerms = order?.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE';
+  const terms = useOrderTerms(waitingTerms ? order.id : '');
   const [accepted, setAccepted] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
 
-  if (licenses.isPending) return <Spin aria-label="Đang tải License" />;
-  if (licenses.isError || !license) {
-    return <Result status="404" title="Không tìm thấy License cần gia hạn" />;
-  }
-  if (originOrder.isPending) return <Spin aria-label="Đang tải gói gia hạn" />;
-  if (originOrder.isError || !originOrder.data) {
-    return <Result status="error" title="Không thể tải gói hiện tại của License" />;
-  }
-
-  const createRenewal = () => {
-    if (!activationKey.trim()) {
-      setValidationError('Nhập activation key hiện tại để xác nhận quyền gia hạn.');
-      return;
+  if (preview.isPending) return <Spin aria-label="Đang tải thông tin gia hạn" />;
+  if (preview.isError || !preview.data) return <Result status="error" title="Không thể tải thông tin gia hạn" subTitle="Bản quyền có thể không thuộc tài khoản này hoặc kết nối đang gián đoạn." extra={<Button onClick={() => void preview.refetch()}>Thử lại</Button>} />;
+  const offer = preview.data;
+  const terminal = order && ['CANCELLED', 'EXPIRED'].includes(order.orderStatus);
+  const continuing = order && ['WAITING_PAYMENT', 'PAYMENT_ACCEPTED'].includes(order.orderStatus);
+  const requestError = mutations.create.error ?? mutations.acceptServiceTerms.error ?? terms.error ?? liveOrder.error;
+  const proceed = () => {
+    if (continuing) {
+      void navigate(`/buyer/orders/${order.id}/payment`);
+    } else if (waitingTerms && accepted) {
+      mutations.acceptServiceTerms.mutate(order, { onSuccess: (value) => void navigate(`/buyer/orders/${value.id}/payment`) });
+    } else if (!order && offer.canRenew) {
+      mutations.create.mutate({ planId: offer.planId, targetLicenseId: licenseId }, {
+        onSuccess: (value) => { setCreatedOrderId(value.id); setAccepted(false); },
+      });
     }
-    setValidationError(null);
-    mutations.create.mutate(
-      {
-        licenseKey: activationKey.trim(),
-        planId: originOrder.data.planId,
-        targetLicenseId: license.id,
-      },
-      { onSuccess: setRenewalOrder },
-    );
   };
 
-  const acceptRenewalTerms = () => {
-    if (!renewalOrder || !accepted) {
-      setValidationError('Bạn cần đọc và đồng ý điều khoản trước khi thanh toán.');
-      return;
-    }
-    setValidationError(null);
-    mutations.acceptServiceTerms.mutate(renewalOrder, {
-      onSuccess: (order) => void navigate(`/buyer/orders/${order.id}/payment`),
-    });
-  };
-
-  const requestError = mutations.create.error ?? mutations.acceptServiceTerms.error ?? terms.error;
-
-  return (
-    <div className="workspace-screen">
-      <PageHeader
-        title="Gia hạn License"
-      />
-      <Steps
-        current={renewalOrder ? 1 : 0}
-        items={[{ title: 'Xác nhận License' }, { title: 'Điều khoản' }, { title: 'Thanh toán' }]}
-      />
-      <div className="checkout-grid">
-        <div className="checkout-stack">
-          <section className="workspace-card section-card">
-            <h2>License hiện tại</h2>
-            <FactList facts={[
-              { label: 'Mã License', value: license.publicLicenseId },
-              { label: 'Sản phẩm', value: license.productName },
-              { label: 'Gói', value: originOrder.data.planNameSnapshot },
-              { label: 'Hết hạn hiện tại', value: new Date(license.expiresAt).toLocaleDateString('vi-VN') },
-              { label: 'Trạng thái', value: <StatusChip tone={license.status === 'ACTIVE' ? 'success' : 'warning'}>{license.status}</StatusChip> },
-            ]} />
-          </section>
-          <section className="workspace-card section-card">
-            {!renewalOrder ? (
-              <>
-                <h2>Xác nhận activation key</h2>
-                <p className="muted-copy">Key chỉ được gửi qua header bảo mật để backend xác minh, không được lưu trong đơn hàng.</p>
-                <Input.Password
-                  aria-label="Activation key hiện tại"
-                  autoComplete="off"
-                  onChange={(event) => setActivationKey(event.target.value)}
-                  placeholder="Nhập activation key hiện tại"
-                  value={activationKey}
-                />
-              </>
-            ) : terms.isPending ? (
-              <Spin aria-label="Đang tải điều khoản gia hạn" />
-            ) : terms.data ? (
-              <>
-                <h2>Điều khoản gia hạn</h2>
-                <pre className="terms-document">{terms.data.content}</pre>
-                <p className="muted-copy">Service Terms áp dụng cho từng đơn gia hạn.</p>
-                <Checkbox checked={accepted} onChange={(event) => setAccepted(event.target.checked)}>
-                  Tôi đã đọc và đồng ý với điều khoản gia hạn
-                </Checkbox>
-              </>
-            ) : null}
-            {validationError || requestError ? (
-              <Alert
-                showIcon
-                role="alert"
-                type="error"
-                message={validationError ?? describeApiError(requestError, 'Không thể tạo đơn gia hạn.')}
-              />
-            ) : null}
-          </section>
-        </div>
-        <aside className="checkout-stack">
-          <OrderSummary order={{ total: renewalOrder?.priceVndSnapshot ?? originOrder.data.priceVndSnapshot }} />
-          <Alert
-            showIcon
-            type="info"
-            message="Gia hạn không cộng thời gian ngay khi SePay báo thành công. Worker chỉ cập nhật sau event blockchain đã xác nhận."
-          />
-          <div className="workspace-actions">
-            <Button onClick={() => void navigate('/buyer/licenses')}>Quay lại</Button>
-            <Button
-              disabled={renewalOrder ? !accepted || terms.isPending : !activationKey.trim()}
-              loading={mutations.create.isPending || mutations.acceptServiceTerms.isPending}
-              onClick={renewalOrder ? acceptRenewalTerms : createRenewal}
-              type="primary"
-            >
-              {renewalOrder ? 'Đồng ý và thanh toán' : 'Tạo đơn gia hạn'}
-            </Button>
-          </div>
-        </aside>
+  return <div className="workspace-screen">
+    <PageHeader title="Gia hạn bản quyền" />
+    <Steps current={continuing ? 2 : order ? 1 : 0} items={[{ title: 'Thông tin gia hạn' }, { title: 'Điều khoản' }, { title: 'Thanh toán' }]} />
+    <div className="checkout-grid">
+      <div className="checkout-stack">
+        <section className="workspace-card section-card">
+          <h2>Thông tin gia hạn</h2>
+          <FactList facts={[
+            { label: 'Sản phẩm', value: offer.productName },
+            { label: 'Gói', value: order?.planNameSnapshot ?? offer.planName },
+            { label: 'Thời gian gia hạn', value: `${order?.durationMonthsSnapshot ?? offer.durationMonths} tháng` },
+            { label: 'Hết hạn hiện tại', value: new Date(offer.currentExpiresAt).toLocaleDateString('vi-VN') },
+            { label: 'Hết hạn dự kiến', value: new Date(offer.estimatedExpiresAt).toLocaleDateString('vi-VN') },
+          ]} />
+          <p className="muted-copy">Giữ nguyên mã bản quyền và thiết bị đang sử dụng. Bạn không cần nhập mã để gia hạn.</p>
+          <p className="muted-copy">Hạn mới dự kiến nếu thanh toán lúc này. Thời gian còn lại được giữ nguyên; bản quyền đã hết hạn sẽ tính từ thời điểm thanh toán hợp lệ. Gia hạn không tự mở lại bản quyền đang tạm ngưng.</p>
+        </section>
+        {waitingTerms ? <section className="workspace-card section-card">
+          <h2>Điều khoản gia hạn</h2>
+          {terms.isPending ? <Spin aria-label="Đang tải điều khoản gia hạn" /> : terms.data ? <>
+            <pre className="terms-document">{terms.data.content}</pre>
+            <Checkbox checked={accepted} onChange={(event) => setAccepted(event.target.checked)}>Tôi đã đọc và đồng ý với điều khoản gia hạn</Checkbox>
+          </> : null}
+        </section> : null}
+        {order && !terminal ? <Alert showIcon type="info" title={order.orderStatus === 'PAYMENT_ACCEPTED' ? 'Đơn gia hạn đã thanh toán. Bạn có thể theo dõi tiến trình, không cần thanh toán lại.' : 'Bạn đang có đơn gia hạn chưa hoàn tất. Tiếp tục đơn này để tránh thanh toán trùng.'} /> : null}
+        {terminal ? <Alert showIcon type="warning" title="Đơn gia hạn đã hủy hoặc hết hạn" action={<Button onClick={() => { setCreatedOrderId(''); setAccepted(false); void preview.refetch(); }}>Tải lại thông tin gia hạn</Button>} /> : null}
+        {!offer.canRenew && !order ? <Alert showIcon type="warning" title="Bản quyền hoặc gói hiện không hỗ trợ gia hạn. Vui lòng liên hệ hỗ trợ." /> : null}
+        {requestError ? <Alert showIcon role="alert" type="error" title={describeApiError(requestError, 'Không thể xử lý gia hạn. Vui lòng thử lại.')} /> : null}
       </div>
+      <aside className="checkout-stack">
+        <OrderSummary order={{ total: order?.priceVndSnapshot ?? offer.priceVnd }} />
+        <p className="muted-copy">{order ? 'Giá đã được lưu cho đơn gia hạn này.' : 'Giá hiện tại của gói. Giá chính thức được xác nhận khi tạo đơn.'}</p>
+        <Alert showIcon type="info" title="Hạn sử dụng được cập nhật sau khi thanh toán và giao dịch gia hạn được xác nhận." />
+        <div className="workspace-actions">
+          <Button onClick={() => void navigate('/buyer/licenses')}>Quay lại</Button>
+          <Button type="primary" loading={mutations.create.isPending || mutations.acceptServiceTerms.isPending || (Boolean(createdOrderId) && liveOrder.isPending)}
+            disabled={Boolean(terminal) || liveOrder.isError || (waitingTerms ? !accepted || !terms.data : !order && !offer.canRenew)} onClick={proceed}>
+            {order?.orderStatus === 'PAYMENT_ACCEPTED' ? 'Theo dõi gia hạn' : continuing ? 'Tiếp tục thanh toán' : waitingTerms ? 'Đồng ý và thanh toán' : 'Tạo đơn gia hạn'}
+          </Button>
+        </div>
+      </aside>
     </div>
-  );
+  </div>;
 }

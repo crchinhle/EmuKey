@@ -76,7 +76,7 @@ export function SiteHeader() {
           Tài liệu
         </NavLink>
         {user ? (
-          <NavLink aria-current={location.pathname === '/buyer' ? 'page' : undefined} className={({ isActive }) => (isActive ? 'active' : '')} end to="/buyer">
+          <NavLink aria-current={location.pathname === roleHomePath(user.role) ? 'page' : undefined} className={({ isActive }) => (isActive ? 'active' : '')} end to={roleHomePath(user.role)}>
             Tổng quan
           </NavLink>
         ) : null}
@@ -129,12 +129,12 @@ export function SiteHeader() {
               <Link to="/products">Sản phẩm</Link>
               <Link to="/verify">Xác minh</Link>
               <Link to="/help">Tài liệu</Link>
-              {user ? <Link onClick={() => setMenuOpen(false)} to="/buyer">Tổng quan</Link> : null}
+              {user ? <Link onClick={() => setMenuOpen(false)} to={roleHomePath(user.role)}>Tổng quan</Link> : null}
             </nav>
             <div className="mobile-menu-actions">
               {user ? (
                 <div className="header-action-group">
-                  <Button onClick={() => { setMenuOpen(false); void navigate('/buyer/profile'); }}>Hồ sơ</Button>
+                  <Button onClick={() => { setMenuOpen(false); void navigate(roleSettingsPath(user.role)); }}>Hồ sơ</Button>
                   <Button type="primary" onClick={() => void auth?.logout()}>Đăng xuất</Button>
                 </div>
               ) : (

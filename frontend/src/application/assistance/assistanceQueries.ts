@@ -21,6 +21,17 @@ export interface MessageDto {
   content: string;
 }
 
+export const conversationStatusLabels: Record<ConversationDto['status'], string> = {
+  AI_ACTIVE: 'Trợ lý AI đang hỗ trợ',
+  WAITING_SUPPORT: 'Chờ nhân viên hỗ trợ',
+  SUPPORT_ACTIVE: 'Nhân viên đang xử lý',
+  CLOSED: 'Đã hoàn tất',
+};
+
+export const conversationContextLabels: Record<ConversationDto['contextType'], string> = {
+  GENERAL: 'Hỗ trợ chung', PRODUCT: 'Sản phẩm', PLAN: 'Gói bản quyền', ORDER: 'Đơn hàng', LICENSE: 'Bản quyền',
+};
+
 export function useConversations() {
   return useQuery({ queryKey: ['assistance', 'conversations'], queryFn: () => requestJson<ConversationDto[]>('/conversations') });
 }
@@ -33,7 +44,10 @@ export function useCreateConversation() {
         body: JSON.stringify(input),
         method: 'POST',
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
+      queryClient.setQueryData<ConversationDto[]>(['assistance', 'conversations'], (current = []) =>
+        [...current.filter((item) => item.id !== created.id), created],
+      );
       void queryClient.invalidateQueries({ queryKey: ['assistance', 'conversations'] });
     },
   });

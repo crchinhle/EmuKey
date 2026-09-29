@@ -8,6 +8,7 @@ afterEach(cleanup);
 describe('public verification', () => {
   it('shows the backend allowlist without Buyer PII', async () => {
     render(<App initialEntries={['/verify']} />);
+    fireEvent.change(screen.getByLabelText('Mã xác thực'), { target: { value: 'EMU-TEST-LICENSE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Xác minh' }));
     expect(await screen.findByText('Đã tìm thấy License')).toBeTruthy();
     expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();

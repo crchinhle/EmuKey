@@ -2,21 +2,35 @@ import { CustomerServiceOutlined } from '@ant-design/icons';
 import { Button, FloatButton, Input, Popover, Spin, Tag } from 'antd';
 import { useState } from 'react';
 
-import { useKnowledgeSearch } from '../../application/assistance/knowledgeQueries';
+import { useAskAi, useCreateConversation } from '../../application/assistance/assistanceQueries';
 import { useOptionalAuth } from '../../application/auth/authContext';
 
 const assistantPanelId = 'emukey-ai-assistant-panel';
 
 export function AiAssistantLauncher() {
+  const auth = useOptionalAuth();
+  return <AssistantSession key={auth?.user?.id ?? 'guest'} />;
+}
+
+function AssistantSession() {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [submittedQuestion, setSubmittedQuestion] = useState('');
   const auth = useOptionalAuth();
-  const search = useKnowledgeSearch(submittedQuestion);
+  const [conversationId, setConversationId] = useState<string>();
+  const create = useCreateConversation();
+  const answer = useAskAi();
+  const [error, setError] = useState(false);
+  const pending = create.isPending || answer.isPending;
 
-  const ask = () => {
-    if (!auth?.user || !question.trim()) return;
-    setSubmittedQuestion(question.trim());
+  const ask = async () => {
+    if (auth?.user?.role !== 'CUSTOMER' || !question.trim() || pending) return;
+    setSubmittedQuestion(question.trim()); setError(false); answer.reset();
+    try {
+      const id = conversationId ?? (await create.mutateAsync({ contextType: 'GENERAL', title: 'Hỏi trợ lý AI' })).id;
+      setConversationId(id);
+      await answer.mutateAsync({ conversationId: id, question: question.trim() });
+    } catch { setError(true); }
   };
 
   return (
@@ -29,15 +43,15 @@ export function AiAssistantLauncher() {
         >
           <Tag color="purple">AI</Tag>
           <h2>Trợ lý AI Emukey</h2>
-          {auth?.user ? <>
+          {auth?.user?.role === 'CUSTOMER' ? <>
             <p>Hỏi về số thiết bị, thời hạn và quyền sử dụng phù hợp.</p>
-            <Input.Search aria-label="Câu hỏi cho trợ lý AI" enterButton="Hỏi" loading={search.isFetching} onChange={(event) => setQuestion(event.target.value)} onSearch={ask} placeholder="Ví dụ: Gói nào cho 3 thiết bị?" value={question} />
-            {search.isLoading ? <Spin aria-label="Đang tìm nguồn kiến thức" /> : null}
-            {search.isError ? <p className="inline-message" role="alert">Không thể truy vấn kho tri thức lúc này.</p> : null}
-            {search.data?.length ? <div className="ai-sources" role="status">{search.data.map((source) => <p key={source.id}>{source.content}</p>)}</div> : null}
+            <Input.Search aria-label="Câu hỏi cho trợ lý AI" enterButton="Hỏi" loading={pending} onChange={(event) => setQuestion(event.target.value)} onSearch={() => void ask()} placeholder="Ví dụ: Gói nào cho 3 thiết bị?" value={question} />
+            {pending ? <Spin aria-label="Đang hỏi trợ lý AI" /> : null}
+            {error ? <p role="alert">Không thể nhận câu trả lời. Vui lòng thử lại.</p> : null}
+            {answer.data ? <div role="status"><strong>{submittedQuestion}</strong><p>{answer.data.answer}</p><small>{answer.data.grounded ? `Nguồn tham khảo: ${answer.data.citedSourceIds.join(', ')}` : 'Chưa có đủ nguồn xác thực; hãy liên hệ hỗ trợ.'}</small></div> : null}
           </> : <>
-            <p>Đăng nhập để hỏi trợ lý theo nguồn tài liệu chính thức.</p>
-            <Button href="/auth" type="primary">Đăng nhập</Button>
+            <p>{auth?.user ? 'Trợ lý tư vấn này dành cho tài khoản người mua.' : 'Đăng nhập tài khoản người mua để hỏi trợ lý theo nguồn tài liệu chính thức.'}</p>
+            {!auth?.user ? <Button href="/auth" type="primary">Đăng nhập</Button> : null}
           </>}
         </section>
       }

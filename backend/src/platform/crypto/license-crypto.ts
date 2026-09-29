@@ -56,8 +56,11 @@ export function entitlementsHash(value: unknown): Hex {
 }
 
 export function uuidToBytes16(value: string): Hex {
+  // Encode the canonical PostgreSQL UUID value, not a UUID generation policy.
+  // Seeded/imported IDs and UUIDv7 must retain all 128 bits unchanged.
+  // https://www.postgresql.org/docs/current/datatype-uuid.html
   if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       value,
     )
   ) {

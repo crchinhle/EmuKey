@@ -16,6 +16,7 @@ export interface CheckoutSession {
 }
 
 export interface PaymentGatewayPort {
+  readonly sandboxReceiptTiming?: boolean;
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession>;
   verifyIpn(input: PaymentIpnInput): Promise<VerifiedPaymentEvent>;
 }
@@ -26,6 +27,7 @@ export interface PaymentIpnInput {
 }
 
 export interface VerifiedPaymentEvent {
+  timingBasis?: 'SANDBOX_RECEIPT';
   amountVnd: number;
   eventId: string;
   occurredAt: Date;

@@ -7,6 +7,8 @@ import {
   useRetrieveActivationKey,
 } from '../../application/licenses/licenseQueries';
 import {
+  orderStatusLabel,
+  usePaymentHistory,
   useOrder,
   useOrderMutations,
 } from '../../application/orders/orderQueries';
@@ -17,43 +19,62 @@ import {
   StatusChip,
   formatMoney,
 } from '../components/WorkspacePrimitives';
-import { NotificationCenter } from '../components/NotificationCenter';
 
 export function PaymentStatusScreen() {
   const { id = '' } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const order = useOrder(id);
   const checkout = useOrderMutations().checkout;
+  const waitingPayment = order.data?.orderStatus === 'WAITING_PAYMENT';
+  const history = usePaymentHistory(waitingPayment, waitingPayment);
+  const paymentNeedsReview = waitingPayment && history.data?.some((item) => item.orderId === id && ['UNMATCHED', 'AMOUNT_MISMATCH'].includes(item.classification));
+  const [confirmationDelayed, setConfirmationDelayed] = useState(false);
   const retrieveKey = useRetrieveActivationKey();
   const [activationKey, setActivationKey] = useState<string | null>(null);
   const [retrieveError, setRetrieveError] = useState<unknown>(null);
   const providerReturned = ['success', 'error', 'cancel'].includes(searchParams.get('sepay') ?? '') || searchParams.get('returned') === 'sepay';
+  const unsuccessfulReturn = ['error', 'cancel'].includes(searchParams.get('sepay') ?? '');
+  useEffect(() => {
+    setConfirmationDelayed(false);
+    if (!providerReturned || unsuccessfulReturn || !waitingPayment) return;
+    const timer = window.setTimeout(() => setConfirmationDelayed(true), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [id, providerReturned, unsuccessfulReturn, waitingPayment]);
+  const isRenewal = order.data?.orderType === 'RENEWAL';
+  const renewalConfirmed = order.data?.renewalStatus === 'CONFIRMED';
   const license = useOrderLicense(
     id,
     order.data?.orderStatus === 'PAYMENT_ACCEPTED',
-    order.data?.licenseId,
+    order.data?.licenseId ?? order.data?.targetLicenseId,
+    isRenewal,
+    isRenewal ? order.data?.renewalExpiresAt : undefined,
   );
   const checkoutStarted = useRef(false);
   const checkoutSubmitted = useRef(false);
   const [copyStatus, setCopyStatus] = useState('');
   useEffect(() => {
-    if (!providerReturned && order.data?.orderStatus !== 'PAYMENT_ACCEPTED' && !checkout.data && !checkoutStarted.current) {
+    if (!providerReturned && order.data?.orderStatus === 'WAITING_PAYMENT' && !checkout.data && !checkoutStarted.current) {
       checkoutStarted.current = true;
       checkout.mutate(id);
     }
   }, [checkout, id, order.data?.orderStatus, providerReturned]);
   useEffect(() => {
-    if (!providerReturned && checkout.data && !checkoutSubmitted.current) {
+    if (!providerReturned && order.data?.orderStatus === 'WAITING_PAYMENT' && checkout.data && !checkoutSubmitted.current) {
       checkoutSubmitted.current = true;
       (document.getElementById('sepay-checkout-form') as HTMLFormElement | null)?.requestSubmit();
     }
-  }, [checkout.data, providerReturned]);
-  const licenseReady = license.data?.status === 'ACTIVE' && license.data.activationKeyTrustStatus === 'TRUSTED';
+  }, [checkout.data, providerReturned, order.data?.orderStatus]);
+  const renewalProjectionUpdated = Boolean(order.data?.renewalExpiresAt && license.data &&
+    Math.floor(Date.parse(license.data.expiresAt) / 1000) >= Math.floor(Date.parse(order.data.renewalExpiresAt) / 1000));
+  const licenseReady = license.data?.status === 'ACTIVE' && license.data.activationKeyTrustStatus === 'TRUSTED' &&
+    (!isRenewal || (renewalConfirmed && renewalProjectionUpdated));
   const licenseNeedsReview = license.data?.activationKeyTrustStatus === 'UNTRUSTED_REORG' ||
-    ['SUSPENDED', 'EXPIRED', 'REVOKED'].includes(license.data?.status ?? '');
+    ['SUSPENDED', 'REVOKED'].includes(license.data?.status ?? '') ||
+    (license.data?.status === 'EXPIRED' && (!isRenewal || (renewalConfirmed && renewalProjectionUpdated))) ||
+    (isRenewal && ['DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'].includes(order.data?.renewalStatus ?? ''));
   if (order.isPending) return <Spin />;
-  if (order.error || !order.data)
+  if (!order.data)
     return <Alert type="error" message="Không thể tải đơn hàng." />;
   const current = order.data;
   const payment = checkout.data;
@@ -61,16 +82,19 @@ export function PaymentStatusScreen() {
     ? license.data
       ? 'LICENSE_ISSUING'
       : 'PAYMENT_ACCEPTED'
-    : providerReturned
+    : current.orderStatus !== 'WAITING_PAYMENT'
+      ? current.orderStatus
+    : providerReturned && !unsuccessfulReturn
       ? 'PAYMENT_CONFIRMING'
       : 'WAITING_PAYMENT';
-  const screenState = activationKey
+  const screenState = paymentNeedsReview ? 'PAYMENT_REVIEW' : activationKey
     ? 'KEY_RETRIEVED'
     : licenseReady
       ? 'LICENSE_READY'
       : licenseNeedsReview
         ? 'REVIEW'
         : paymentStatus;
+  const paymentTone = current.orderStatus === 'PAYMENT_ACCEPTED' ? 'success' : paymentNeedsReview ? 'warning' : ['CANCELLED', 'EXPIRED'].includes(current.orderStatus) || searchParams.get('sepay') === 'error' ? 'error' : confirmationDelayed || unsuccessfulReturn ? 'warning' : current.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? 'neutral' : 'info';
   const keyUnavailable = retrieveError !== null;
   const activationUnavailable = keyUnavailable &&
     typeof retrieveError === 'object' &&
@@ -79,9 +103,9 @@ export function PaymentStatusScreen() {
     retrieveError.status === 404;
   const keyAvailable = license.data?.activationKeyAvailable !== false;
   const retrieveErrorMessage = activationUnavailable
-    ? 'Mã kích hoạt đã được nhận trước đó. Nếu bạn đã mất mã, hãy sử dụng quy trình khôi phục khóa.'
+    ? 'Mã bản quyền đã được nhận trước đó. Nếu bạn đã mất mã, hãy sử dụng quy trình khôi phục mã.'
     : keyUnavailable
-      ? 'Không thể nhận mã kích hoạt lúc này. Vui lòng thử lại khi bản quyền vẫn đang sẵn sàng.'
+      ? 'Không thể nhận mã bản quyền lúc này. Vui lòng thử lại khi bản quyền vẫn đang sẵn sàng.'
     : null;
   const licenseQueryErrorMessage = license.error
     ? 'Thanh toán đã xác nhận. Bản quyền đang được xử lý; trạng thái blockchain chưa thể tải ngay lúc này.'
@@ -90,67 +114,79 @@ export function PaymentStatusScreen() {
   const copyActivationKey = async () => {
     const key = activationKey;
     if (!key || !navigator.clipboard) return;
-    await navigator.clipboard.writeText(key);
-    setCopyStatus('Đã sao chép');
+    try {
+      await navigator.clipboard.writeText(key);
+      setCopyStatus('Đã sao chép');
+    } catch { setCopyStatus('Không thể sao chép. Vui lòng lưu mã thủ công.'); }
   };
 
   return (
     <div className="workspace-screen">
       <PageHeader
         title="Thanh toán đơn hàng"
-        action={<NotificationCenter />}
       />
       <div className="payment-grid">
         <section className="workspace-card payment-card">
           <header>
             <h2>{screenState === 'LICENSE_READY' || screenState === 'KEY_RETRIEVED'
-              ? 'Bản quyền đã sẵn sàng'
-              : screenState === 'PAYMENT_ACCEPTED'
+              ? isRenewal ? 'Gia hạn đã hoàn tất' : 'Bản quyền đã sẵn sàng'
+              : current.orderStatus === 'PAYMENT_ACCEPTED'
                 ? 'Thanh toán đã được xác nhận'
-                : 'Chuyển khoản qua SePay'}</h2>
-            <StatusChip tone={screenState === 'REVIEW' ? 'warning' : screenState === 'LICENSE_READY' || screenState === 'KEY_RETRIEVED' ? 'success' : 'info'}>
-              {screenState === 'WAITING_PAYMENT' ? 'Đang chờ thanh toán' :
+                : current.orderStatus === 'WAITING_PAYMENT' ? 'Thanh toán qua SePay' : 'Trạng thái đơn hàng'}</h2>
+            <StatusChip tone={screenState === 'REVIEW' ? 'warning' : current.orderStatus === 'PAYMENT_ACCEPTED' ? licenseReady ? 'success' : 'info' : paymentTone}>
+              {screenState === 'PAYMENT_REVIEW' ? 'Thanh toán cần kiểm tra' : screenState === 'WAITING_PAYMENT' ? 'Đang chờ thanh toán' :
                 screenState === 'PAYMENT_CONFIRMING' ? 'Đang xác nhận thanh toán' :
                   screenState === 'PAYMENT_ACCEPTED' ? 'Thanh toán đã được xác nhận' :
                     screenState === 'LICENSE_ISSUING' ? 'Đang kích hoạt bản quyền' :
-                      screenState === 'LICENSE_READY' ? 'Bản quyền đã sẵn sàng' :
-                        screenState === 'KEY_RETRIEVED' ? 'Mã kích hoạt đã được cấp' : 'Cần kiểm tra'}
+                      screenState === 'LICENSE_READY' ? isRenewal ? 'Gia hạn đã hoàn tất' : 'Bản quyền đã sẵn sàng' :
+                        screenState === 'KEY_RETRIEVED' ? 'Mã bản quyền đã được cấp' : screenState === 'REVIEW' ? 'Cần kiểm tra' : orderStatusLabel(current)}
             </StatusChip>
           </header>
-          {providerReturned &&
-          searchParams.get('sepay') === 'success' &&
-          current.orderStatus !== 'PAYMENT_ACCEPTED' ? (
+          {paymentNeedsReview ? <Alert showIcon type="warning" title="Giao dịch đã được ghi nhận nhưng cần kiểm tra" description={<>Backend chưa chấp nhận giao dịch cho đơn {current.orderNumber}. Không thanh toán lại. <a href="/buyer/support">Liên hệ hỗ trợ</a> và cung cấp mã đơn để đối chiếu thời gian, số tiền và chứng từ.</>} /> : null}
+          {providerReturned && !unsuccessfulReturn && !paymentNeedsReview && waitingPayment ? (
             <Alert
               showIcon
-              type="info"
-              message="SePay đã chuyển bạn về Emukey. Chúng tôi đang xác nhận giao dịch, quá trình này có thể mất vài giây."
+              type={confirmationDelayed ? 'warning' : 'info'}
+              title={confirmationDelayed ? 'Chưa nhận được xác nhận thanh toán hợp lệ' : 'Đang xác nhận thanh toán'}
+              description={confirmationDelayed ? 'Việc xác nhận đang lâu hơn dự kiến. Hệ thống vẫn kiểm tra tự động; nếu đã bị trừ tiền, không thanh toán lại và hãy liên hệ hỗ trợ kèm mã đơn.' : 'SePay đã chuyển bạn về EmuKey. Trạng thái chỉ hoàn tất khi backend xác nhận giao dịch.'}
             />
           ) : null}
+          {waitingPayment ? <div className="workspace-actions"><Button loading={order.isFetching || history.isFetching} onClick={() => { void order.refetch(); void history.refetch(); }}>Kiểm tra lại trạng thái</Button><Button href="/buyer/support">Liên hệ hỗ trợ</Button></div> : null}
+          {order.isError || (waitingPayment && history.isError) ? <Alert type="warning" title="Không thể cập nhật đầy đủ trạng thái. Dữ liệu đang hiển thị có thể chưa mới nhất." /> : null}
           {current.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady && !licenseNeedsReview ? (
             <Alert
               showIcon
               type="info"
               message="Thanh toán đã được xác nhận."
-              description="EmuKey đang kích hoạt bản quyền của bạn trên blockchain. Bạn không cần thanh toán lại hoặc tự làm mới trang."
+              description={isRenewal ? 'EmuKey đang xác nhận gia hạn trên blockchain. Key hiện tại được giữ nguyên; bạn không cần thanh toán lại.' : 'EmuKey đang kích hoạt bản quyền của bạn trên blockchain. Bạn không cần thanh toán lại hoặc tự làm mới trang.'}
             />
           ) : null}
           {licenseQueryErrorMessage ? <Alert showIcon type="info" message={licenseQueryErrorMessage} /> : null}
+          {current.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady && !licenseNeedsReview && !license.isError && !order.isError ? (
+            <div className="payment-processing" role="status" aria-label="Đang xử lý bản quyền" aria-live="polite">
+              <span aria-hidden="true"><Spin size="large" /></span>
+              <h3>Đang chờ xác nhận blockchain</h3>
+              <p>{isRenewal ? 'Trạng thái được tự động cập nhật. Hạn sử dụng mới chỉ có hiệu lực sau khi giao dịch gia hạn được xác nhận.' : 'Trạng thái được tự động cập nhật. Mã bản quyền sẽ sẵn sàng sau khi bản quyền được xác nhận.'}</p>
+              <small>Bạn có thể mở trang Bản quyền để theo dõi nếu rời màn hình này.</small>
+              <Button href="/buyer/licenses">Mở trang Bản quyền</Button>
+            </div>
+          ) : null}
           {licenseReady ? (
             <Alert
               showIcon
               type="success"
-              message="Bản quyền đã sẵn sàng"
-              description="Bản quyền đã đạt finality. Bạn có thể nhận mã kích hoạt một lần."
+              message={isRenewal ? 'Gia hạn đã hoàn tất' : 'Bản quyền đã sẵn sàng'}
+              description={isRenewal ? 'Hạn sử dụng mới đã được xác nhận trên blockchain. Tiếp tục sử dụng mã bản quyền hiện tại, không cần nhận mã mới.' : 'Bản quyền đã được xác nhận trên blockchain. Bạn có thể nhận mã bản quyền một lần.'}
             />
           ) : null}
-          {searchParams.get('sepay') === 'error' && current.orderStatus !== 'PAYMENT_ACCEPTED' ? (
+          {searchParams.get('sepay') === 'error' && current.orderStatus === 'WAITING_PAYMENT' && !paymentNeedsReview ? (
             <Alert
               showIcon
               type="error"
               message="SePay báo giao dịch không thành công. Bạn có thể tạo lại yêu cầu thanh toán."
             />
           ) : null}
-          {searchParams.get('sepay') === 'cancel' ? (
+          {searchParams.get('sepay') === 'cancel' && current.orderStatus === 'WAITING_PAYMENT' && !paymentNeedsReview ? (
             <Alert
               showIcon
               type="warning"
@@ -162,14 +198,14 @@ export function PaymentStatusScreen() {
               showIcon
               type="warning"
               message="Thanh toán đã xác nhận. Bản quyền đang cần được kiểm tra thêm."
-              description="Quyền sử dụng và mã kích hoạt vẫn bị khóa cho đến khi trạng thái blockchain được xác nhận lại."
+              description="Quyền sử dụng và mã bản quyền vẫn bị khóa cho đến khi trạng thái blockchain được xác nhận lại."
             />
-          ) : current.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady ? (
-            <Alert showIcon type="success" message="Thanh toán đã được xác nhận." />
-          ) : providerReturned ? (
-            <Alert showIcon type="info" message="Đang xác nhận thanh toán" />
-          ) : !payment ? (
-            <Alert showIcon type="info" message="Đang chuyển bạn đến cổng thanh toán SePay..." />
+          ) : current.orderStatus === 'PAYMENT_ACCEPTED' ? null : current.orderStatus !== 'WAITING_PAYMENT' ? (
+            <Alert type="warning" title="Đơn hàng chưa thể thanh toán" description={<a href="/buyer/orders">Mở đơn hàng để kiểm tra điều khoản hoặc trạng thái hủy/hết hạn.</a>} />
+          ) : paymentNeedsReview ? null : unsuccessfulReturn ? (
+            <Button type="primary" onClick={() => { checkout.reset(); checkoutStarted.current = false; checkoutSubmitted.current = false; setSearchParams({}); }}>Thanh toán lại</Button>
+          ) : providerReturned ? null : !payment ? (
+            checkout.isError ? null : <Alert showIcon type="info" message="Đang chuyển bạn đến cổng thanh toán SePay..." />
           ) : (
             <>
               <FactList
@@ -200,7 +236,7 @@ export function PaymentStatusScreen() {
               <Alert
                 showIcon
                 type="info"
-                message="Trạng thái sẽ được cập nhật sau khi backend xác minh IPN hợp lệ."
+                message="Trạng thái sẽ tự cập nhật sau khi hệ thống nhận được xác nhận từ cổng thanh toán."
               />
             </>
           )}
@@ -215,10 +251,10 @@ export function PaymentStatusScreen() {
                   { label: 'Thiết bị tối đa', value: license.data?.maxActiveDevices ?? current.maxActiveDevicesSnapshot },
                 ]}
               />
-              <div className="workspace-actions">
+              {isRenewal ? <Button href={`/buyer/licenses?licenseId=${encodeURIComponent(license.data!.id)}`}>Xem bản quyền đã gia hạn</Button> : <div className="workspace-actions">
                 {activationKey ? null : keyAvailable ? (
                   <>
-                    <p>Mã kích hoạt chỉ được hiển thị một lần. Hãy lưu lại trước khi rời trang.</p>
+                    <p>Mã bản quyền chỉ được hiển thị một lần. Hãy lưu lại trước khi rời trang.</p>
                     <Button
                       type="primary"
                       loading={retrieveKey.isPending}
@@ -240,19 +276,19 @@ export function PaymentStatusScreen() {
                         );
                       }}
                     >
-                      Nhận mã kích hoạt
+                      Nhận mã bản quyền
                     </Button>
                   </>
                 ) : (
                   <Alert
                     showIcon
                     type="info"
-                    message="Mã kích hoạt đã được nhận"
+                    message="Mã bản quyền đã được nhận"
                     description={
                       <>
-                        Nếu bạn đã mất mã, hãy sử dụng quy trình khôi phục khóa.{' '}
+                        Nếu bạn đã mất mã, hãy sử dụng quy trình khôi phục mã.{' '}
                         <a href={`/buyer/licenses?licenseId=${encodeURIComponent(license.data!.id)}&recover=1`}>
-                          Mở License Hub
+                          Mở quản lý bản quyền
                         </a>
                       </>
                     }
@@ -260,8 +296,8 @@ export function PaymentStatusScreen() {
                 )}
                 {activationKey ? (
                   <div className="workspace-card">
-                    <h3>Mã kích hoạt của bạn</h3>
-                    <Input.Password aria-label="Mã kích hoạt" readOnly value={activationKey} />
+                    <h3>Mã bản quyền của bạn</h3>
+                    <Input.Password aria-label="Mã bản quyền" readOnly value={activationKey} />
                     <div className="workspace-actions">
                       <Button onClick={() => void copyActivationKey()}>Sao chép</Button>
                       <Button
@@ -271,16 +307,16 @@ export function PaymentStatusScreen() {
                         Tôi đã lưu mã
                       </Button>
                     </div>
-                    <p>Mã kích hoạt chỉ được cấp một lần. Hãy lưu lại trước khi rời trang.</p>
+                    <p>Mã bản quyền chỉ được cấp một lần. Hãy lưu lại trước khi rời trang.</p>
                     <span aria-live="polite">{copyStatus}</span>
                   </div>
                 ) : null}
                 {retrieveErrorMessage ? <Alert type="warning" message={retrieveErrorMessage} /> : null}
-              </div>
+              </div>}
             </>
           ) : null}
           {checkout.error ? (
-            <Alert type="error" message="Không thể tạo yêu cầu thanh toán." />
+            <Alert type="error" message="Không thể tạo yêu cầu thanh toán." action={current.orderStatus === 'WAITING_PAYMENT' ? <Button loading={checkout.isPending} onClick={() => checkout.mutate(id)}>Thử lại</Button> : undefined} />
           ) : null}
         </section>
         <aside className="checkout-stack">
@@ -290,19 +326,19 @@ export function PaymentStatusScreen() {
               items={[
                 {
                   label: 'Chấp nhận điều khoản',
-                  status: 'Hoàn tất',
-                  tone: 'success',
+                  status: current.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? 'Chưa xác nhận' : 'Đã xác nhận',
+                  tone: current.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? 'warning' : 'success',
                 },
                 { label: 'Tạo đơn hàng', status: 'Hoàn tất', tone: 'success' },
                  {
                    label: 'Thanh toán',
-                   status: current.orderStatus === 'PAYMENT_ACCEPTED' ? 'Hoàn tất' : providerReturned ? 'Đang xác nhận' : 'Đang chờ',
-                   tone: current.orderStatus === 'PAYMENT_ACCEPTED' ? 'success' : 'warning',
+                   status: paymentNeedsReview ? 'Cần kiểm tra' : current.orderStatus === 'PAYMENT_ACCEPTED' ? 'Hoàn tất' : ['CANCELLED', 'EXPIRED'].includes(current.orderStatus) ? orderStatusLabel(current) : unsuccessfulReturn ? 'Chưa hoàn tất' : providerReturned ? 'Đang xác nhận' : 'Đang chờ',
+                   tone: paymentTone,
                  },
                  {
-                   label: 'Kích hoạt bản quyền',
-                   status: licenseReady ? 'Hoàn tất' : current.orderStatus === 'PAYMENT_ACCEPTED' ? 'Đang xử lý' : 'Chưa bắt đầu',
-                   tone: licenseReady ? 'success' : 'info',
+                   label: isRenewal ? 'Gia hạn bản quyền' : 'Kích hoạt bản quyền',
+                   status: licenseReady ? 'Hoàn tất' : licenseNeedsReview ? 'Cần kiểm tra' : current.orderStatus === 'PAYMENT_ACCEPTED' ? 'Đang xử lý' : 'Chưa bắt đầu',
+                   tone: licenseReady ? 'success' : licenseNeedsReview ? 'warning' : current.orderStatus === 'PAYMENT_ACCEPTED' ? 'info' : 'neutral',
                  },
               ]}
             />

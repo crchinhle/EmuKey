@@ -396,6 +396,21 @@ a {
   background: var(--info-surface);
 }
 
+.payment-card .ant-alert-info {
+  background: var(--info-surface);
+  border-color: var(--info-border);
+}
+
+.payment-card .ant-alert-warning {
+  background: var(--warning-surface);
+  border-color: var(--warning-border);
+}
+
+.payment-card .ant-alert-success {
+  background: var(--success-surface);
+  border-color: var(--success-border);
+}
+
 .status-chip--realtime {
   border-color: var(--realtime-border);
   color: var(--realtime-text);
@@ -631,6 +646,8 @@ a {
 .buyer-license-device-row .ant-btn { min-width: 120px; }
 .buyer-license-action-panel { margin-top: 28px; display: grid; gap: 12px; }
 .buyer-license-action-panel .ant-btn { width: fit-content; }
+.buyer-license-detail, .buyer-license-action-panel { min-width: 0; }
+.buyer-license-action-panel code { min-width: 0; max-width: 100%; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .buyer-licenses-header { padding: 0 16px; }
   .buyer-licenses-nav { display: none; }
@@ -739,6 +756,7 @@ a {
 .buyer-orders-toolbar .ant-btn { height: 40px !important; }
 
 .buyer-orders-table-wrap {
+  overflow-x: auto;
   min-height: 500px;
   margin-top: 20px;
   padding: 16px;
@@ -749,6 +767,7 @@ a {
 
 .buyer-orders-table {
   width: 100%;
+  min-width: 1000px;
   border-collapse: separate;
   border-spacing: 0 8px;
   table-layout: fixed;
@@ -764,12 +783,10 @@ a {
   text-align: left;
 }
 
-.buyer-orders-table th:nth-child(1) { width: 13%; }
-.buyer-orders-table th:nth-child(2) { width: 13%; }
-.buyer-orders-table th:nth-child(3) { width: 38%; }
-.buyer-orders-table th:nth-child(4) { width: 12%; }
-.buyer-orders-table th:nth-child(5) { width: 12%; }
-.buyer-orders-table th:nth-child(6) { width: 12%; }
+.buyer-orders-table th:nth-child(1) { width: 20%; }
+.buyer-orders-table th:nth-child(3) { width: 180px; text-align: right; }
+.buyer-orders-table th:nth-child(4) { width: 200px; }
+.buyer-orders-table th:nth-child(5) { width: 220px; }
 
 .buyer-orders-table td {
   height: 52px;
@@ -785,7 +802,7 @@ a {
 .buyer-orders-table td:last-child { border-right: 1px solid var(--border); }
 .buyer-orders-id { padding: 0; border: 0; color: var(--text); background: transparent; font: inherit; font-family: 'IBM Plex Mono', monospace; cursor: pointer; }
 .buyer-orders-money { text-align: right; font-family: 'IBM Plex Mono', monospace; }
-.buyer-orders-actions { display: flex; align-items: center; gap: 8px; }
+.buyer-orders-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .buyer-orders-actions .ant-btn { height: 36px; padding: 8px 14px; }
 
 @media (max-width: 760px) {
@@ -793,8 +810,6 @@ a {
   .buyer-orders-nav { display: none; }
   .buyer-orders-main { max-width: calc(100% - 32px); }
   .buyer-orders-toolbar { grid-template-columns: 1fr; }
-  .buyer-orders-table-wrap { overflow-x: auto; }
-  .buyer-orders-table { min-width: 1080px; }
 }
 
 /* W25 Customer Home uses the public site header rather than the workspace sidebar. */
@@ -2077,6 +2092,40 @@ a {
 
 .payment-card > small {
   color: var(--muted);
+}
+
+.payment-processing {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.payment-processing h3,
+.payment-processing p {
+  margin: 0;
+}
+
+.payment-processing h3 {
+  font-size: 20px;
+  line-height: 1.4;
+}
+
+.payment-processing p,
+.payment-processing small {
+  max-width: 440px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .payment-processing .ant-spin * {
+    animation: none !important;
+  }
 }
 
 .table-card {

@@ -30,7 +30,7 @@ export function ProviderOperationsScreen() {
         <Input.Search
           aria-label="Tìm dữ liệu vận hành"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Tìm đơn hoặc job"
+          placeholder="Tìm mã đơn, sản phẩm hoặc giao dịch"
           value={query}
         />
       </div>
@@ -62,15 +62,6 @@ export function ProviderOperationsScreen() {
                       </StatusChip>
                     </article>
                   ))}
-                </div>
-              ),
-            },
-            {
-              key: 'jobs',
-              label: 'Integration jobs',
-              children: (
-                <div className="stack-list">
-                  <Empty description="Job integration chưa có API Phase 1-7 cho Provider; đã ẩn dữ liệu giả." />
                 </div>
               ),
             },

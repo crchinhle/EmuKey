@@ -8,6 +8,7 @@ import { NotificationRepository } from '../../operations/infrastructure/notifica
 import { canonicalizeEntitlements } from '../../../platform/crypto/license-crypto.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { VerifiedPaymentEvent } from '../application/ports/payment-gateway.port.js';
+import { renewalExpiry } from '../domain/renewal-policy.js';
 
 export interface OrderRecord {
   billingCycleSnapshot: string;
@@ -35,6 +36,8 @@ export interface OrderRecord {
   publicLicenseId: string | null;
   targetLicenseId: string | null;
   serviceTermsAcceptedAt: Date | null;
+  renewalStatus?: string | null;
+  renewalExpiresAt?: Date | null;
 }
 
 export interface CheckoutPreparation {
@@ -126,6 +129,8 @@ function optionalDate(value: unknown): Date | null {
 
 function mapOrder(row: Record<string, unknown>): OrderRecord {
   return {
+    renewalStatus: typeof row.renewal_status === 'string' ? row.renewal_status : null,
+    renewalExpiresAt: optionalDate(row.renewal_expires_at),
     billingCycleSnapshot: String(row.billing_cycle_snapshot),
     createdAt: date(row.created_at),
     currency: String(row.currency),
@@ -173,6 +178,24 @@ function mapPaymentReview(row: Record<string, unknown>): PaymentReviewRecord {
   };
 }
 
+const ORDER_READ = `SELECT o.*, l.id AS license_id, l.public_license_id,
+  renewal.status AS renewal_status, renewal.expires_at AS renewal_expires_at
+  FROM orders o
+  LEFT JOIN licenses l ON l.origin_order_id = o.id OR l.id = o.target_license_id
+  LEFT JOIN LATERAL (
+    SELECT status, payload->>'expiresAt' AS expires_at FROM chain_commands
+    WHERE order_id = o.id AND command_type = 'RENEW_LICENSE'
+    ORDER BY license_command_sequence DESC LIMIT 1
+  ) renewal ON true`;
+
+const PENDING_RENEWAL = `${ORDER_READ}
+  WHERE o.customer_user_id = $1 AND o.target_license_id = $2
+    AND o.order_type = 'RENEWAL'
+    AND ((o.order_status IN ('WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT')
+          AND o.payment_due_at > clock_timestamp())
+      OR (o.order_status = 'PAYMENT_ACCEPTED' AND renewal.status IS DISTINCT FROM 'CONFIRMED'))
+  ORDER BY o.created_at DESC LIMIT 1`;
+
 export class CommerceRepository {
   constructor(
     private readonly pool: Pool,
@@ -193,7 +216,6 @@ export class CommerceRepository {
     idempotencyKey: string,
     planId: string,
     targetLicenseId?: string,
-    targetActivationCommitment?: Hex,
   ): Promise<OrderRecord> {
     return this.withTransaction(async (client) => {
       await client.query(
@@ -201,8 +223,7 @@ export class CommerceRepository {
         [`${customerUserId}:${idempotencyKey}`],
       );
       const previous = await client.query<Record<string, unknown>>(
-        `SELECT o.*, l.id AS license_id, l.public_license_id
-         FROM orders o LEFT JOIN licenses l ON l.origin_order_id = o.id
+        `${ORDER_READ}
          WHERE o.customer_user_id = $1 AND o.idempotency_key = $2
          FOR UPDATE OF o`,
         [customerUserId, idempotencyKey],
@@ -216,6 +237,19 @@ export class CommerceRepository {
           throw new Error('IDEMPOTENCY_CONFLICT');
         }
         return order;
+      }
+
+      if (targetLicenseId) {
+        // Serialize distinct browser intents too, without locking license before payment's order lock.
+        // https://www.postgresql.org/docs/15/explicit-locking.html#ADVISORY-LOCKS
+        await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
+          [`renewal:${customerUserId}:${targetLicenseId}`]);
+        const pending = await client.query<Record<string, unknown>>(PENDING_RENEWAL, [customerUserId, targetLicenseId]);
+        if (pending.rows[0]) {
+          const order = mapOrder(pending.rows[0]);
+          if (order.planId !== planId) throw new Error('RENEWAL_LICENSE_NOT_FOUND');
+          return order;
+        }
       }
 
       const selected = await client.query<Record<string, unknown>>(
@@ -235,14 +269,14 @@ export class CommerceRepository {
       if (targetLicenseId) {
         const target = await client.query(
           `SELECT id FROM licenses
-           WHERE id = $1 AND activation_commitment = decode($2, 'hex')
+           WHERE id = $1 AND plan_id = $2
              AND provider_user_id = $3 AND product_id = $4
              AND customer_user_id = $5
              AND status IN ('ACTIVE', 'SUSPENDED', 'EXPIRED')
            FOR SHARE`,
           [
             targetLicenseId,
-            targetActivationCommitment?.slice(2) ?? '',
+            planId,
             plan.provider_user_id,
             plan.product_id,
             customerUserId,
@@ -305,13 +339,50 @@ export class CommerceRepository {
     });
   }
 
+  async findPendingRenewal(customerUserId: string, licenseId: string): Promise<OrderRecord | null> {
+    const result = await this.pool.query<Record<string, unknown>>(PENDING_RENEWAL, [customerUserId, licenseId]);
+    return result.rows[0] ? mapOrder(result.rows[0]) : null;
+  }
+
+  async findRenewalOffer(customerUserId: string, licenseId: string) {
+    const result = await this.pool.query<Record<string, unknown>>(`
+      SELECT l.expires_at, l.status, l.plan_id, pl.name AS plan_name, pl.price_vnd,
+        pl.duration_months, pl.status = 'PUBLISHED' AS plan_published,
+        p.status = 'PUBLISHED' AS product_published, p.name AS product_name
+      FROM licenses l JOIN plans pl ON pl.id = l.plan_id
+      JOIN products p ON p.id = l.product_id
+      WHERE l.id = $1 AND l.customer_user_id = $2`, [licenseId, customerUserId]);
+    const row = result.rows[0];
+    return row ? {
+      expiresAt: date(row.expires_at), status: String(row.status), planId: String(row.plan_id),
+      planName: String(row.plan_name), productName: String(row.product_name),
+      priceVnd: Number(row.price_vnd), durationMonths: Number(row.duration_months),
+      planPublished: row.plan_published === true, productPublished: row.product_published === true,
+    } : null;
+  }
+
+  async cancelOverdueOrders(customerUserId?: string): Promise<number> {
+    return this.withTransaction(async (client) => {
+      const due = await client.query<{ id: string }>(`SELECT id FROM orders
+        WHERE order_status IN ('WAITING_SERVICE_TERMS_ACCEPTANCE', 'WAITING_PAYMENT')
+          AND payment_due_at <= statement_timestamp()
+          AND ($1::uuid IS NULL OR customer_user_id = $1)
+        ORDER BY payment_due_at LIMIT 100 FOR UPDATE SKIP LOCKED`, [customerUserId ?? null]);
+      for (const { id } of due.rows) {
+        await client.query("UPDATE orders SET order_status='CANCELLED', auto_cancelled=true WHERE id=$1", [id]);
+        await client.query("UPDATE payment_attempts SET status='EXPIRED' WHERE order_id=$1 AND status='PENDING' AND expires_at <= statement_timestamp()", [id]);
+        await this.audit.write(client, { action: 'ORDER_AUTO_CANCELLED', targetType: 'ORDER', targetId: id, reason: 'PAYMENT_DEADLINE_REACHED' });
+      }
+      return due.rowCount ?? 0;
+    });
+  }
+
   async findOrder(
     customerUserId: string,
     id: string,
   ): Promise<OrderRecord | null> {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT o.*, l.id AS license_id, l.public_license_id
-       FROM orders o LEFT JOIN licenses l ON l.origin_order_id = o.id
+      `${ORDER_READ}
        WHERE o.id = $1 AND o.customer_user_id = $2`,
       [id, customerUserId],
     );
@@ -320,8 +391,7 @@ export class CommerceRepository {
 
   async listCustomerOrders(customerUserId: string): Promise<OrderRecord[]> {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT o.*, l.id AS license_id, l.public_license_id
-       FROM orders o LEFT JOIN licenses l ON l.origin_order_id = o.id
+      `${ORDER_READ}
        WHERE o.customer_user_id = $1
        ORDER BY o.created_at DESC`,
       [customerUserId],
@@ -392,6 +462,7 @@ export class CommerceRepository {
         targetId: id,
         targetType: 'ORDER',
       });
+      await client.query("UPDATE payment_attempts SET status='SUPERSEDED' WHERE order_id=$1 AND status='PENDING'", [id]);
       return order;
     });
   }
@@ -467,14 +538,33 @@ export class CommerceRepository {
     );
   }
 
+  async findSandboxPaymentEvidence(id: string): Promise<{ event: VerifiedPaymentEvent; payload: unknown } | null> {
+    const result = await this.pool.query<Record<string, unknown>>(
+      `SELECT pt.*, pa.provider_reference FROM payment_transactions pt
+       JOIN payment_attempts pa ON pa.id = pt.payment_attempt_id AND pa.order_id = pt.order_id
+       WHERE pt.id = $1 AND pt.raw_payload->'payload'->>'notification_type' = 'ORDER_PAID'
+         AND pt.raw_payload->'payload'->'order'->>'order_status' = 'CAPTURED'
+         AND pt.raw_payload->'payload'->'transaction'->>'transaction_status' = 'APPROVED'
+         AND pt.raw_payload->'payload'->'transaction'->>'id' = pt.provider_event_id
+         AND pt.raw_payload->'payload'->'order'->>'order_invoice_number' = pa.provider_reference`, [id],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return { event: { amountVnd: Number(row.amount_minor), eventId: String(row.provider_event_id), occurredAt: date(row.provider_occurred_at), protocolVersion: 1,
+      providerReference: String(row.provider_reference), ...(typeof row.provider_transaction_ref === 'string' ? { transactionReference: row.provider_transaction_ref } : {}) },
+      payload: (row.raw_payload as { payload: unknown }).payload };
+  }
+
   async ingestPayment(
     event: VerifiedPaymentEvent,
     rawPayload: unknown,
     issuance: IssuanceMaterial,
     chain: ChainConfiguration,
+    reconciliation?: { transactionId: string; actor: AuthPrincipal; reason: string },
   ): Promise<PaymentIngestResult> {
     return this.withTransaction(async (client) => {
-      const transactionId = randomUUID();
+      const transactionId = reconciliation?.transactionId ?? randomUUID();
+      const timingBasis = event.timingBasis ?? 'PROVIDER';
       const evidencePayload = JSON.stringify({
         payload: rawPayload,
         protocolVersion: event.protocolVersion,
@@ -483,19 +573,26 @@ export class CommerceRepository {
         'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
         [`payment-event:${event.eventId}`],
       );
-      const previous = await client.query<{ id: string }>(
-        'SELECT id FROM payment_transactions WHERE provider_event_id = $1',
+      const previous = await client.query<Record<string, unknown>>(
+        'SELECT * FROM payment_transactions WHERE provider_event_id = $1 FOR UPDATE',
         [event.eventId],
       );
-      if (previous.rows[0]) {
+      const stored = previous.rows[0];
+      if (stored && (!reconciliation || stored.review_resolution === 'ACCEPT_AND_FULFILL')) {
         return {
           classification: 'DUPLICATE',
           transactionId: String(previous.rows[0]?.id),
         };
       }
+      if (reconciliation && (!stored || stored.id !== transactionId ||
+          reconciliation.actor.role !== 'SYSTEM_ADMIN' || timingBasis !== 'SANDBOX_RECEIPT' ||
+          stored.classification !== 'UNMATCHED' || stored.review_status !== 'OPEN' ||
+          stored.review_reason !== 'PAYMENT_OUTSIDE_ACCEPTED_WINDOW')) {
+        throw new Error('SANDBOX_PAYMENT_NOT_RECONCILABLE');
+      }
 
       const attemptResult = await client.query<Record<string, unknown>>(
-        `SELECT pa.*, o.*, provider.provider_chain_address,
+        `SELECT pa.*, o.*, provider.provider_chain_address, statement_timestamp() AS database_received_at,
                 statement_timestamp() < o.ipn_accept_until AS received_before_cutoff,
                 pa.id AS payment_attempt_id,
                 pa.amount_vnd AS payment_attempt_amount_vnd,
@@ -512,6 +609,9 @@ export class CommerceRepository {
         [event.providerReference],
       );
       const row = attemptResult.rows[0];
+      if (reconciliation && (!row || stored?.order_id !== row.matched_order_id || stored?.payment_attempt_id !== row.payment_attempt_id)) {
+        throw new Error('SANDBOX_PAYMENT_NOT_RECONCILABLE');
+      }
       if (!row) {
         await client.query(
           `INSERT INTO payment_transactions
@@ -534,6 +634,7 @@ export class CommerceRepository {
       const orderId = String(row.matched_order_id);
       const attemptId = String(row.payment_attempt_id);
       if (Number(row.payment_attempt_amount_vnd) !== event.amountVnd) {
+        if (reconciliation) throw new Error('SANDBOX_PAYMENT_NOT_RECONCILABLE');
         await client.query(
           `INSERT INTO payment_transactions
             (id, provider_event_id, provider_transaction_ref, order_id,
@@ -558,6 +659,7 @@ export class CommerceRepository {
         row.order_status === 'PAYMENT_ACCEPTED' ||
         row.payment_attempt_status === 'SUCCEEDED'
       ) {
+        if (reconciliation) throw new Error('SANDBOX_PAYMENT_ALREADY_FULFILLED');
         const original = await client.query<{ id: string }>(
           `SELECT id FROM payment_transactions
            WHERE fulfillment_order_id = $1
@@ -585,9 +687,12 @@ export class CommerceRepository {
         );
         return { classification: 'DUPLICATE', transactionId };
       }
-      const occurredAt = event.occurredAt.getTime();
+      const effectiveAt = timingBasis === 'SANDBOX_RECEIPT'
+        ? date(reconciliation ? stored!.received_at : row.database_received_at)
+        : event.occurredAt;
+      const occurredAt = effectiveAt.getTime();
       const eligible =
-        row.order_status === 'WAITING_PAYMENT' &&
+        (row.order_status === 'WAITING_PAYMENT' || (row.order_status === 'CANCELLED' && row.auto_cancelled === true)) &&
         ['PENDING', 'EXPIRED', 'SUPERSEDED'].includes(
           String(row.payment_attempt_status),
         ) &&
@@ -598,15 +703,16 @@ export class CommerceRepository {
         occurredAt < date(row.payment_due_at).getTime() &&
         (row.payment_attempt_status !== 'SUPERSEDED' ||
           occurredAt < date(row.payment_attempt_superseded_at).getTime()) &&
-        row.received_before_cutoff === true;
+        (reconciliation ? date(stored!.received_at).getTime() < date(row.ipn_accept_until).getTime() : row.received_before_cutoff === true);
       if (!eligible) {
+        if (reconciliation) throw new Error('SANDBOX_PAYMENT_OUTSIDE_ACCEPTED_WINDOW');
         await client.query(
           `INSERT INTO payment_transactions
             (id, provider_event_id, provider_transaction_ref, order_id,
              payment_attempt_id, amount_minor, currency, classification,
-             review_status, review_reason, raw_payload, provider_occurred_at)
+             review_status, review_reason, raw_payload, provider_occurred_at, timing_basis)
            VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'UNMATCHED', 'OPEN',
-                   'PAYMENT_OUTSIDE_ACCEPTED_WINDOW', $7, $8)`,
+                   'PAYMENT_OUTSIDE_ACCEPTED_WINDOW', $7, $8, $9)`,
           [
             transactionId,
             event.eventId,
@@ -616,17 +722,31 @@ export class CommerceRepository {
             event.amountVnd,
             evidencePayload,
             event.occurredAt,
+            timingBasis,
           ],
         );
         return { classification: 'UNMATCHED', transactionId };
       }
 
-      await client.query(
+      if (reconciliation) {
+        await client.query(
+          `UPDATE payment_transactions SET timing_basis = 'SANDBOX_RECEIPT',
+             review_status = 'RESOLVED', review_resolution = 'ACCEPT_AND_FULFILL',
+             review_reason = $2, reviewed_by_user_id = $3
+           WHERE id = $1`,
+          [transactionId, reconciliation.reason, reconciliation.actor.sub],
+        );
+        await this.audit.write(client, {
+          action: 'SANDBOX_PAYMENT_RECONCILED', actorRole: 'SYSTEM_ADMIN', actorUserId: reconciliation.actor.sub,
+          targetId: transactionId, targetType: 'PAYMENT_TRANSACTION', reason: reconciliation.reason,
+          metadata: { orderId, timingBasis, originalReason: stored!.review_reason, providerOccurredAt: event.occurredAt.toISOString(), receivedAt: effectiveAt.toISOString() },
+        });
+      } else await client.query(
         `INSERT INTO payment_transactions
           (id, provider_event_id, provider_transaction_ref, order_id,
            payment_attempt_id, amount_minor, currency, classification,
-           raw_payload, provider_occurred_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'MATCHED', $7, $8)`,
+           raw_payload, provider_occurred_at, timing_basis)
+         VALUES ($1, $2, $3, $4, $5, $6, 'VND', 'MATCHED', $7, $8, $9)`,
         [
           transactionId,
           event.eventId,
@@ -636,6 +756,7 @@ export class CommerceRepository {
           event.amountVnd,
           evidencePayload,
           event.occurredAt,
+          timingBasis,
         ],
       );
       await client.query(
@@ -676,7 +797,8 @@ export class CommerceRepository {
              plan_commitment, period_start, expires_at, max_active_devices,
              activation_commitment, activation_key_version)
            VALUES ($1, $2, $3, $4, $5, $6, $7, decode($8, 'hex'),
-                   $9, $9::timestamptz + make_interval(months => $10), $11,
+                   (SELECT payment_effective_time(pt) FROM payment_transactions pt WHERE pt.id = $9),
+                   (SELECT payment_effective_time(pt) FROM payment_transactions pt WHERE pt.id = $9) + make_interval(months => $10), $11,
                    decode($12, 'hex'), 1)
            RETURNING expires_at`,
           [
@@ -688,7 +810,7 @@ export class CommerceRepository {
             row.product_id,
             row.plan_id,
             hex(row.plan_commitment_snapshot).slice(2),
-            event.occurredAt,
+            transactionId,
             Number(row.duration_months_snapshot),
             Number(row.max_active_devices_snapshot),
             issuance.activationCommitment.slice(2),
@@ -698,11 +820,11 @@ export class CommerceRepository {
       } else {
         licenseId = String(row.target_license_id);
         const renewed = await client.query<{ expires_at: Date }>(
-          `SELECT expires_at + make_interval(months => $2) AS expires_at
+          `SELECT expires_at
            FROM licenses WHERE id = $1 FOR UPDATE`,
-          [licenseId, Number(row.duration_months_snapshot)],
+          [licenseId],
         );
-        expiresAt = renewed.rows[0]!.expires_at;
+        expiresAt = renewalExpiry(renewed.rows[0]!.expires_at, effectiveAt, Number(row.duration_months_snapshot));
       }
 
       const commandPayload =
@@ -793,7 +915,7 @@ export class CommerceRepository {
         action: 'PAYMENT_ACCEPTED',
         actorRole: 'CUSTOMER',
         actorUserId: String(row.customer_user_id),
-        metadata: { classification: 'MATCHED', orderType: row.order_type },
+        metadata: { classification: reconciliation ? 'UNMATCHED' : 'MATCHED', timingBasis, reconciled: !!reconciliation, orderType: row.order_type },
         targetId: orderId,
         targetType: 'ORDER',
       });
@@ -878,7 +1000,7 @@ export class CommerceRepository {
               o.plan_name_snapshot
        FROM payment_transactions pt
        JOIN orders o ON o.id = pt.order_id
-       WHERE pt.id = $1 AND pt.classification = 'MATCHED' AND ${scope}`,
+       WHERE pt.id = $1 AND pt.fulfillment_order_id IS NOT NULL AND ${scope}`,
       parameters,
     );
     const row = result.rows[0];

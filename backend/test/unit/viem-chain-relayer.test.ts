@@ -10,6 +10,7 @@ import type { ChainCommandInput } from '../../src/modules/blockchain/application
 import { licenseRegistryAbi } from '../../src/modules/blockchain/infrastructure/license-registry-contract.js';
 import {
   ViemChainRelayer,
+  encodeChainCommand,
   type ViemRelayerRpc,
 } from '../../src/modules/blockchain/infrastructure/viem-chain-relayer.js';
 
@@ -35,6 +36,15 @@ const input: ChainCommandInput = {
 };
 
 describe('ViemChainRelayer', () => {
+  it('encodes persisted catalog UUIDs without changing product or plan identity', () => {
+    const encoded = encodeChainCommand({ ...input, payload: { ...input.payload,
+      productId: 'e02c3bd8-b66e-a31b-83bf-ecaf10af8c83', planId: 'feeb4f2c-3ea5-9838-0b4a-185d6e3dab6f',
+    } });
+    const decoded = decodeFunctionData({ abi: licenseRegistryAbi, data: encoded });
+    expect(decoded.functionName).toBe('issueLicense');
+    expect(decoded.args?.[3]).toBe('0xe02c3bd8b66ea31b83bfecaf10af8c83');
+    expect(decoded.args?.[4]).toBe('0xfeeb4f2c3ea598380b4a185d6e3dab6f');
+  });
   it('encodes, signs and broadcasts the exact persisted EIP-1559 transaction', async () => {
     const account = privateKeyToAccount(`0x${'42'.repeat(32)}`);
     let serializedTransaction: Hex | undefined;
