@@ -1,19 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import {
-  IsIn,
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-  MaxLength,
-  Min,
-  MinLength,
-} from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class CreateOrderDto {
-  @ApiProperty({ format: 'uuid' })
-  @IsUUID()
+  // Catalog IDs already persisted by the demo seed are PostgreSQL UUIDs,
+  // but may not carry RFC version/variant bits. Validate their full syntax;
+  // the repository still requires an existing published plan/product.
+  @ApiProperty({ pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, { message: 'planId must be a canonical PostgreSQL UUID' })
   planId!: string;
 
   @ApiPropertyOptional({ format: 'uuid' })
@@ -22,16 +16,21 @@ export class CreateOrderDto {
   targetLicenseId?: string;
 }
 
-export class AcceptTermsDto {
-  @ApiProperty({ minimum: 1 })
-  @IsInt()
-  @Min(1)
-  termsVersion!: number;
+export class AcceptServiceTermsDto {
+  @ApiProperty({ enum: [true] })
+  @IsIn([true])
+  accepted!: true;
 
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' })
+  @ApiProperty()
   @IsString()
-  @Matches(/^0x[0-9a-fA-F]{64}$/)
-  termsHash!: `0x${string}`;
+  @MinLength(1)
+  @MaxLength(40)
+  version!: string;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/i)
+  hash!: string;
 }
 
 export class ReviewPaymentDto {
@@ -47,7 +46,7 @@ export class ReviewPaymentDto {
 }
 
 const ORDER_STATUSES = [
-  'WAITING_TERMS_ACCEPTANCE',
+  'WAITING_SERVICE_TERMS_ACCEPTANCE',
   'WAITING_PAYMENT',
   'PAYMENT_ACCEPTED',
   'CANCELLED',
@@ -62,6 +61,10 @@ const PAYMENT_CLASSIFICATIONS = [
 ] as const;
 
 export class OrderDto {
+  @ApiPropertyOptional({ nullable: true, type: String, description: 'Latest RENEW_LICENSE command status for this exact order, not the original issuance.' })
+  renewalStatus?: string | null;
+  @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String, description: 'Target expiry of this renewal; effective only after canonical chain confirmation.' })
+  renewalExpiresAt?: string | null;
   @ApiProperty() billingCycleSnapshot!: string;
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
   @ApiProperty() currency!: string;
@@ -91,20 +94,38 @@ export class OrderDto {
   @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String })
   targetLicenseId!: string | null;
   @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String })
-  termsAcceptedAt!: string | null;
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' }) termsHashSnapshot!: string;
-  @ApiProperty() termsVersionSnapshot!: number;
+  serviceTermsAcceptedAt!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  serviceTermsVersionSnapshot!: string | null;
+  @ApiPropertyOptional({ pattern: '^[0-9a-f]{64}$', nullable: true, type: String })
+  serviceTermsHashSnapshot!: string | null;
 }
 
 export class OrderTermsDto {
   @ApiProperty() content!: string;
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' }) hash!: string;
-  @ApiProperty() version!: number;
+  @ApiProperty() version!: string;
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' }) hash!: string;
+}
+
+export class RenewalPreviewDto {
+  @ApiProperty({ format: 'uuid' }) licenseId!: string;
+  @ApiProperty({ format: 'uuid' }) planId!: string;
+  @ApiProperty() planName!: string;
+  @ApiProperty() productName!: string;
+  @ApiProperty() durationMonths!: number;
+  @ApiProperty() priceVnd!: number;
+  @ApiProperty({ format: 'date-time' }) currentExpiresAt!: string;
+  @ApiProperty({ format: 'date-time', description: 'Estimate only; final expiry uses verified payment time.' }) estimatedExpiresAt!: string;
+  @ApiProperty() canRenew!: boolean;
+  @ApiProperty({ type: OrderDto, nullable: true }) pendingOrder!: OrderDto | null;
 }
 
 export class CheckoutSessionDto {
   @ApiProperty() amountVnd!: number;
   @ApiProperty({ format: 'uuid' }) attemptId!: string;
+  @ApiProperty({ additionalProperties: { type: 'string' }, type: 'object' })
+  checkoutFields!: Record<string, string>;
+  @ApiProperty({ enum: ['POST'] }) checkoutMethod!: 'POST';
   @ApiProperty() checkoutReference!: string;
   @ApiProperty({ format: 'uri' }) checkoutUrl!: string;
   @ApiProperty({ format: 'date-time' }) expiresAt!: string;
@@ -123,15 +144,16 @@ export class PaymentIngestResultDto {
 export class PaymentHistoryDto {
   @ApiProperty() amountVnd!: number;
   @ApiProperty({ enum: PAYMENT_CLASSIFICATIONS }) classification!: string;
-  @ApiProperty({ format: 'uuid' }) orderId!: string;
-  @ApiProperty() orderNumber!: string;
-  @ApiProperty({ enum: ['NEW_PURCHASE', 'RENEWAL'] })
-  orderType!: 'NEW_PURCHASE' | 'RENEWAL';
-  @ApiProperty() planNameSnapshot!: string;
-  @ApiProperty() productNameSnapshot!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String }) orderId!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) orderNumber!: string | null;
+  @ApiPropertyOptional({ enum: ['NEW_PURCHASE', 'RENEWAL'], nullable: true, type: String })
+  orderType!: 'NEW_PURCHASE' | 'RENEWAL' | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) planNameSnapshot!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) productNameSnapshot!: string | null;
   @ApiProperty() providerEventId!: string;
   @ApiPropertyOptional({ nullable: true, type: String })
   providerTransactionReference!: string | null;
+  @ApiProperty({ format: 'date-time' }) providerOccurredAt!: string;
   @ApiProperty({ format: 'date-time' }) receivedAt!: string;
   @ApiPropertyOptional({ nullable: true, type: String }) reviewStatus!: string | null;
   @ApiProperty({ format: 'uuid' }) transactionId!: string;
@@ -145,6 +167,10 @@ export class PaymentReceiptDto {
   @ApiProperty({ enum: ['NEW_PURCHASE', 'RENEWAL'] })
   orderType!: 'NEW_PURCHASE' | 'RENEWAL';
   @ApiProperty({ format: 'date-time' }) paidAt!: string;
+  @ApiProperty({ format: 'date-time', description: 'Timestamp reported by the payment provider.' })
+  providerOccurredAt!: string;
+  @ApiProperty({ format: 'date-time' }) receivedAt!: string;
+  @ApiProperty({ enum: ['PROVIDER', 'SANDBOX_RECEIPT'] }) timingBasis!: string;
   @ApiProperty() planNameSnapshot!: string;
   @ApiProperty() productNameSnapshot!: string;
   @ApiProperty() providerNameSnapshot!: string;
@@ -154,15 +180,18 @@ export class PaymentReceiptDto {
 }
 
 export class PaymentReviewDto {
-  @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty({ enum: PAYMENT_CLASSIFICATIONS }) classification!: string;
   @ApiProperty() amountVnd!: number;
+  @ApiProperty({ enum: PAYMENT_CLASSIFICATIONS }) classification!: string;
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String }) orderId!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) orderNumber!: string | null;
   @ApiProperty() providerEventId!: string;
   @ApiPropertyOptional({ nullable: true, type: String })
   providerTransactionReference!: string | null;
   @ApiPropertyOptional({ nullable: true, type: String }) reviewReason!: string | null;
   @ApiPropertyOptional({ nullable: true, type: String }) reviewStatus!: string | null;
   @ApiProperty({ format: 'date-time' }) receivedAt!: string;
+  @ApiProperty({ format: 'date-time' }) providerOccurredAt!: string;
   @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String })
   reviewedAt?: string | null;
 }

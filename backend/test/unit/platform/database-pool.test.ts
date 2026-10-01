@@ -19,6 +19,19 @@ describe('DatabasePool', () => {
     expect(getOrThrow).toHaveBeenCalledWith('DATABASE_URL');
     expect(end.mock.calls).toHaveLength(1);
   });
+
+  it('handles idle PostgreSQL connection errors instead of crashing the worker', () => {
+    const config = {
+      getOrThrow: vi
+        .fn()
+        .mockReturnValue('postgresql://emukey:password@127.0.0.1:5432/emukey'),
+    } as unknown as ConfigService;
+    const pool = new DatabasePool(config);
+
+    expect(pool.listenerCount('error')).toBeGreaterThan(0);
+    expect(() => pool.emit('error', Object.assign(new Error('connection lost'), { code: 'ECONNRESET' }))).not.toThrow();
+    void pool.end();
+  });
 });
 
 describe('RedisClient', () => {

@@ -1,120 +1,76 @@
-import { Alert, Button, Input, Table } from 'antd';
-import { useMemo, useState } from 'react';
+import { Alert, Button, Input, Popconfirm, Table } from 'antd';
+import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, useAuth } from '../../application/auth/authContext';
+import { describeApiError, requestJson, useAuth, type AuthUser } from '../../application/auth/authContext';
+import { useAssistanceHealth, useBlockchainReconciliation, usePlatformReadiness } from '../../application/operations/operationsQueries';
+import { usePaymentHistory } from '../../application/orders/orderQueries';
 
-import type { AuditEvent } from '../../domain/workspace';
-import {
-  auditEvents,
-  healthMetrics,
-  jobs,
-} from '../../infrastructure/workspace/mockWorkspace';
-import {
-  FactList,
-  MetricCard,
-  PageHeader,
-  StatusChip,
-} from '../components/WorkspacePrimitives';
+import { PaymentReviewPanel } from '../components/PaymentReviewPanel';
+import { AuditLogPanel } from '../components/AuditLogPanel';
+import { FactList, PageHeader } from '../components/WorkspacePrimitives';
 
 export function SystemConsoleScreen() {
   const location = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const permitted = user?.role === 'SYSTEM_ADMIN';
-  const accounts = useQuery({ queryKey: ['identity', 'users'], queryFn: async () => { const response = await api('/auth/users'); if (!response.ok) throw new Error('USERS_REQUEST_FAILED'); return response.json() as Promise<Array<{ id: string; email: string; displayName: string; role: string; status: string }>>; }, enabled: permitted });
+  const readiness = usePlatformReadiness();
+  const assistance = useAssistanceHealth(permitted);
+  const payments = usePaymentHistory();
+  const reconciliation = useBlockchainReconciliation();
+  const view = new URLSearchParams(location.search).get('view');
   const [accountId, setAccountId] = useState<string | null>(null);
-  const detail = useQuery({ queryKey: ['identity', 'user', accountId], queryFn: async () => { const response = await api(`/auth/users/${accountId}`); if (!response.ok) throw new Error('USER_DETAIL_FAILED'); return response.json() as Promise<Record<string, unknown>>; }, enabled: permitted && Boolean(accountId) });
-  const stateMutation = useMutation({ mutationFn: async ({ id, action }: { id: string; action: 'lock' | 'unlock' | 'disable' }) => { const response = await api(`/auth/users/${id}/${action}`, { method: 'POST', body: JSON.stringify({ reason: 'System console action' }) }); if (!response.ok) throw new Error('ACCOUNT_STATE_FAILED'); }, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['identity'] }); } });
-  const [selected, setSelected] = useState<AuditEvent>(auditEvents[0]!);
-  const [query, setQuery] = useState('');
-  const visibleEvents = useMemo(
-    () =>
-      auditEvents.filter((event) =>
-        `${event.action} ${event.actor} ${event.resource}`
-          .toLocaleLowerCase('vi')
-          .includes(query.trim().toLocaleLowerCase('vi')),
-      ),
-    [query],
-  );
+  const [userQuery, setUserQuery] = useState('');
+  const accounts = useQuery({ queryKey: ['identity', 'users', userQuery], queryFn: () => requestJson<Array<{ id: string; email: string; displayName: string; role: string; status: string }>>(`/auth/users${userQuery.trim() ? `?q=${encodeURIComponent(userQuery.trim())}` : ''}`), enabled: permitted });
+  const detail = useQuery({ queryKey: ['identity', 'user', accountId], queryFn: () => requestJson<AuthUser>(`/auth/users/${accountId}`), enabled: permitted && Boolean(accountId) });
+  const stateMutation = useMutation({ mutationFn: async ({ id, action }: { id: string; action: 'lock' | 'unlock' | 'disable' }) => requestJson(`/auth/users/${id}/${action}`, { method: 'POST', body: JSON.stringify({ reason: `System console: ${action}` }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['identity'] }); } });
   return (
     <>
       <PageHeader
-        title="System Console"
-        description="Sức khỏe hệ thống, job nền và audit log chỉ đọc."
-        action={<StatusChip tone="error">2 cảnh báo</StatusChip>}
+        title={view === 'users' ? 'Quản lý người dùng' : view === 'payments' ? 'Lịch sử thanh toán' : view === 'audit' ? 'Nhật ký hệ thống' : view === 'blockchain' ? 'Đối soát blockchain' : 'Tổng quan hệ thống'}
       />
-      <section className="metric-grid metric-grid--four">
-        {healthMetrics.map((metric) => (
-          <MetricCard key={metric.label} metric={metric} />
-        ))}
+      <section aria-label="Sức khỏe hệ thống" className="metric-grid metric-grid--four">
+        <article className="metric-card"><span className="status-chip status-chip--info">API</span><strong>{readiness.data?.status ?? (readiness.isLoading ? '...' : '—')}</strong><small>Tình trạng dịch vụ</small></article>
+        <article className="metric-card"><span className="status-chip status-chip--success">PostgreSQL</span><strong>{readiness.data?.dependencies.postgres ?? '—'}</strong><small>Kết nối dịch vụ</small></article>
+        <article className="metric-card"><span className="status-chip status-chip--info">Redis</span><strong>{readiness.data?.dependencies.redis ?? '—'}</strong><small>Kết nối dịch vụ</small></article>
+        <article className="metric-card"><span className="status-chip status-chip--warning">Support</span><strong>{assistance.data?.conversations.waitingSupport ?? '—'}</strong><small>Đang chờ hỗ trợ</small></article>
       </section>
-      <div className="system-console-grid">
-        <section className="workspace-card operations-card">
-          <h2>Integration jobs</h2>
-          <div className="stack-list">
-            {jobs.map((job) => (
-              <article key={job.id}>
-                <div>
-                  <strong>{job.name}</strong>
-                  <small>{job.helper}</small>
-                </div>
-                <StatusChip tone={job.tone}>{job.status}</StatusChip>
-              </article>
-            ))}
-          </div>
-        </section>
-        <aside className="workspace-card detail-card">
-          <h2>Chi tiết audit</h2>
-          <FactList
-            facts={[
-              { label: 'Hành động', value: selected.action },
-              { label: 'Tài nguyên', value: selected.resource },
-              { label: 'Actor', value: selected.actor },
-              { label: 'Request ID', value: <code>{selected.requestId}</code> },
-              { label: 'IP demo', value: selected.ip },
-            ]}
-          />
-        </aside>
-      </div>
+      {readiness.isError ? <Alert showIcon type="warning" message="Một số dịch vụ đang gián đoạn hoặc chưa thể kiểm tra." /> : null}
+      {assistance.isError && permitted ? <Alert showIcon type="warning" message="Không thể tải tình trạng thông báo và hỗ trợ." /> : null}
+      <nav aria-label="Bộ lọc nhật ký" className="system-tabs">
+        {[
+          ['all', 'Tổng quan'],
+          ['users', 'Người dùng'],
+          ['payments', 'Thanh toán'],
+          ['blockchain', 'Blockchain'],
+          ['audit', 'Nhật ký'],
+        ].map(([value, label]) => (
+          <a className={new URLSearchParams(location.search).get('view') === value || (value === 'all' && !new URLSearchParams(location.search).get('view')) ? 'active' : ''} href={value === 'all' ? '/system/console' : `/system/console?view=${value}`} key={value}>{label}</a>
+        ))}
+      </nav>
       <section className="workspace-card table-card spaced-card">
-        {new URLSearchParams(location.search).get('view') === 'accounts' ? <>
+        {view === 'users' ? <>
           {!permitted ? <Alert message="Bạn không có quyền quản lý tài khoản." type="warning" /> : null}
-          {accounts.isError ? <Alert message="Không thể tải danh sách tài khoản." type="error" /> : null}
-          {stateMutation.isError ? <Alert message="Không thể cập nhật trạng thái tài khoản." type="error" /> : null}
-          <Table dataSource={accounts.data ?? []} loading={accounts.isLoading} rowKey="id" onRow={(record) => ({ onClick: () => setAccountId(record.id) })} columns={[{ title: 'Tên', dataIndex: 'displayName' }, { title: 'Email', dataIndex: 'email' }, { title: 'Vai trò', dataIndex: 'role' }, { title: 'Trạng thái', dataIndex: 'status' }, { title: 'Thao tác', render: (_: unknown, record) => <span><Button disabled={!permitted || stateMutation.isPending} onClick={(event) => { event.stopPropagation(); void stateMutation.mutateAsync({ id: record.id, action: record.status === 'LOCKED' ? 'unlock' : 'lock' }); }}>{record.status === 'LOCKED' ? 'Mở khóa' : 'Khóa'}</Button>{record.status !== 'DISABLED' ? <Button danger disabled={!permitted || stateMutation.isPending} onClick={(event) => { event.stopPropagation(); void stateMutation.mutateAsync({ id: record.id, action: 'disable' }); }}>Vô hiệu hóa</Button> : null}</span> }]} />
-          {accountId ? <div role="region" aria-label="Chi tiết tài khoản">{detail.isLoading ? <span>Đang tải chi tiết...</span> : detail.isError ? <Alert message="Không thể tải chi tiết tài khoản." type="error" /> : <pre>{JSON.stringify(detail.data, null, 2)}</pre>}</div> : null}
-        </> : null}
-        <div className="card-heading section-title">
-          <h2>Audit Log</h2>
-          <Input.Search
-            aria-label="Lọc audit log"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Tìm action, actor"
-            value={query}
-          />
-        </div>
-        <Table
-          dataSource={[...visibleEvents]}
-          pagination={false}
-          rowKey="id"
-          scroll={{ x: 760 }}
-          columns={[
-            { title: 'Thời gian', dataIndex: 'time' },
-            { title: 'Actor', dataIndex: 'actor' },
-            {
-              title: 'Hành động',
-              dataIndex: 'action',
-              render: (value: string, record) => (
-                <Button type="link" onClick={() => setSelected(record)}>
-                  {value}
-                </Button>
-              ),
-            },
-            { title: 'Tài nguyên', dataIndex: 'resource' },
-            { title: 'IP', dataIndex: 'ip' },
-          ]}
-        />
+           {accounts.isError ? <Alert message={describeApiError(accounts.error, 'Không thể tải danh sách tài khoản.')} type="error" /> : null}
+           {stateMutation.isError ? <Alert message={describeApiError(stateMutation.error, 'Không thể cập nhật trạng thái tài khoản.')} type="error" /> : null}
+           <Input allowClear aria-label="Tìm người dùng" onChange={(event) => setUserQuery(event.target.value)} placeholder="Tìm theo tên hoặc email" style={{ marginBottom: 16, maxWidth: 420 }} value={userQuery} />
+          <Table dataSource={accounts.data ?? []} loading={accounts.isLoading} rowKey="id" scroll={{ x: 900 }} onRow={(record) => ({ onClick: () => setAccountId(record.id) })} columns={[{ title: 'Tên', dataIndex: 'displayName' }, { title: 'Email', dataIndex: 'email' }, { title: 'Vai trò', dataIndex: 'role' }, { title: 'Trạng thái', dataIndex: 'status' }, { title: 'Thao tác', render: (_: unknown, record) => <span className="table-actions"><Button disabled={!permitted || stateMutation.isPending || record.status === 'DISABLED'} onClick={(event) => { event.stopPropagation(); stateMutation.mutate({ id: record.id, action: record.status === 'LOCKED' ? 'unlock' : 'lock' }); }}>{record.status === 'LOCKED' ? 'Mở khóa' : record.status === 'DISABLED' ? 'Đã vô hiệu hóa' : 'Khóa'}</Button>{record.status !== 'DISABLED' ? <Popconfirm title="Vô hiệu hóa tài khoản?" description="Người dùng sẽ không thể tiếp tục sử dụng tài khoản." okText="Vô hiệu hóa" cancelText="Giữ lại" onConfirm={() => stateMutation.mutate({ id: record.id, action: 'disable' })}><Button danger disabled={!permitted || stateMutation.isPending} onClick={(event) => event.stopPropagation()}>Vô hiệu hóa</Button></Popconfirm> : null}</span> }]} />
+          {accountId ? <div role="region" aria-label="Chi tiết tài khoản">{detail.isLoading ? <span>Đang tải chi tiết...</span> : detail.isError ? <Alert message="Không thể tải chi tiết tài khoản." type="error" /> : <FactList facts={[{ label: 'Họ tên', value: String(detail.data?.displayName ?? '—') }, { label: 'Email', value: String(detail.data?.email ?? '—') }, { label: 'Vai trò', value: String(detail.data?.role ?? '—') }, { label: 'Trạng thái', value: String(detail.data?.status ?? '—') }]} />}</div> : null}
+        </> : view === 'payments' ? <>
+          {permitted ? <PaymentReviewPanel /> : null}
+          {payments.isError ? <Alert type="error" message="Không thể tải lịch sử thanh toán." /> : null}
+          <Table dataSource={payments.data ?? []} loading={payments.isLoading} rowKey="transactionId" scroll={{ x: 900 }} columns={[
+            { title: 'Mã đơn', dataIndex: 'orderNumber' },
+            { title: 'Sản phẩm', dataIndex: 'productNameSnapshot' },
+            { title: 'Số tiền', dataIndex: 'amountVnd', render: (value: number) => `${value.toLocaleString('vi-VN')} ₫` },
+            { title: 'Phân loại', dataIndex: 'classification' },
+          ]} />
+        </> : view === 'blockchain' ? <>
+          <div className="section-heading"><h2 className="section-title">Đối soát blockchain</h2><Button loading={reconciliation.isPending} disabled={!permitted} onClick={() => reconciliation.mutate()}>Chạy đối soát</Button></div>
+          {reconciliation.isError ? <Alert type="error" message="Không thể chạy đối soát blockchain." /> : null}
+          {reconciliation.data ? <div className="stack-list"><p>Sự kiện đã ghi nhận: {reconciliation.data.indexedEvents}</p><p>Yêu cầu chưa rõ kết quả: {reconciliation.data.health.unknown_commands}</p><p>Sự kiện đang chờ: {reconciliation.data.health.pending_events}</p><p>Bản ghi đã đồng bộ lại: {reconciliation.data.projection.licenseRepairs + reconciliation.data.projection.commandRepairs}</p></div> : <div className="empty-state"><strong>Chưa chạy đối soát</strong><p>Đối chiếu dữ liệu hệ thống với các sự kiện blockchain để phát hiện và xử lý sai lệch.</p></div>}
+        </> : view === 'audit' && permitted ? <AuditLogPanel /> : <div className="empty-state"><h2>Theo dõi hệ thống</h2><p>Xem tình trạng các dịch vụ phía trên. Chọn Người dùng, Thanh toán hoặc Blockchain để kiểm tra chi tiết.</p><p><a href="/system/console?view=audit">Tra cứu nhật ký hệ thống</a></p></div>}
       </section>
     </>
   );

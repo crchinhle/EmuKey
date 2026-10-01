@@ -1,7 +1,7 @@
 {
   "baseline": {
     "functionCatalog": "v5.1-account-linked-buyer",
-    "sql": "v7.1",
+    "sql": "v7.2",
     "technology": "v5.1-account-linked-buyer",
     "implementationPlan": "v5.1-account-linked-buyer",
     "capabilityCount": 35
@@ -31,7 +31,7 @@
     "publicBlockchainVerification": "BC-05",
     "projectionReconcile": "BC-04"
   },
-  "cryptoVectorOwner": "backend/contracts/test-vectors/crypto-v1.json",
+  "cryptoVectorOwner": "backend/contracts/test-vectors/crypto-v2.json",
   "capabilities": [
     {
       "id": "AUTH-01",
@@ -137,10 +137,10 @@
       "id": "COM-02",
       "phase": 4,
       "actor": "CUSTOMER",
-      "owner": "commerce-payment/accept-terms",
-      "api": "POST /orders/:id/accept-terms",
+      "owner": "commerce-payment/accept-service-terms",
+      "api": "POST /orders/:id/accept-service-terms",
       "tables": ["orders", "audit_logs"],
-      "transaction": "lock owned order and accept exact terms snapshot once",
+      "transaction": "lock owned order and record one DB-stamped Service Terms acceptance once",
       "testOwner": "backend/test/integration/commerce/commerce-flow.integration.test.ts"
     },
     {
@@ -236,7 +236,7 @@
       "api": "POST /activations",
       "tables": ["licenses", "license_devices", "chain_commands"],
       "transaction": "verify off-chain proof then persist pending device command",
-      "testOwner": "backend/test/integration/licensing/device-activation.integration.test.ts"
+      "testOwner": "backend/test/unit/licensing.service.test.ts"
     },
     {
       "id": "LIC-05",
@@ -246,7 +246,7 @@
       "api": "POST /licenses/:licenseId/devices/:deviceId/revoke",
       "tables": ["license_devices", "chain_commands", "chain_events"],
       "transaction": "persist authorized revoke command and audit",
-      "testOwner": "backend/test/integration/licensing/device-revocation.integration.test.ts"
+      "testOwner": "backend/test/unit/licensing.service.test.ts"
     },
     {
       "id": "LIC-06",
@@ -256,7 +256,7 @@
       "api": "POST /entitlements/issue; POST /entitlements/refresh",
       "tables": ["licenses", "license_devices", "chain_events"],
       "transaction": "read confirmed current projection before signing short token",
-      "testOwner": "backend/test/integration/licensing/entitlement.integration.test.ts"
+      "testOwner": "backend/test/unit/licensing.service.test.ts"
     },
     {
       "id": "LIC-07",
@@ -266,7 +266,7 @@
       "api": "internal confirmed LICENSE_RENEWED projection",
       "tables": ["licenses", "orders", "chain_commands", "chain_events"],
       "transaction": "only confirmed canonical event extends expiry",
-      "testOwner": "backend/test/integration/licensing/renewal-application.integration.test.ts"
+      "testOwner": "backend/test/integration/commerce/commerce-flow.integration.test.ts"
     },
     {
       "id": "LIC-08",
@@ -276,7 +276,7 @@
       "api": "license state request endpoints and expiry projection worker",
       "tables": ["licenses", "chain_commands", "chain_events", "audit_logs"],
       "transaction": "request creates command; canonical event controls projection",
-      "testOwner": "backend/test/integration/licensing/license-lifecycle.integration.test.ts"
+      "testOwner": "backend/test/unit/blockchain-reconciliation.service.test.ts"
     },
     {
       "id": "BC-01",

@@ -54,10 +54,21 @@ export class ChainEventRepository {
           (id, chain_command_id, event_type, provider_user_id, license_id,
            license_device_id, network, chain_id, contract_address,
            transaction_hash, log_index, block_number, block_hash,
-           confirmation_count, payload, observed_at)
+           confirmation_count, activation_commitment, activation_key_version,
+           previous_activation_commitment, previous_activation_key_version,
+           payload, observed_at)
          SELECT $1::uuid,$2::uuid,$3::varchar,$4::uuid,$5::uuid,$6::uuid,
                 $7::varchar,$8::bigint,$9::varchar,$10::varchar,$11::int,
-                $12::bigint,$13::varchar,$14::int,$15::jsonb,now()
+                $12::bigint,$13::varchar,$14::int,
+                CASE WHEN $3::varchar IN ('LICENSE_ISSUED','KEY_ROTATED')
+                     THEN decode(replace($15::jsonb->>'activationCommitment','0x',''),'hex') END,
+                CASE WHEN $3::varchar IN ('LICENSE_ISSUED','KEY_ROTATED')
+                     THEN ($15::jsonb->>'keyVersion')::int END,
+                CASE WHEN $3::varchar = 'KEY_ROTATED'
+                     THEN decode(replace(command.payload->>'previousActivationCommitment','0x',''),'hex') END,
+                CASE WHEN $3::varchar = 'KEY_ROTATED'
+                     THEN (command.payload->>'previousKeyVersion')::int END,
+                $15::jsonb,now()
          FROM chain_commands command
          WHERE command.id=$2
            AND command.provider_user_id=$4
@@ -83,7 +94,7 @@ export class ChainEventRepository {
            block_hash=EXCLUDED.block_hash,
            confirmation_count=EXCLUDED.confirmation_count,
            finality_status='PENDING', observed_at=EXCLUDED.observed_at,
-           finalized_at=NULL, reorged_at=NULL, updated_at=now()
+           updated_at=now()
          WHERE chain_events.finality_status='REORGED'
          RETURNING id, (xmax = 0) AS created`,
         [
@@ -151,12 +162,14 @@ export class ChainEventRepository {
         );
         return existing.rows[0] !== undefined;
       }
-      await this.applyEvent(client, event);
       await client.query(
-        `UPDATE chain_commands SET status='CONFIRMED', confirmed_at=now(),
+        `UPDATE chain_commands SET status='CONFIRMED',
+           confirmed_at=GREATEST(statement_timestamp(), submitted_at),
+           confirmation_chain_event_id=$2,
            locked_by=NULL, locked_at=NULL, updated_at=now() WHERE id=$1`,
-        [event.chain_command_id],
+        [event.chain_command_id, event.id],
       );
+      await this.applyEvent(client, event);
       await this.audit.write(client, {
         action: 'CHAIN_EVENT_CONFIRMED',
         metadata: {
@@ -175,8 +188,14 @@ export class ChainEventRepository {
   async markReorged(eventId: string): Promise<void> {
     await this.transaction(async (client) => {
       const event = await client.query<Record<string, unknown>>(
-        `UPDATE chain_events SET finality_status='REORGED', reorged_at=now(),
-           finalized_at=NULL, updated_at=now()
+        `UPDATE chain_events SET finality_status='REORGED',
+           reorg_count=reorg_count + 1,
+           reorged_at=CASE
+             WHEN reorged_at IS NULL OR statement_timestamp() > reorged_at
+               THEN statement_timestamp()
+             ELSE reorged_at + interval '1 microsecond'
+           END,
+           updated_at=now()
          WHERE id=$1 AND finality_status <> 'REORGED' RETURNING *`,
         [eventId],
       );
@@ -184,10 +203,30 @@ export class ChainEventRepository {
       if (!row) return;
       await client.query(
         `UPDATE chain_commands SET status='SUBMITTED_UNKNOWN', confirmed_at=NULL,
-           updated_at=now() WHERE id=$1`,
+           confirmation_chain_event_id=NULL, updated_at=now() WHERE id=$1`,
         [row.chain_command_id],
       );
-      await this.rebuildProjection(client, String(row.license_id));
+      await client.query(
+        `UPDATE chain_commands descendant
+         SET status='DEAD_LETTER', last_error='CHAIN_BASIS_REORGED',
+             locked_by=NULL, locked_at=NULL, updated_at=now()
+         WHERE descendant.license_id=$1
+           AND descendant.license_command_sequence > (
+             SELECT reorged.license_command_sequence
+             FROM chain_commands reorged WHERE reorged.id=$2
+           )
+           AND descendant.status IN ('PENDING','SUBMITTED','RETRYABLE_FAILED')`,
+        [row.license_id, row.chain_command_id],
+      );
+      if (['LICENSE_ISSUED', 'KEY_ROTATED'].includes(String(row.event_type))) {
+        await this.rebuildProjection(client, String(row.license_id));
+      } else {
+        await this.rebuildProjectionWithoutKeyReset(
+          client,
+          String(row.license_id),
+          typeof row.license_device_id === 'string' ? row.license_device_id : null,
+        );
+      }
       await this.audit.write(client, {
         action: 'CHAIN_EVENT_REORGED',
         metadata: {
@@ -225,7 +264,7 @@ export class ChainEventRepository {
       const confirmedCommands = await client.query<{ id: string }>(
         `WITH canonical AS (
            SELECT DISTINCT ON (event.chain_command_id)
-             event.chain_command_id, event.finalized_at
+             event.chain_command_id, event.finalized_at, event.id
            FROM chain_events event
            WHERE event.finality_status='CONFIRMED'
            ORDER BY event.chain_command_id, event.block_number DESC,
@@ -233,7 +272,11 @@ export class ChainEventRepository {
          )
          UPDATE chain_commands command
          SET status='CONFIRMED',
-             confirmed_at=COALESCE(command.confirmed_at, canonical.finalized_at),
+             confirmed_at=GREATEST(
+               COALESCE(command.confirmed_at, canonical.finalized_at),
+               command.submitted_at
+             ),
+             confirmation_chain_event_id=canonical.id,
              locked_by=NULL, locked_at=NULL, last_error=NULL, updated_at=now()
          FROM canonical
          WHERE command.id=canonical.chain_command_id
@@ -243,6 +286,7 @@ export class ChainEventRepository {
       const orphanedCommands = await client.query<{ id: string }>(
         `UPDATE chain_commands command
          SET status='SUBMITTED_UNKNOWN', confirmed_at=NULL,
+             confirmation_chain_event_id=NULL,
              locked_by=NULL, locked_at=NULL,
              last_error='Confirmed projection has no canonical event',
              updated_at=now()
@@ -271,6 +315,26 @@ export class ChainEventRepository {
     });
   }
 
+  async deriveExpiredFromCanonicalChain(canonicalTime: Date): Promise<string[]> {
+    if (Number.isNaN(canonicalTime.getTime())) throw new Error('INVALID_CANONICAL_CHAIN_TIME');
+    return this.transaction(async (client) => {
+      const result = await client.query<{ id: string }>(
+        `UPDATE licenses l
+         SET status='EXPIRED', status_reason='ONCHAIN_EXPIRY', updated_at=now()
+         WHERE l.status='ACTIVE' AND l.expires_at <= $1
+           AND EXISTS (
+             SELECT 1 FROM chain_events event
+             WHERE event.id=l.last_applied_chain_event_id
+               AND event.license_id=l.id
+               AND event.finality_status='CONFIRMED'
+           )
+         RETURNING l.id`,
+        [canonicalTime],
+      );
+      return result.rows.map(({ id }) => id);
+    });
+  }
+
   private async applyEvent(
     client: PoolClient,
     event: Record<string, unknown>,
@@ -282,14 +346,17 @@ export class ChainEventRepository {
       case 'LICENSE_ISSUED':
         await client.query(
           `UPDATE licenses SET status='ACTIVE', last_applied_chain_event_id=$2,
-             updated_at=now() WHERE id=$1 AND status='PENDING_ONCHAIN'`,
+             activation_key_trust_status='TRUSTED', updated_at=now()
+           WHERE id=$1 AND status='PENDING_ONCHAIN'`,
           [licenseId, id],
         );
         break;
       case 'LICENSE_RENEWED':
         await client.query(
           `UPDATE licenses SET expires_at=$2,
-             last_applied_chain_event_id=$3, updated_at=now()
+              status=CASE WHEN status='EXPIRED' THEN 'ACTIVE' ELSE status END,
+              entitlement_version=entitlement_version + 1,
+              last_applied_chain_event_id=$3, updated_at=now()
            WHERE id=$1 AND status <> 'PENDING_ONCHAIN'`,
           [licenseId, payload.expiresAt, id],
         );
@@ -297,6 +364,7 @@ export class ChainEventRepository {
       case 'LICENSE_SUSPENDED':
         await client.query(
           `UPDATE licenses SET status='SUSPENDED', suspended_at=$3,
+              entitlement_version=entitlement_version + 1,
              last_applied_chain_event_id=$2, updated_at=now()
            WHERE id=$1 AND status <> 'PENDING_ONCHAIN'`,
           [licenseId, id, event.finalized_at ?? event.observed_at],
@@ -305,6 +373,7 @@ export class ChainEventRepository {
       case 'LICENSE_RESUMED':
         await client.query(
           `UPDATE licenses SET status='ACTIVE', suspended_at=NULL,
+              entitlement_version=entitlement_version + 1,
              last_applied_chain_event_id=$2, updated_at=now()
            WHERE id=$1 AND status <> 'PENDING_ONCHAIN'`,
           [licenseId, id],
@@ -313,6 +382,7 @@ export class ChainEventRepository {
       case 'LICENSE_REVOKED':
         await client.query(
           `UPDATE licenses SET status='REVOKED', revoked_at=$3,
+              entitlement_version=entitlement_version + 1,
              last_applied_chain_event_id=$2, updated_at=now()
            WHERE id=$1 AND status <> 'PENDING_ONCHAIN'`,
           [licenseId, id, event.finalized_at ?? event.observed_at],
@@ -321,7 +391,11 @@ export class ChainEventRepository {
       case 'KEY_ROTATED':
         await client.query(
           `UPDATE licenses SET activation_commitment=decode($2,'hex'),
-             activation_key_version=$3, last_applied_chain_event_id=$4,
+              activation_key_version=$3, pending_activation_commitment=NULL,
+              pending_activation_key_version=NULL, pending_activation_command_id=NULL,
+              activation_key_trust_status='TRUSTED',
+              entitlement_version=entitlement_version + 1,
+              last_applied_chain_event_id=$4,
              updated_at=now() WHERE id=$1 AND status <> 'PENDING_ONCHAIN'`,
           [
             licenseId,
@@ -335,9 +409,9 @@ export class ChainEventRepository {
       case 'DEVICE_REVOKED': {
         const active = event.event_type === 'DEVICE_ACTIVATED';
         await client.query(
-          `UPDATE license_devices SET status=$2,
-             activated_at=CASE WHEN $2='ACTIVE' THEN $4 ELSE activated_at END,
-             revoked_at=CASE WHEN $2='REVOKED' THEN $4 ELSE NULL END,
+          `UPDATE license_devices SET status=$2::varchar,
+             activated_at=CASE WHEN $2::varchar='ACTIVE' THEN $4 ELSE activated_at END,
+             revoked_at=CASE WHEN $2::varchar='REVOKED' THEN $4 ELSE NULL END,
              last_applied_chain_event_id=$3, updated_at=now()
            WHERE id=$1 AND EXISTS (
              SELECT 1 FROM licenses l
@@ -365,9 +439,12 @@ export class ChainEventRepository {
        ORDER BY block_number, log_index, id`,
       [licenseId],
     );
-    await client.query(
-      `UPDATE licenses l SET status='PENDING_ONCHAIN', suspended_at=NULL,
-         revoked_at=NULL, last_applied_chain_event_id=NULL,
+      await client.query(
+        `UPDATE licenses l SET status='PENDING_ONCHAIN', suspended_at=NULL,
+          revoked_at=NULL, last_applied_chain_event_id=NULL,
+          pending_activation_commitment=NULL, pending_activation_key_version=NULL,
+          pending_activation_command_id=NULL,
+          activation_key_trust_status='PENDING_FINALITY', entitlement_version=1,
          expires_at=(issue.payload->>'expiresAt')::timestamptz,
          activation_commitment=decode(
            replace(issue.payload->>'activationCommitment','0x',''), 'hex'
@@ -387,6 +464,85 @@ export class ChainEventRepository {
       [licenseId],
     );
     for (const event of events.rows) await this.applyEvent(client, event);
+    await client.query(
+      `UPDATE licenses
+       SET status='EXPIRED', status_reason='ONCHAIN_EXPIRY', updated_at=now()
+       WHERE id=$1 AND status='ACTIVE' AND expires_at <= now()
+         AND last_applied_chain_event_id IS NOT NULL`,
+      [licenseId],
+    );
+  }
+
+  private async rebuildProjectionWithoutKeyReset(
+    client: PoolClient,
+    licenseId: string,
+    licenseDeviceId: string | null,
+  ): Promise<void> {
+    await client.query(
+      `WITH status_event AS (
+         SELECT event_type, finalized_at, observed_at
+         FROM chain_events
+         WHERE license_id=$1 AND finality_status='CONFIRMED'
+           AND event_type IN ('LICENSE_ISSUED','LICENSE_SUSPENDED','LICENSE_RESUMED','LICENSE_REVOKED')
+         ORDER BY block_number DESC, log_index DESC, id DESC LIMIT 1
+       ), renewal_event AS (
+         SELECT payload->>'expiresAt' AS expires_at
+         FROM chain_events
+         WHERE license_id=$1 AND finality_status='CONFIRMED' AND event_type='LICENSE_RENEWED'
+         ORDER BY block_number DESC, log_index DESC, id DESC LIMIT 1
+       ), last_event AS (
+         SELECT id FROM chain_events
+         WHERE license_id=$1 AND finality_status='CONFIRMED'
+           AND event_type NOT IN ('DEVICE_ACTIVATED','DEVICE_REVOKED')
+         ORDER BY block_number DESC, log_index DESC, id DESC LIMIT 1
+       )
+       UPDATE licenses license SET
+         status=CASE status_event.event_type
+           WHEN 'LICENSE_SUSPENDED' THEN 'SUSPENDED'
+           WHEN 'LICENSE_REVOKED' THEN 'REVOKED'
+           WHEN 'LICENSE_ISSUED' THEN 'ACTIVE'
+           WHEN 'LICENSE_RESUMED' THEN 'ACTIVE'
+           ELSE 'PENDING_ONCHAIN'
+         END,
+         expires_at=COALESCE(renewal_event.expires_at::timestamptz, license.expires_at),
+         suspended_at=CASE WHEN status_event.event_type='LICENSE_SUSPENDED'
+           THEN COALESCE(status_event.finalized_at, status_event.observed_at) ELSE NULL END,
+         revoked_at=CASE WHEN status_event.event_type='LICENSE_REVOKED'
+           THEN COALESCE(status_event.finalized_at, status_event.observed_at) ELSE NULL END,
+         last_applied_chain_event_id=last_event.id,
+         entitlement_version=license.entitlement_version + 1,
+         updated_at=now()
+       FROM status_event, last_event
+       LEFT JOIN renewal_event ON TRUE
+       WHERE license.id=$1`,
+      [licenseId],
+    );
+    if (!licenseDeviceId) return;
+    await client.query(
+      `WITH device_event AS (
+         SELECT id, event_type, finalized_at, observed_at
+         FROM chain_events
+         WHERE license_id=$1 AND license_device_id=$2
+           AND finality_status='CONFIRMED'
+           AND event_type IN ('DEVICE_ACTIVATED','DEVICE_REVOKED')
+         ORDER BY block_number DESC, log_index DESC, id DESC LIMIT 1
+       )
+       UPDATE license_devices device SET
+         status=CASE device_event.event_type
+           WHEN 'DEVICE_ACTIVATED' THEN 'ACTIVE'
+           WHEN 'DEVICE_REVOKED' THEN 'REVOKED'
+           ELSE 'PENDING_ONCHAIN'
+         END,
+         activated_at=CASE WHEN device_event.event_type='DEVICE_ACTIVATED'
+           THEN COALESCE(device_event.finalized_at, device_event.observed_at) ELSE NULL END,
+         revoked_at=CASE WHEN device_event.event_type='DEVICE_REVOKED'
+           THEN COALESCE(device_event.finalized_at, device_event.observed_at) ELSE NULL END,
+         last_applied_chain_event_id=device_event.id,
+         updated_at=now()
+       FROM device_event
+       WHERE device.id=$2 AND device.license_id=$1`,
+      [licenseId, licenseDeviceId],
+    );
   }
 
   private async projectionMismatches(
@@ -442,13 +598,19 @@ export class ChainEventRepository {
          ORDER BY event.block_number DESC, event.log_index DESC, event.id DESC
          LIMIT 1
        ) last_event ON TRUE
-       WHERE license.status IS DISTINCT FROM CASE status_event.event_type
-           WHEN 'LICENSE_ISSUED' THEN 'ACTIVE'
-           WHEN 'LICENSE_SUSPENDED' THEN 'SUSPENDED'
-           WHEN 'LICENSE_RESUMED' THEN 'ACTIVE'
+          WHERE license.status IS DISTINCT FROM CASE status_event.event_type
+            WHEN 'LICENSE_ISSUED' THEN CASE WHEN COALESCE(
+              (renewal_event.payload->>'expiresAt')::timestamptz,
+              (issue.payload->>'expiresAt')::timestamptz
+            ) <= now() THEN 'EXPIRED' ELSE 'ACTIVE' END
+            WHEN 'LICENSE_SUSPENDED' THEN 'SUSPENDED'
+            WHEN 'LICENSE_RESUMED' THEN CASE WHEN COALESCE(
+              (renewal_event.payload->>'expiresAt')::timestamptz,
+              (issue.payload->>'expiresAt')::timestamptz
+            ) <= now() THEN 'EXPIRED' ELSE 'ACTIVE' END
            WHEN 'LICENSE_REVOKED' THEN 'REVOKED'
-           ELSE 'PENDING_ONCHAIN'
-         END
+             ELSE 'PENDING_ONCHAIN'
+          END
          OR license.expires_at IS DISTINCT FROM COALESCE(
            (renewal_event.payload->>'expiresAt')::timestamptz,
            (issue.payload->>'expiresAt')::timestamptz

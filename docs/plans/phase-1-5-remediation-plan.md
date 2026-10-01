@@ -618,7 +618,7 @@ Phase 1–5 chỉ được claim complete khi:
 | WP-11–14     | `PASS_LOCAL`          | viem local-account EIP-1559 relayer/RPC, durable indexer cursor/lease, canonical finality/reorg, License API và generated clients                      |
 | WP-15        | `PASS_LOCAL`          | PostgreSQL + Redis + deterministic local chain golden flow; full repository verification matrix được chạy trước handoff                                |
 
-`PASS_LOCAL` không đồng nghĩa production-ready. SePay contract chính thức, Terms đã phê duyệt, production secret cho relayer và Sepolia RPC/finality vẫn là `BLOCKED_FOR_PRODUCTION` và không được điền bằng giá trị giả.
+`PASS_LOCAL` không đồng nghĩa production-ready. SePay cần credentialed Sandbox E2E và merchant production được kích hoạt, Terms cần được phê duyệt, còn relayer cần production secret cùng Sepolia RPC/finality; các giá trị giả không được dùng để tuyên bố production-ready.
 
 Database thật tại `DATABASE_URL` đã được người dùng cho phép reset ngày 09/09/2026: 18 bảng cũ đã bị xóa, sau đó `backend/database/schema.sql` được áp dụng clean-room. `db:verify` xác nhận database khớp baseline Phase 2 (`18 table / 44 FK / 87 index / 179 constraint`), không thiếu hoặc sai critical column/constraint/index. Database sau đó đã được seed dữ liệu minh họa theo yêu cầu: 50 demo users và 40 row cho mỗi bảng nghiệp vụ còn lại; toàn bộ demo account dùng chung mật khẩu development được hash bằng Argon2.
 
@@ -634,13 +634,17 @@ Phase 5 được harden theo baseline v5.1. Mobile có Customer login, License/V
 
 Ngày 11/09/2026, BC-04 đã được hoàn thiện thành engine automatic/manual dùng chung: drain command `SUBMITTED_UNKNOWN`/receipt, poll RPC theo checkpoint, sửa trạng thái command theo canonical event và rebuild License/Device projection khi status, expiry, activation commitment/version hoặc event pointer lệch. Worker gọi engine sau mỗi lần xử lý command; idle tick không tạo audit log rác. Runtime không còn deterministic/noop blockchain adapter; `EVM_ADAPTER=viem` là bắt buộc ở mọi environment. Compose deploy contract thật trước API/worker và readiness kiểm tra chain ID cùng contract bytecode. Golden flow PostgreSQL + Redis + Hardhat thật đã pass từ payment tới finality, one-time activation retrieval và cố ý làm sai projection rồi BC-04 tự sửa. Ma trận hiện hành: backend unit 60/60, API/worker contract 8/8, integration 15/15, Solidity 5/5, frontend 25/25 và mobile 3/3; lint/typecheck/build/OpenAPI/baseline/Compose đều pass.
 
+Ngày 14/09/2026, Phase 4 đã bổ sung adapter Cổng thanh toán SePay dùng SDK Node.js chính thức `sepay-pg-node@1.0.0`: backend tạo form checkout `POST` được ký cho Sandbox/Production, không trả secret cho client; IPN xác thực `X-Secret-Key`, chỉ chuẩn hóa `ORDER_PAID` + `CAPTURED` + `APPROVED` bằng VND và tiếp tục dùng durable idempotent classifier hiện có. Frontend submit signed fields tới SePay và chỉ hiển thị thanh toán thành công sau khi backend nhận IPN; OpenAPI của backend/frontend/mobile đã đồng bộ. Unit, controller, frontend và contract test pass; credentialed Sandbox E2E vẫn cần `MERCHANT ID`/`SECRET KEY` của người dùng và HTTPS IPN công khai.
+
+Ngày 15/09/2026, credentialed SePay Sandbox E2E đã được xác nhận trên database thật từ Order `PAYMENT_ACCEPTED`/Payment `MATCHED` đến một `ISSUE_LICENSE` command duy nhất. Worker đã gửi transaction thật lên Sepolia, receipt thành công tại block `11706515`, indexer ghi canonical `LICENSE_ISSUED`, đạt finality và projection chuyển License sang `ACTIVE`; contract read xác nhận command đã được consume và License có trạng thái `ACTIVE`. Phí giao dịch thực tế là `0.0002772951480107 ETH` (`254350` gas, `1090210922` wei/gas). Reconciliation đã sửa audit system actor cho đúng schema; receipt thành công không còn bị claim lặp; indexer tự học giới hạn `eth_getLogs` của RPC, chia nhỏ range, dừng khi đã tới chain head và che credential trong lỗi. Queue chỉ có một command/hash/attempt cho License này. Unit 73/73, focused real-RPC integration, lint, typecheck, build, OpenAPI, baseline và Solidity 5/5 đều pass.
+
 Snapshot kiểm chứng cũ ngày 11/09/2026 đã bị thay thế bởi baseline v5.1. Kết quả kiểm thử hiện hành phải được chạy lại sau thay đổi Customer ownership; bằng chứng Google Cloud/KMS cũ không còn là dependency hay readiness gate của dự án.
 
 ## 6. External blockers không được tự suy đoán
 
 Các blocker sau không ngăn local real-RPC implementation nhưng chặn production completion:
 
-- Exact SePay IPN fields/signature/retry/event-ID contract.
+- SePay production merchant activation và production webhook retry observation.
 - Approved global Terms v1 content/hash.
 - Final Smart Contract ABI/event schema sau khi crypto vectors pass.
 - Production secret injection, access policy và rotation runbook cho relayer private key.
@@ -650,7 +654,7 @@ Khi gặp blocker, hoàn thiện port/fake/local test đến boundary, ghi rõ t
 
 ## 7. Handoff cho lượt thực thi tiếp theo
 
-Phase 1–5 đã hoàn thành và Phase 5 được re-verify bằng real local RPC ngày 11/09/2026. Baseline v5.1 giữ Customer identity/JWT, loại Customer Controller/per-account key/KMS. Không tuyên bố production-ready khi ABI, relayer secret/RPC/finality hoặc SePay contract chính thức còn bị chặn. Khi tiếp tục:
+Phase 1–5 đã hoàn thành; Phase 5 được re-verify bằng real local RPC ngày 11/09/2026 và bằng credentialed SePay Sandbox → Sepolia E2E ngày 15/09/2026. Baseline v5.1 giữ Customer identity/JWT, loại Customer Controller/per-account key/KMS. Không tuyên bố production-ready khi ABI, relayer secret/RPC/finality hoặc SePay production go-live còn bị chặn. Khi tiếp tục:
 
 1. Chạy focused failing test → minimal implementation → focused pass.
 2. Chạy backend lint/typecheck/test/build và OpenAPI check nếu contract đổi.

@@ -3,7 +3,6 @@ import {
   defineChain,
   encodeFunctionData,
   getAddress,
-  http,
   keccak256,
   parseSignature,
   serializeTransaction,
@@ -21,6 +20,7 @@ import {
   type PreparedChainTransaction,
 } from '../application/ports/chain-relayer.port.js';
 import { licenseRegistryAbi } from './license-registry-contract.js';
+import { createViemRpcTransport } from '../../../platform/blockchain/viem-rpc-transport.js';
 
 export interface ChainDigestSigner {
   publicAddress(): Promise<Address>;
@@ -48,6 +48,7 @@ export interface ViemRelayerRpc {
 
 export interface ViemChainRelayerOptions {
   chainId: number;
+  fallbackRpcUrl?: string;
   network: string;
   rpc?: ViemRelayerRpc;
   rpcUrl: string;
@@ -161,6 +162,7 @@ export function encodeChainCommand(input: ChainCommandInput): Hex {
           commandId,
           licenseId,
           bytes32(requiredString(payload, 'deviceId'), 'deviceId'),
+          requiredInteger(payload, 'keyVersion'),
         ],
       });
     case 'REVOKE_DEVICE':
@@ -195,7 +197,7 @@ export class ViemChainRelayer implements ChainRelayerPort {
     });
     const client = createPublicClient({
       chain,
-      transport: http(options.rpcUrl),
+      transport: createViemRpcTransport(options.rpcUrl, options.fallbackRpcUrl),
     });
     this.rpc = {
       getChainId: () => client.getChainId(),
@@ -209,10 +211,11 @@ export class ViemChainRelayer implements ChainRelayerPort {
 
   async getSubmissionContext(input: ChainCommandInput) {
     this.assertInputNetwork(input);
-    const [relayerAddress, rpcChainId] = await Promise.all([
+    const [signerAddress, rpcChainId] = await Promise.all([
       this.options.signer.publicAddress(),
       this.rpc.getChainId(),
     ]);
+    const relayerAddress = signerAddress.toLowerCase() as Address;
     if (rpcChainId !== this.options.chainId) {
       throw new Error('CHAIN_RPC_CHAIN_ID_MISMATCH');
     }
@@ -230,7 +233,7 @@ export class ViemChainRelayer implements ChainRelayerPort {
     nonce: number,
   ): Promise<PreparedChainTransaction> {
     this.assertInputNetwork(input);
-    const relayerAddress = await this.options.signer.publicAddress();
+    const relayerAddress = (await this.options.signer.publicAddress()).toLowerCase() as Address;
     const to = getAddress(input.contractAddress);
     const data = encodeChainCommand(input);
     const [fees, estimatedGas] = await Promise.all([

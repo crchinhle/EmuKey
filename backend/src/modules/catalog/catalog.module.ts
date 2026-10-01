@@ -9,8 +9,6 @@ import { CatalogAdminRepository } from './infrastructure/catalog-admin.repositor
 import { PlanController } from './presentation/plan.controller.js';
 import { IdentityModule } from '../identity-access/identity.module.js';
 import { AuditWriter } from '../../platform/audit/audit-writer.js';
-import { TermsLoader } from '../../platform/terms/terms-loader.js';
-import { ConfigService } from '@nestjs/config';
 import { ComparePlansQuery } from './application/compare-plans.query.js';
 
 @Module({
@@ -21,7 +19,7 @@ import { ComparePlansQuery } from './application/compare-plans.query.js';
     { provide: CatalogService, inject: [CatalogRepository], useFactory: (repo: CatalogRepository) => new CatalogService(repo) },
     { provide: ComparePlansQuery, inject: [CatalogRepository], useFactory: (repo: CatalogRepository) => new ComparePlansQuery(repo) },
     { provide: CatalogAdminRepository, inject: [Pool, AuditWriter], useFactory: (pool: Pool, audit: AuditWriter) => new CatalogAdminRepository(pool, audit) },
-    { provide: CatalogAdminService, inject: [CatalogAdminRepository, TermsLoader, ConfigService], useFactory: (repo: CatalogAdminRepository, terms: TermsLoader, config: ConfigService) => new CatalogAdminService(repo, terms, config.getOrThrow<number>('TERMS_VERSION')) },
+    { provide: CatalogAdminService, inject: [CatalogAdminRepository], useFactory: (repo: CatalogAdminRepository) => new CatalogAdminService(repo) },
   ],
 })
 export class CatalogModule {}

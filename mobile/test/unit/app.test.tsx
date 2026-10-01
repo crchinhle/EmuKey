@@ -9,7 +9,7 @@ jest.mock('../../src/infrastructure/api/client', () => ({
 describe('mobile application shell', () => {
   it('requires a customer account before showing private buyer data', async () => {
     await render(<App />);
-    expect(await screen.findByText('EmuKey')).toBeOnTheScreen();
+    expect(await screen.findByText('Emukey')).toBeOnTheScreen();
     expect(screen.getByText('Đăng nhập để quản lý đơn hàng và license của bạn')).toBeOnTheScreen();
     expect(screen.getByText('Xác minh License công khai')).toBeOnTheScreen();
   });

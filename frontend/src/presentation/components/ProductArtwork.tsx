@@ -1,10 +1,7 @@
-import {
-  CloudOutlined,
-  DatabaseOutlined,
-  SafetyCertificateOutlined,
-} from '@ant-design/icons';
-
 import type { ProductTone } from '../../domain/product';
+import cloudStudioArtworkUrl from '../../assets/figma/cloudstudio-artwork.svg';
+import dataGuardArtworkUrl from '../../assets/figma/dataguard-artwork.svg';
+import secureDeskArtworkUrl from '../../assets/figma/securedesk-artwork.svg';
 
 interface ProductArtworkProps {
   readonly imageUrl?: string | null;
@@ -13,19 +10,17 @@ interface ProductArtworkProps {
   readonly large?: boolean;
 }
 
-const artworkByTone = {
-  brand: SafetyCertificateOutlined,
-  module: CloudOutlined,
-  neutral: DatabaseOutlined,
-} as const;
-
 export function ProductArtwork({
   imageUrl,
   tone,
   productName,
   large = false,
 }: ProductArtworkProps) {
-  const Artwork = artworkByTone[tone];
+  const figmaArtworkByTone = {
+    brand: secureDeskArtworkUrl,
+    module: cloudStudioArtworkUrl,
+    neutral: dataGuardArtworkUrl,
+  } as const;
   const className = [
     'product-artwork',
     'product-artwork--' + tone,
@@ -46,12 +41,9 @@ export function ProductArtwork({
   }
 
   return (
-    <div
-      aria-label={'Minh họa ' + productName}
-      className={className}
-      role="img"
-    >
-      <Artwork />
+    <div aria-label={'Minh họa ' + productName} className={className} role="img">
+      <img alt="" className="product-artwork-image" src={figmaArtworkByTone[tone]} />
     </div>
   );
+
 }

@@ -30,8 +30,17 @@ const walletClient = createWalletClient({
 });
 const expectedAddress = getContractAddress({ from: account.address, nonce: 0n });
 const existingCode = await publicClient.getCode({ address: expectedAddress });
+const artifact = JSON.parse(
+  await readFile(
+    resolve('artifacts', 'solidity', 'LicenseRegistry.sol', 'LicenseRegistry.json'),
+    'utf8',
+  ),
+);
 
 if (existingCode && existingCode !== '0x') {
+  if (artifact.deployedBytecode && existingCode.toLowerCase() !== artifact.deployedBytecode.toLowerCase()) {
+    throw new Error('LOCAL_LICENSE_REGISTRY_ARTIFACT_MISMATCH_RESET_CHAIN_REQUIRED');
+  }
   process.stdout.write(
     `${JSON.stringify({ address: expectedAddress, event: 'contract.reused' })}\n`,
   );
@@ -45,12 +54,6 @@ if (nonce !== 0) {
   );
 }
 
-const artifact = JSON.parse(
-  await readFile(
-    resolve('artifacts', 'solidity', 'LicenseRegistry.sol', 'LicenseRegistry.json'),
-    'utf8',
-  ),
-);
 const transactionHash = await walletClient.deployContract({
   abi: artifact.abi,
   account,

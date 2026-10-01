@@ -55,6 +55,632 @@
         ]
       }
     },
+    "/api/v1/conversations": {
+      "get": {
+        "operationId": "AssistanceSupportController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      },
+      "post": {
+        "operationId": "AssistanceSupportController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConversationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/queue": {
+      "get": {
+        "operationId": "AssistanceSupportController_queue",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}": {
+      "get": {
+        "operationId": "AssistanceSupportController_find",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/messages": {
+      "post": {
+        "operationId": "AssistanceSupportController_append",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      },
+      "get": {
+        "operationId": "AssistanceSupportController_messages",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/ai-ask": {
+      "post": {
+        "operationId": "AssistanceSupportController_askAi",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiAskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiAnswerDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/request-support": {
+      "post": {
+        "operationId": "AssistanceSupportController_requestSupport",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestSupportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Escalate an AI conversation to the Support queue",
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/messages/queue-preview": {
+      "get": {
+        "operationId": "AssistanceSupportController_queuePreviewMessages",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preview messages for an unclaimed queue item",
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/claim": {
+      "post": {
+        "operationId": "AssistanceSupportController_claim",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/release": {
+      "post": {
+        "operationId": "AssistanceSupportController_release",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Release a claimed conversation back to the queue",
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/close": {
+      "post": {
+        "operationId": "AssistanceSupportController_close",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/knowledge/documents": {
+      "get": {
+        "operationId": "KnowledgeController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeDocumentDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "post": {
+        "operationId": "KnowledgeController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKnowledgeDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/knowledge/documents/{id}": {
+      "get": {
+        "operationId": "KnowledgeController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/knowledge/documents/{id}/publish": {
+      "post": {
+        "operationId": "KnowledgeController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishKnowledgeDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/knowledge/query": {
+      "post": {
+        "operationId": "KnowledgeController_query",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeQueryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeSourceDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/api/v1/auth/register": {
       "post": {
         "operationId": "IdentityController_register",
@@ -471,6 +1097,199 @@
         ],
         "tags": [
           "identity"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "NotificationController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{notificationId}/read": {
+      "post": {
+        "operationId": "NotificationController_markRead",
+        "parameters": [
+          {
+            "name": "notificationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/push-tokens": {
+      "post": {
+        "operationId": "NotificationController_registerPushToken",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/push-tokens/remove": {
+      "post": {
+        "operationId": "NotificationController_unregisterPushToken",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/operations/health/assistance": {
+      "get": {
+        "operationId": "OperationsHealthController_assistance",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/api/v1/operations/audit-logs": {
+      "get": {
+        "operationId": "AuditController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "action",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 120,
+              "type": "string"
+            }
+          },
+          {
+            "name": "outcome",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUCCESS",
+                "DENIED",
+                "FAILED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "operations"
         ]
       }
     },
@@ -1129,6 +1948,44 @@
         ]
       }
     },
+    "/api/v1/operations/blockchain/dead-letters/{commandId}/recover": {
+      "post": {
+        "operationId": "BlockchainOperationsController_recoverDeadLetter",
+        "parameters": [
+          {
+            "name": "commandId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadLetterRecoveryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
     "/api/v1/licenses": {
       "get": {
         "operationId": "LicenseController_list",
@@ -1178,6 +2035,44 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LicenseProjectionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licenses"
+        ]
+      }
+    },
+    "/api/v1/licenses/{id}/devices": {
+      "get": {
+        "operationId": "LicenseController_listDevices",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LicenseDeviceDto"
+                  }
                 }
               }
             }
@@ -1265,14 +2160,6 @@
         "operationId": "CommerceController_create",
         "parameters": [
           {
-            "name": "X-License-Key",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "Idempotency-Key",
             "in": "header",
             "required": true,
@@ -1308,7 +2195,7 @@
             "bearer": []
           }
         ],
-        "summary": "Create an authenticated idempotent purchase or renewal order",
+        "summary": "Create a purchase or resume an account-owned renewal. No license secret required.",
         "tags": [
           "commerce"
         ]
@@ -1329,6 +2216,44 @@
                 }
               }
             }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "commerce"
+        ]
+      }
+    },
+    "/api/v1/orders/renewal-preview/{licenseId}": {
+      "get": {
+        "operationId": "CommerceController_renewalPreview",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenewalPreviewDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": ""
           }
         },
         "security": [
@@ -1379,9 +2304,9 @@
         ]
       }
     },
-    "/api/v1/orders/{id}/terms": {
+    "/api/v1/orders/{id}/service-terms": {
       "get": {
-        "operationId": "CommerceController_terms",
+        "operationId": "CommerceController_serviceTerms",
         "parameters": [
           {
             "name": "id",
@@ -1412,15 +2337,15 @@
             "bearer": []
           }
         ],
-        "summary": "Get the exact Terms artefact snapshotted by an order",
+        "summary": "Get the platform Service Terms content",
         "tags": [
           "commerce"
         ]
       }
     },
-    "/api/v1/orders/{id}/accept-terms": {
+    "/api/v1/orders/{id}/accept-service-terms": {
       "post": {
-        "operationId": "CommerceController_acceptTerms",
+        "operationId": "CommerceController_acceptServiceTerms",
         "parameters": [
           {
             "name": "id",
@@ -1436,7 +2361,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AcceptTermsDto"
+                "$ref": "#/components/schemas/AcceptServiceTermsDto"
               }
             }
           }
@@ -1538,7 +2463,7 @@
         "operationId": "PaymentController_ingest",
         "parameters": [
           {
-            "name": "x-emukey-payment-signature",
+            "name": "x-secret-key",
             "required": true,
             "in": "header",
             "schema": {
@@ -1715,11 +2640,540 @@
           "payments"
         ]
       }
+    },
+    "/api/v1/activations/challenge": {
+      "post": {
+        "operationId": "LicensingController_challenge",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivationChallengeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceChallengeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/activations": {
+      "post": {
+        "operationId": "LicensingController_activate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivateDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Request a device activation command after off-chain proof verification",
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/action-verification": {
+      "post": {
+        "operationId": "LicensingController_requestActionVerification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicensingActionVerificationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/action-verification/resolve": {
+      "post": {
+        "operationId": "LicensingController_resolveActionVerification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveLicensingActionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicensingActionResolutionDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resolve the licensing action an email token authorizes without consuming it",
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/commands/{commandId}": {
+      "get": {
+        "operationId": "LicensingController_commandStatus",
+        "parameters": [
+          {
+            "name": "commandId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandStatusDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/devices/{deviceId}/revoke": {
+      "post": {
+        "operationId": "LicensingController_revokeDevice",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevokeDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/devices/{deviceId}/remote-revoke": {
+      "post": {
+        "operationId": "LicensingController_remoteRevokeDevice",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RemoteRevokeDeviceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/activation-key/rotate": {
+      "post": {
+        "operationId": "LicensingController_rotate",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateActivationKeyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/activation-key/recover": {
+      "post": {
+        "operationId": "LicensingController_recoverActivationKey",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivationKeyRecoveryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/{licenseId}/lifecycle": {
+      "post": {
+        "operationId": "LicensingController_lifecycle",
+        "parameters": [
+          {
+            "name": "licenseId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LicenseLifecycleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Phase6CommandDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/entitlements/issue": {
+      "post": {
+        "operationId": "LicensingController_issueEntitlement",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntitlementRefreshDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/entitlements/refresh": {
+      "post": {
+        "operationId": "LicensingController_refreshEntitlement",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntitlementRefreshDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/entitlements/verify": {
+      "post": {
+        "operationId": "LicensingController_verifyEntitlement",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EntitlementVerifyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementValidationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "licensing"
+        ]
+      }
     }
   },
   "info": {
-    "title": "EmuKey API",
-    "description": "Versioned API for the EmuKey license platform",
+    "title": "Emukey API",
+    "description": "Versioned API for the Emukey license platform",
     "version": "1.0.0",
     "contact": {}
   },
@@ -1820,6 +3274,353 @@
         },
         "required": [
           "error"
+        ]
+      },
+      "ConversationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "customerUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignedSupportUserId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "AI_ACTIVE",
+              "WAITING_SUPPORT",
+              "SUPPORT_ACTIVE",
+              "CLOSED"
+            ]
+          },
+          "contextType": {
+            "type": "string",
+            "enum": [
+              "GENERAL",
+              "PRODUCT",
+              "PLAN",
+              "ORDER",
+              "LICENSE"
+            ]
+          },
+          "contextId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "title": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "customerUserId",
+          "status",
+          "contextType"
+        ]
+      },
+      "CreateConversationDto": {
+        "type": "object",
+        "properties": {
+          "contextId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contextType": {
+            "type": "string",
+            "enum": [
+              "GENERAL",
+              "PRODUCT",
+              "PLAN",
+              "ORDER",
+              "LICENSE"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          }
+        }
+      },
+      "AppendMessageDto": {
+        "type": "object",
+        "properties": {
+          "clientMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8000
+          }
+        },
+        "required": [
+          "clientMessageId",
+          "content"
+        ]
+      },
+      "MessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "clientMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serverSequence": {
+            "type": "number"
+          },
+          "senderType": {
+            "type": "string",
+            "enum": [
+              "CUSTOMER",
+              "SUPPORT",
+              "AI",
+              "SYSTEM"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "grounded": {
+            "type": "object",
+            "nullable": true
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "conversationId",
+          "clientMessageId",
+          "serverSequence",
+          "senderType",
+          "content"
+        ]
+      },
+      "AiAskDto": {
+        "type": "object",
+        "properties": {
+          "clientMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "clientMessageId",
+          "question"
+        ]
+      },
+      "AiAnswerDto": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "citedSourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grounded": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answer",
+          "citedSourceIds",
+          "grounded"
+        ]
+      },
+      "RequestSupportDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "KnowledgeDocumentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "logicalDocumentKey": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "logicalDocumentKey",
+          "version",
+          "status",
+          "isCurrent"
+        ]
+      },
+      "CreateKnowledgeDocumentDto": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "logicalDocumentKey": {
+            "type": "string",
+            "maxLength": 180,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9/_-]{0,179}$"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "FAQ",
+              "PDF",
+              "TXT"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "chunks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "productId",
+          "logicalDocumentKey",
+          "sourceType",
+          "title"
+        ]
+      },
+      "KnowledgeDocumentDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "logicalDocumentKey": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "chunks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "logicalDocumentKey",
+          "version",
+          "status",
+          "isCurrent",
+          "chunks"
+        ]
+      },
+      "PublishKnowledgeDocumentDto": {
+        "type": "object",
+        "properties": {
+          "expectedCurrentVersion": {
+            "type": "number",
+            "minimum": 1
+          }
+        }
+      },
+      "KnowledgeQueryDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "KnowledgeSourceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
         ]
       },
       "RegisterDto": {
@@ -1958,6 +3759,140 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "NotificationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "isRead": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "target": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content",
+          "isRead",
+          "createdAt"
+        ]
+      },
+      "RegisterPushTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 512
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "FCM",
+              "EXPO"
+            ]
+          }
+        },
+        "required": [
+          "token",
+          "provider"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "AuditEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "actorRole": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetType": {
+            "type": "string",
+            "nullable": true
+          },
+          "targetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "outcome",
+          "actorUserId",
+          "actorRole",
+          "targetType",
+          "targetId",
+          "reason",
+          "createdAt"
+        ]
+      },
+      "AuditPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntryDto"
+            }
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "hasMore",
+          "page"
         ]
       },
       "AdminProductDto": {
@@ -2100,7 +4035,7 @@
           },
           "name": {
             "type": "string",
-            "example": "EmuKey Desktop"
+            "example": "Emukey Desktop"
           },
           "description": {
             "type": "string"
@@ -2120,7 +4055,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "example": "EmuKey Desktop"
+            "example": "Emukey Desktop"
           },
           "description": {
             "type": "string"
@@ -2276,13 +4211,6 @@
               "ARCHIVED"
             ]
           },
-          "termsHash": {
-            "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$"
-          },
-          "termsVersion": {
-            "type": "number"
-          },
           "updatedAt": {
             "type": "string",
             "format": "date-time"
@@ -2304,8 +4232,6 @@
           "priceVnd",
           "productId",
           "status",
-          "termsHash",
-          "termsVersion",
           "updatedAt",
           "version"
         ]
@@ -2477,6 +4403,33 @@
           "reconciledCommandIds"
         ]
       },
+      "DeadLetterRecoveryDto": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "REQUEUE_NO_SUBMISSION",
+              "RECONCILE_SAME_RAW",
+              "ABANDON_REVERTED",
+              "ABANDON_NO_EFFECT"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "mode",
+          "reason"
+        ]
+      },
       "LicensePlanDto": {
         "type": "object",
         "properties": {
@@ -2514,6 +4467,9 @@
       "LicenseProjectionDto": {
         "type": "object",
         "properties": {
+          "activationKeyAvailable": {
+            "type": "boolean"
+          },
           "blockNumber": {
             "type": "number",
             "nullable": true
@@ -2538,6 +4494,14 @@
           },
           "keyVersion": {
             "type": "number"
+          },
+          "activationKeyTrustStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING_FINALITY",
+              "TRUSTED",
+              "UNTRUSTED_REORG"
+            ]
           },
           "maxActiveDevices": {
             "type": "number"
@@ -2587,6 +4551,7 @@
           "finality",
           "id",
           "keyVersion",
+          "activationKeyTrustStatus",
           "maxActiveDevices",
           "originOrderId",
           "periodStart",
@@ -2596,6 +4561,47 @@
           "publicLicenseId",
           "status",
           "updatedAt"
+        ]
+      },
+      "LicenseDeviceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceRef": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_ONCHAIN",
+              "ACTIVE",
+              "REVOKED"
+            ]
+          },
+          "bindingGeneration": {
+            "type": "number"
+          },
+          "activatedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "revokedAt": {
+            "type": "object",
+            "nullable": true
+          },
+          "finality": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "deviceRef",
+          "status",
+          "bindingGeneration"
         ]
       },
       "ActivationKeyDto": {
@@ -2668,7 +4674,7 @@
         "properties": {
           "planId": {
             "type": "string",
-            "format": "uuid"
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
           },
           "targetLicenseId": {
             "type": "string",
@@ -2682,6 +4688,17 @@
       "OrderDto": {
         "type": "object",
         "properties": {
+          "renewalStatus": {
+            "type": "string",
+            "nullable": true,
+            "description": "Latest RENEW_LICENSE command status for this exact order, not the original issuance."
+          },
+          "renewalExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Target expiry of this renewal; effective only after canonical chain confirmation."
+          },
           "billingCycleSnapshot": {
             "type": "string"
           },
@@ -2720,7 +4737,7 @@
           "orderStatus": {
             "type": "string",
             "enum": [
-              "WAITING_TERMS_ACCEPTANCE",
+              "WAITING_SERVICE_TERMS_ACCEPTANCE",
               "WAITING_PAYMENT",
               "PAYMENT_ACCEPTED",
               "CANCELLED",
@@ -2778,17 +4795,19 @@
             "format": "uuid",
             "nullable": true
           },
-          "termsAcceptedAt": {
+          "serviceTermsAcceptedAt": {
             "type": "string",
             "format": "date-time",
             "nullable": true
           },
-          "termsHashSnapshot": {
+          "serviceTermsVersionSnapshot": {
             "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$"
+            "nullable": true
           },
-          "termsVersionSnapshot": {
-            "type": "number"
+          "serviceTermsHashSnapshot": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
           }
         },
         "required": [
@@ -2812,9 +4831,65 @@
           "productId",
           "productNameSnapshot",
           "providerNameSnapshot",
-          "providerUserId",
-          "termsHashSnapshot",
-          "termsVersionSnapshot"
+          "providerUserId"
+        ]
+      },
+      "RenewalPreviewDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "planId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "planName": {
+            "type": "string"
+          },
+          "productName": {
+            "type": "string"
+          },
+          "durationMonths": {
+            "type": "number"
+          },
+          "priceVnd": {
+            "type": "number"
+          },
+          "currentExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "estimatedExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Estimate only; final expiry uses verified payment time."
+          },
+          "canRenew": {
+            "type": "boolean"
+          },
+          "pendingOrder": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrderDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "licenseId",
+          "planId",
+          "planName",
+          "productName",
+          "durationMonths",
+          "priceVnd",
+          "currentExpiresAt",
+          "estimatedExpiresAt",
+          "canRenew",
+          "pendingOrder"
         ]
       },
       "OrderTermsDto": {
@@ -2823,35 +4898,41 @@
           "content": {
             "type": "string"
           },
+          "version": {
+            "type": "string"
+          },
           "hash": {
             "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$"
-          },
-          "version": {
-            "type": "number"
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
           "content",
-          "hash",
-          "version"
+          "version",
+          "hash"
         ]
       },
-      "AcceptTermsDto": {
+      "AcceptServiceTermsDto": {
         "type": "object",
         "properties": {
-          "termsVersion": {
-            "type": "number",
-            "minimum": 1
+          "accepted": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           },
-          "termsHash": {
+          "version": {
+            "type": "string"
+          },
+          "hash": {
             "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$"
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
-          "termsVersion",
-          "termsHash"
+          "accepted",
+          "version",
+          "hash"
         ]
       },
       "CheckoutSessionDto": {
@@ -2863,6 +4944,18 @@
           "attemptId": {
             "type": "string",
             "format": "uuid"
+          },
+          "checkoutFields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "checkoutMethod": {
+            "type": "string",
+            "enum": [
+              "POST"
+            ]
           },
           "checkoutReference": {
             "type": "string"
@@ -2882,6 +4975,8 @@
         "required": [
           "amountVnd",
           "attemptId",
+          "checkoutFields",
+          "checkoutMethod",
           "checkoutReference",
           "checkoutUrl",
           "expiresAt",
@@ -2940,23 +5035,28 @@
           },
           "orderId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "orderNumber": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "orderType": {
             "type": "string",
             "enum": [
               "NEW_PURCHASE",
               "RENEWAL"
-            ]
+            ],
+            "nullable": true
           },
           "planNameSnapshot": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "productNameSnapshot": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "providerEventId": {
             "type": "string"
@@ -2964,6 +5064,10 @@
           "providerTransactionReference": {
             "type": "string",
             "nullable": true
+          },
+          "providerOccurredAt": {
+            "type": "string",
+            "format": "date-time"
           },
           "receivedAt": {
             "type": "string",
@@ -2981,12 +5085,8 @@
         "required": [
           "amountVnd",
           "classification",
-          "orderId",
-          "orderNumber",
-          "orderType",
-          "planNameSnapshot",
-          "productNameSnapshot",
           "providerEventId",
+          "providerOccurredAt",
           "receivedAt",
           "transactionId"
         ]
@@ -2994,9 +5094,8 @@
       "PaymentReviewDto": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
+          "amountVnd": {
+            "type": "number"
           },
           "classification": {
             "type": "string",
@@ -3008,8 +5107,18 @@
               "INVALID"
             ]
           },
-          "amountVnd": {
-            "type": "number"
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "orderNumber": {
+            "type": "string",
+            "nullable": true
           },
           "providerEventId": {
             "type": "string"
@@ -3030,6 +5139,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "providerOccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "reviewedAt": {
             "type": "string",
             "format": "date-time",
@@ -3037,11 +5150,12 @@
           }
         },
         "required": [
-          "id",
-          "classification",
           "amountVnd",
+          "classification",
+          "id",
           "providerEventId",
-          "receivedAt"
+          "receivedAt",
+          "providerOccurredAt"
         ]
       },
       "ReviewPaymentDto": {
@@ -3090,6 +5204,22 @@
             "type": "string",
             "format": "date-time"
           },
+          "providerOccurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp reported by the payment provider."
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timingBasis": {
+            "type": "string",
+            "enum": [
+              "PROVIDER",
+              "SANDBOX_RECEIPT"
+            ]
+          },
           "planNameSnapshot": {
             "type": "string"
           },
@@ -3115,10 +5245,491 @@
           "orderNumber",
           "orderType",
           "paidAt",
+          "providerOccurredAt",
+          "receivedAt",
+          "timingBasis",
           "planNameSnapshot",
           "productNameSnapshot",
           "providerNameSnapshot",
           "transactionId"
+        ]
+      },
+      "ActivationChallengeDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "ACTIVATE_DEVICE",
+              "SELF_REVOKE_DEVICE",
+              "ISSUE_ENTITLEMENT",
+              "REFRESH_ENTITLEMENT"
+            ]
+          },
+          "deviceRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Set when requesting a challenge to revoke an existing device"
+          }
+        },
+        "required": [
+          "licenseId",
+          "purpose",
+          "deviceRef"
+        ]
+      },
+      "DeviceChallengeDto": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bindingGeneration": {
+            "type": "number"
+          },
+          "keyVersion": {
+            "type": "number"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "ACTIVATE_DEVICE",
+              "SELF_REVOKE_DEVICE",
+              "ISSUE_ENTITLEMENT",
+              "REFRESH_ENTITLEMENT"
+            ]
+          }
+        },
+        "required": [
+          "challenge",
+          "expiresAt",
+          "bindingGeneration",
+          "keyVersion",
+          "purpose"
+        ]
+      },
+      "ActivateDeviceDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "activationKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "deviceRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "devicePublicKey": {
+            "type": "string",
+            "description": "EVM address corresponding to the device signing key"
+          },
+          "proof": {
+            "type": "string",
+            "description": "EIP-191 signature over the activation challenge"
+          }
+        },
+        "required": [
+          "licenseId",
+          "activationKey",
+          "challenge",
+          "deviceRef",
+          "devicePublicKey",
+          "proof"
+        ]
+      },
+      "Phase6CommandDto": {
+        "type": "object",
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUBMITTED",
+              "SUBMITTED_UNKNOWN",
+              "CONFIRMED",
+              "RETRYABLE_FAILED",
+              "DEAD_LETTER",
+              "ABANDONED",
+              "SUPERSEDED"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "commandId",
+          "status",
+          "licenseId"
+        ]
+      },
+      "LicensingActionVerificationDto": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "ROTATE_KEY",
+              "REVOKE_DEVICE",
+              "REMOTE_REVOKE_DEVICE",
+              "KEY_RECOVERY"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Required for device-scoped revoke actions"
+          }
+        },
+        "required": [
+          "action",
+          "licenseId"
+        ]
+      },
+      "ResolveLicensingActionDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 20
+          }
+        },
+        "required": [
+          "actionToken"
+        ]
+      },
+      "LicensingActionResolutionDto": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "ROTATE_KEY",
+              "REVOKE_DEVICE",
+              "REMOTE_REVOKE_DEVICE",
+              "KEY_RECOVERY"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "action",
+          "licenseId",
+          "expiresAt"
+        ]
+      },
+      "Phase6CommandStatusDto": {
+        "type": "object",
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUBMITTED",
+              "SUBMITTED_UNKNOWN",
+              "CONFIRMED",
+              "RETRYABLE_FAILED",
+              "DEAD_LETTER",
+              "ABANDONED",
+              "SUPERSEDED"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "commandType": {
+            "type": "string",
+            "enum": [
+              "ISSUE_LICENSE",
+              "RENEW_LICENSE",
+              "SUSPEND_LICENSE",
+              "RESUME_LICENSE",
+              "REVOKE_LICENSE",
+              "ROTATE_KEY",
+              "ACTIVATE_DEVICE",
+              "REVOKE_DEVICE"
+            ]
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "transactionHash": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "nullable": true
+          }
+        },
+        "required": [
+          "commandId",
+          "status",
+          "licenseId",
+          "commandType"
+        ]
+      },
+      "RevokeDeviceDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 32
+          },
+          "activationKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "proof": {
+            "type": "string",
+            "description": "EIP-191 signature over the revoke challenge"
+          }
+        },
+        "required": [
+          "actionToken",
+          "activationKey",
+          "challenge",
+          "proof"
+        ]
+      },
+      "RemoteRevokeDeviceDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 32
+          },
+          "currentPassword": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "actionToken",
+          "currentPassword"
+        ]
+      },
+      "RotateActivationKeyDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 32
+          },
+          "currentKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$"
+          }
+        },
+        "required": [
+          "actionToken",
+          "currentKey"
+        ]
+      },
+      "ActivationKeyRecoveryDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 32
+          },
+          "currentPassword": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "actionToken",
+          "currentPassword"
+        ]
+      },
+      "LicenseLifecycleDto": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "SUSPEND_LICENSE",
+              "RESUME_LICENSE",
+              "REVOKE_LICENSE"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "EntitlementRefreshDto": {
+        "type": "object",
+        "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "challenge": {
+            "type": "string",
+            "minLength": 16
+          },
+          "proof": {
+            "type": "string",
+            "description": "EIP-191 device signature over the entitlement challenge"
+          }
+        },
+        "required": [
+          "licenseId",
+          "deviceId",
+          "challenge",
+          "proof"
+        ]
+      },
+      "EntitlementDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entitlementVersion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt",
+          "licenseId",
+          "deviceId",
+          "entitlementVersion"
+        ]
+      },
+      "EntitlementVerifyDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Signed entitlement JWT returned by issue or refresh"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "EntitlementValidationDto": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entitlementVersion": {
+            "type": "number"
+          },
+          "keyVersion": {
+            "type": "number"
+          },
+          "rights": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "valid",
+          "expiresAt",
+          "licenseId",
+          "deviceId",
+          "entitlementVersion",
+          "keyVersion",
+          "rights"
         ]
       }
     }

@@ -1,5 +1,6 @@
-import { Alert, Button, Card, Empty, Input, Select, Spin, Tag } from 'antd';
+import { Alert, Button, Card, Empty, Input, Pagination, Select, Spin } from 'antd';
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 
 import {
@@ -7,15 +8,17 @@ import {
   useProducts,
 } from '../../application/catalog/catalogQueries';
 import { ProductArtwork } from '../components/ProductArtwork';
-import { PublicHeader } from '../components/PublicHeader';
+import { SiteHeader } from '../components/SiteHeader';
 
 const sortOptions = [
-  { value: 'popular', label: 'Phổ biến nhất' },
+  { value: 'popular', label: 'Mặc định' },
   { value: 'price-asc', label: 'Giá tăng dần' },
 ] as const;
 
-export function CatalogScreen() {
-  const [search, setSearch] = useState('');
+export function CatalogScreen({ authenticated = false }: { readonly authenticated?: boolean }) {
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState(() => params.get('q') ?? '');
+  const [page, setPage] = useState(1);
   const [sort, setSort] =
     useState<(typeof sortOptions)[number]['value']>('popular');
   const { data: products = [], isLoading, isError, refetch } = useProducts();
@@ -31,31 +34,21 @@ export function CatalogScreen() {
 
     return sort === 'price-asc'
       ? filtered.sort(
-          (left, right) => left.plans[0]!.priceVnd - right.plans[0]!.priceVnd,
+          (left, right) => Math.min(...left.plans.map((plan) => plan.priceVnd)) - Math.min(...right.plans.map((plan) => plan.priceVnd)),
         )
       : filtered;
   }, [products, search, sort]);
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(visibleProducts.length / 12)));
 
   return (
     <div className="page-shell">
-      <PublicHeader />
-      <main className="catalog-content">
+      {!authenticated ? <SiteHeader /> : null}
+       <main className="catalog-content" id="main-content" tabIndex={-1}>
         <section className="catalog-hero">
           <div>
-            <h1>Bản quyền phần mềm cho doanh nghiệp hiện đại</h1>
-            <p>
-              Chọn gói phù hợp theo số thiết bị và điều khoản cấp phép đã được
-              công bố.
-            </p>
-            <a className="primary-link" href="#product-grid">
-              Khám phá sản phẩm
-            </a>
+            <h1>Sản phẩm</h1>
+            <p>Chọn gói phù hợp với số thiết bị, thời hạn và nhu cầu sử dụng.</p>
           </div>
-          <Card className="trust-card">
-            <Tag color="blue">Blockchain verified</Tag>
-            <h2>Quyền license có bằng chứng on-chain</h2>
-            <p>Tra cứu trạng thái, commitment và finality theo mã xác thực.</p>
-          </Card>
         </section>
 
         <section aria-label="Bộ lọc sản phẩm" className="catalog-toolbar">
@@ -65,16 +58,20 @@ export function CatalogScreen() {
               aria-label="Tìm sản phẩm"
               placeholder="Tìm theo tên hoặc mô tả"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { const value = event.target.value; setSearch(value); setPage(1); const next = new URLSearchParams(params); if (value.trim()) next.set('q', value); else next.delete('q'); setParams(next, { replace: true }); }}
             />
           </label>
+          <div className="catalog-compare-action">
+            <span>Cần chọn nhanh?</span>
+            <Link className="secondary-link" to="/compare">So sánh các gói</Link>
+          </div>
           <label>
             <span>Sắp xếp</span>
             <Select
               aria-label="Sắp xếp"
               options={[...sortOptions]}
               value={sort}
-              onChange={setSort}
+              onChange={(value) => { setSort(value); setPage(1); }}
             />
           </label>
         </section>
@@ -89,29 +86,30 @@ export function CatalogScreen() {
           {!isLoading && !isError && products.length === 0 ? (
             <Empty description="Chưa có sản phẩm và gói giá được công bố." />
           ) : null}
-          {!isLoading && !isError && visibleProducts.map((product) => (
-            <Card className="product-card" key={product.slug}>
-              <ProductArtwork imageUrl={product.imageUrl} productName={product.name} tone={product.tone} />
-              <h2>{product.name}</h2>
-              <p>{product.summary}</p>
-              <strong>Từ {formatVnd(product.plans[0]!.priceVnd)}</strong>
-              <div className="product-actions">
-                <Link className="ghost-link" to={'/products/' + product.slug}>
-                  Xem chi tiết
-                </Link>
-                <Link
-                  className="secondary-link"
-                  to={'/products/' + product.slug}
-                >
-                  Chọn gói
-                </Link>
-              </div>
-            </Card>
-          ))}
+{!isLoading && !isError && visibleProducts.slice((currentPage - 1) * 12, currentPage * 12).map((product) => (
+             <Card
+               className="product-card"
+               key={product.slug}
+             >
+               <ProductArtwork imageUrl={product.imageUrl} productName={product.name} tone={product.tone} />
+               <h2>{product.name}</h2>
+               <p>{product.summary}</p>
+               <strong>{product.plans.length ? `Từ ${formatVnd(Math.min(...product.plans.map((plan) => plan.priceVnd)))}` : 'Chưa có gói'}</strong>
+               <div className="product-actions">
+                 <Link
+                   className="primary-link"
+                   to={`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`}
+                 >
+                   Xem gói & chi tiết
+                 </Link>
+               </div>
+             </Card>
+           ))}
           {!isLoading && !isError && products.length > 0 && visibleProducts.length === 0 ? (
             <Empty description="Không tìm thấy sản phẩm phù hợp" />
           ) : null}
         </section>
+        {!isLoading && !isError ? <Pagination current={currentPage} pageSize={12} total={visibleProducts.length} onChange={setPage} hideOnSinglePage showSizeChanger={false} /> : null}
       </main>
     </div>
   );

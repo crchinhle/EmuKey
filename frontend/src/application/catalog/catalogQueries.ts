@@ -6,6 +6,7 @@ import type {
   AdminProductDto,
   CreatePlanDto,
   CreateProductDto,
+  ComparePlansResponseDto,
   PublicCatalogProductDto,
   UpdatePlanDto,
   UpdateProductDto,
@@ -27,6 +28,8 @@ function mapProduct(product: PublicCatalogProductDto): Product {
       devices: plan.maxActiveDevices,
       label: plan.name,
       priceVnd: plan.priceVnd,
+      durationMonths: plan.durationMonths,
+      entitlements: plan.entitlements,
     })),
   };
 }
@@ -47,6 +50,18 @@ export function useProduct(slug: string) {
         await requestJson<PublicCatalogProductDto>(`/products/${encodeURIComponent(slug)}`),
       ),
     enabled: Boolean(slug),
+  });
+}
+
+export function useComparePlans(ids: readonly string[]) {
+  const comparisonKey = ids.join(',');
+  return useQuery({
+    queryKey: ['plans', 'compare', comparisonKey],
+    queryFn: () =>
+      requestJson<ComparePlansResponseDto>(
+        `/plans/compare?ids=${encodeURIComponent(comparisonKey)}`,
+      ),
+    enabled: ids.length >= 2 && ids.length <= 4,
   });
 }
 

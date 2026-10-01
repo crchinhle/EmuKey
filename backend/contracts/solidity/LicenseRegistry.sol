@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 contract LicenseRegistry is AccessControl {
     bytes32 public constant RELAYER_ROLE = keccak256("RELAYER_ROLE");
-    bytes32 public constant DOMAIN_PLAN_V1 = keccak256("LICENSE_PLAN_COMMITMENT_V1");
+    bytes32 public constant DOMAIN_PLAN_V2 = keccak256("LICENSE_PLAN_COMMITMENT_V2");
 
     enum LicenseStatus { NONE, ACTIVE, SUSPENDED, REVOKED, EXPIRED }
 
@@ -49,19 +49,17 @@ contract LicenseRegistry is AccessControl {
         uint256 planVersion,
         uint256 durationMonths,
         uint256 maxActiveDevices,
-        bytes32 entitlementsHash,
-        bytes32 termsHash
+        bytes32 entitlementsHash
     ) public pure returns (bytes32) {
         return keccak256(abi.encode(
-            DOMAIN_PLAN_V1,
+            DOMAIN_PLAN_V2,
             provider,
             productId,
             planId,
             planVersion,
             durationMonths,
             maxActiveDevices,
-            entitlementsHash,
-            termsHash
+            entitlementsHash
         ));
     }
 
@@ -116,7 +114,7 @@ contract LicenseRegistry is AccessControl {
     {
         _consume(commandId);
         LicenseData storage license = _existing(licenseId);
-        if (license.status != LicenseStatus.ACTIVE) revert InvalidState();
+        if (license.status != LicenseStatus.ACTIVE || license.expiresAt <= block.timestamp) revert InvalidState();
         license.status = LicenseStatus.SUSPENDED;
         emit LicenseStatusChanged(commandId, licenseId, LicenseStatus.SUSPENDED);
     }
@@ -155,12 +153,23 @@ contract LicenseRegistry is AccessControl {
         emit ActivationKeyRotated(commandId, licenseId, newCommitment, newVersion);
     }
 
-    function activateDevice(bytes16 commandId, bytes16 licenseId, bytes32 deviceId)
+    function activateDevice(
+        bytes16 commandId,
+        bytes16 licenseId,
+        bytes32 deviceId,
+        uint256 keyVersion
+    )
         external onlyRole(RELAYER_ROLE)
     {
         _consume(commandId);
         LicenseData storage license = _existing(licenseId);
-        if (license.status != LicenseStatus.ACTIVE || license.expiresAt <= block.timestamp || activeDevice[licenseId][deviceId] || license.activeDevices >= license.maxActiveDevices) revert InvalidState();
+        if (
+            license.status != LicenseStatus.ACTIVE ||
+            license.expiresAt <= block.timestamp ||
+            keyVersion != license.activationKeyVersion ||
+            activeDevice[licenseId][deviceId] ||
+            license.activeDevices >= license.maxActiveDevices
+        ) revert InvalidState();
         activeDevice[licenseId][deviceId] = true;
         license.activeDevices += 1;
         emit DeviceStatusChanged(commandId, licenseId, deviceId, true);

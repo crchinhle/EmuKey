@@ -3,12 +3,12 @@ import {
   createPublicClient,
   defineChain,
   getAddress,
-  http,
   type Address,
   type Hex,
 } from 'viem';
 
 import type { ReadinessProbe } from './platform-readiness.service.js';
+import { createViemRpcTransport } from '../blockchain/viem-rpc-transport.js';
 
 export interface EvmReadinessClient {
   getChainId(): Promise<number>;
@@ -22,7 +22,7 @@ export class EvmReadinessProbe implements ReadinessProbe {
   private readonly client: EvmReadinessClient;
 
   constructor(
-    config: Pick<ConfigService, 'getOrThrow'>,
+    config: Pick<ConfigService, 'get' | 'getOrThrow'>,
     client?: EvmReadinessClient,
   ) {
     this.address = getAddress(
@@ -41,7 +41,14 @@ export class EvmReadinessProbe implements ReadinessProbe {
       rpcUrls: { default: { http: [rpcUrl] } },
       testnet: true,
     });
-    this.client = createPublicClient({ chain, transport: http(rpcUrl) });
+    this.client = createPublicClient({
+      cacheTime: 0,
+      chain,
+      transport: createViemRpcTransport(
+        rpcUrl,
+        config.get<string>('EVM_RPC_FALLBACK_HTTP_URL'),
+      ),
+    });
   }
 
   async check(): Promise<void> {

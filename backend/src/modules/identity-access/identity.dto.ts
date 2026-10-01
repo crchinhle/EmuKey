@@ -86,19 +86,19 @@ export class ProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @Length(1, 30)
+  @Length(0, 30)
   phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @Length(1, 2_000)
+  @Length(0, 2_000)
   address?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  @Length(1, 255)
+  @Length(0, 255)
   organizationName?: string;
 }
 

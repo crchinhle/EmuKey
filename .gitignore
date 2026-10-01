@@ -43,6 +43,9 @@ Thumbs.db
 # Runtime data belongs to volumes/object storage, never the repository.
 /backend/data/
 
+# Release evidence bundles may contain only redacted text evidence. Never retain dumps.
+/docs/traceability/releases/**/postgres.dump
+
 # Local agent tooling is not product source.
 /skill/
 /skills/

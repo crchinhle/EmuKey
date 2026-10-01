@@ -8,6 +8,7 @@ describe('worker platform contract', () => {
     LOG_LEVEL: 'fatal',
     OTEL_ENABLED: 'false',
     PAYMENT_ADAPTER: 'fake',
+    SEPAY_SANDBOX_RECEIPT_TIMING: 'false',
     PAYMENT_WEBHOOK_SECRET: 'test-payment-secret',
     AI_ADAPTER: 'fake',
     EMAIL_ADAPTER: 'fake',
@@ -24,7 +25,6 @@ describe('worker platform contract', () => {
     STORAGE_ADAPTER: 'local',
     ACTIVATION_ENVELOPE_ADAPTER: 'redis',
     ACTIVATION_ENVELOPE_KEY: '00'.repeat(32),
-    TERMS_VERSION: '1',
   };
 
   it('boots and closes an application context with validated config', async () => {

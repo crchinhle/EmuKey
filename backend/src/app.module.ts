@@ -14,6 +14,7 @@ import { CommerceModule } from './modules/commerce-payment/commerce.module.js';
 import { BlockchainModule } from './modules/blockchain/blockchain.module.js';
 import { AssistanceSupportModule } from './modules/assistance-support/assistance-support.module.js';
 import { OperationsModule } from './modules/operations/operations.module.js';
+import { LicensingModule } from './modules/licensing/licensing.module.js';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { OperationsModule } from './modules/operations/operations.module.js';
     CatalogModule,
     BlockchainModule,
     CommerceModule,
+    LicensingModule,
   ],
   controllers: [HealthController, NotFoundController],
   providers: [

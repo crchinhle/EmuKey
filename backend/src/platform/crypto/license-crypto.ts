@@ -9,8 +9,8 @@ import {
   type Hex,
 } from 'viem';
 
-export const DOMAIN_PLAN_V1 = keccak256(
-  stringToHex('LICENSE_PLAN_COMMITMENT_V1'),
+export const DOMAIN_PLAN_V2 = keccak256(
+  stringToHex('LICENSE_PLAN_COMMITMENT_V2'),
 );
 
 function assertCanonicalJson(value: unknown, seen = new Set<object>()): void {
@@ -44,15 +44,6 @@ function assertCanonicalJson(value: unknown, seen = new Set<object>()): void {
   seen.delete(value);
 }
 
-export function normalizeTerms(content: string): string {
-  const normalized = content.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  return `${normalized.replace(/\n+$/g, '')}\n`;
-}
-
-export function termsHash(content: string): Hex {
-  return keccak256(stringToHex(normalizeTerms(content)));
-}
-
 export function canonicalizeEntitlements(value: unknown): string {
   assertCanonicalJson(value);
   const result = canonicalize(value);
@@ -65,8 +56,11 @@ export function entitlementsHash(value: unknown): Hex {
 }
 
 export function uuidToBytes16(value: string): Hex {
+  // Encode the canonical PostgreSQL UUID value, not a UUID generation policy.
+  // Seeded/imported IDs and UUIDv7 must retain all 128 bits unchanged.
+  // https://www.postgresql.org/docs/current/datatype-uuid.html
   if (
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
       value,
     )
   ) {
@@ -83,7 +77,6 @@ export interface PlanCommitmentInput {
   planVersion: number;
   productId: string;
   providerChainAddress: Address;
-  termsHash: Hex;
 }
 
 function positiveUint(value: number, name: string): bigint {
@@ -94,16 +87,13 @@ function positiveUint(value: number, name: string): bigint {
 }
 
 export function planCommitment(input: PlanCommitmentInput): Hex {
-  if (!/^0x[0-9a-fA-F]{64}$/.test(input.termsHash)) {
-    throw new Error('termsHash must contain 32 bytes');
-  }
   return keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        'bytes32, address, bytes16, bytes16, uint256, uint256, uint256, bytes32, bytes32',
+        'bytes32, address, bytes16, bytes16, uint256, uint256, uint256, bytes32',
       ),
       [
-        DOMAIN_PLAN_V1,
+        DOMAIN_PLAN_V2,
         getAddress(input.providerChainAddress),
         uuidToBytes16(input.productId),
         uuidToBytes16(input.planId),
@@ -111,7 +101,6 @@ export function planCommitment(input: PlanCommitmentInput): Hex {
         positiveUint(input.durationMonths, 'durationMonths'),
         positiveUint(input.maxActiveDevices, 'maxActiveDevices'),
         entitlementsHash(input.entitlements),
-        input.termsHash,
       ],
     ),
   );

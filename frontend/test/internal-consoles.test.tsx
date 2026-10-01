@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { App } from '../src/presentation/app/App';
@@ -6,26 +6,26 @@ import { App } from '../src/presentation/app/App';
 afterEach(cleanup);
 
 describe('W17-W18 Internal consoles', () => {
-  it('switches support context and sends a local reply', () => {
+  it('renders an empty support queue when the real API has no conversations', () => {
     render(<App initialEntries={['/support']} />);
-
-    fireEvent.click(screen.getByRole('button', { name: /Người mua #B204/i }));
-    expect(screen.getAllByText('Người mua #B204').length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Nhận xử lý' }));
-    expect(
-      screen.getByRole('button', { name: 'Đang xử lý bởi bạn' }),
-    ).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Phản hồi hỗ trợ'), {
-      target: { value: 'Đã nhận thông tin demo.' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Gửi phản hồi' }));
-    expect(screen.getByText('Đã nhận thông tin demo.')).toBeTruthy();
+    expect(screen.queryByText('Người mua #B204')).toBeNull();
   });
 
-  it('shows audit detail for system operators', () => {
+  it('does not display fabricated audit entries', () => {
     render(<App initialEntries={['/system/console']} />);
+    expect(screen.queryByText('BLOCKCHAIN_RETRY')).toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: /BLOCKCHAIN_RETRY/i }));
-    expect(screen.getAllByText('job #9840').length).toBeGreaterThan(0);
+  it('marks only the selected query-string section active', async () => {
+    const { container } = render(<App initialEntries={['/system/console?view=users']} />);
+    await screen.findByRole('heading', { name: 'Quản lý người dùng' });
+    const active = container.querySelectorAll('.role-desktop-nav a.active');
+    expect(active).toHaveLength(1);
+    expect(active[0]?.textContent).toBe('Người dùng');
+  });
+
+  it('makes provider licenses reachable from navigation', async () => {
+    render(<App initialEntries={['/provider']} />);
+    expect(await screen.findByRole('link', { name: 'Bản quyền' })).toHaveProperty('pathname', '/provider/licenses');
   });
 });

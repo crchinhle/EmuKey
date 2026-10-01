@@ -302,7 +302,7 @@
   },
   {
     "inputs": [],
-    "name": "DOMAIN_PLAN_V1",
+    "name": "DOMAIN_PLAN_V2",
     "outputs": [
       {
         "internalType": "bytes32",
@@ -342,6 +342,11 @@
         "internalType": "bytes32",
         "name": "deviceId",
         "type": "bytes32"
+      },
+      {
+        "internalType": "uint256",
+        "name": "keyVersion",
+        "type": "uint256"
       }
     ],
     "name": "activateDevice",
@@ -408,11 +413,6 @@
       {
         "internalType": "bytes32",
         "name": "entitlementsHash",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "termsHash",
         "type": "bytes32"
       }
     ],

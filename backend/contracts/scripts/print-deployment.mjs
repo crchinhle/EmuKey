@@ -15,7 +15,9 @@ const path = resolve(
   'deployed_addresses.json',
 );
 const deployments = JSON.parse(await readFile(path, 'utf8'));
-const address = deployments['LicenseRegistryModule#LicenseRegistry'];
+const v2Path = resolve('deployments', 'sepolia-v2.json');
+const v2 = chainId === '11155111' ? JSON.parse(await readFile(v2Path, 'utf8')) : null;
+const address = v2?.contractAddress ?? deployments['LicenseRegistryModule#LicenseRegistry'];
 if (typeof address !== 'string') {
   throw new Error('LicenseRegistry deployment address was not found');
 }

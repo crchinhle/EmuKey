@@ -6,7 +6,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { keccak256, stringToHex, type Hex } from 'viem';
@@ -18,12 +17,10 @@ import {
   canonicalizeEntitlements,
 } from '../../../platform/crypto/license-crypto.js';
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
-import type {
-  AcceptTermsDto,
-  CreateOrderDto,
-} from '../presentation/commerce.dto.js';
-import type { PaymentGatewayPort } from './ports/payment-gateway.port.js';
-import { TermsLoader } from '../../../platform/terms/terms-loader.js';
+import type { AcceptServiceTermsDto, CreateOrderDto } from '../presentation/commerce.dto.js';
+import type { PaymentGatewayPort, VerifiedPaymentEvent } from './ports/payment-gateway.port.js';
+import { ServiceTermsContent } from '../../../platform/terms/service-terms-content.js';
+import { renewalExpiry } from '../domain/renewal-policy.js';
 import {
   CommerceRepository,
   type ChainConfiguration,
@@ -40,13 +37,13 @@ export class CommerceService {
     private readonly envelopes: ActivationEnvelopePort,
     private readonly envelopeRecovery: ActivationEnvelopeRecoveryService,
     private readonly chain: ChainConfiguration,
-    private readonly terms = new TermsLoader(),
+    private readonly serviceTerms = new ServiceTermsContent(),
   ) {}
 
   async createOrder(
     actor: AuthPrincipal,
     idempotencyKey: string | undefined,
-    licenseKey: string | undefined,
+    _licenseKey: string | undefined,
     dto: CreateOrderDto,
   ) {
     this.requireCustomer(actor);
@@ -59,16 +56,13 @@ export class CommerceService {
         message: 'Idempotency-Key must be a UUID.',
       });
     }
-    const targetCommitment = dto.targetLicenseId
-      ? this.licenseCommitment(licenseKey)
-      : undefined;
     try {
       return await this.repository.createOrder(
         actor.sub,
         idempotencyKey,
         dto.planId,
         dto.targetLicenseId,
-        targetCommitment,
+        await this.serviceTerms.loadServiceTermsArtifact(),
       );
     } catch (error) {
       this.translate(error);
@@ -76,45 +70,71 @@ export class CommerceService {
     }
   }
 
-  listOrders(actor: AuthPrincipal) {
+  async listOrders(actor: AuthPrincipal) {
     this.requireCustomer(actor);
+    await this.repository.cancelOverdueOrders(actor.sub);
     return this.repository.listCustomerOrders(actor.sub);
+  }
+
+  async renewalPreview(actor: AuthPrincipal, licenseId: string) {
+    this.requireCustomer(actor);
+    const offer = await this.repository.findRenewalOffer(actor.sub, licenseId);
+    if (!offer) this.notFound();
+    const pendingOrder = await this.repository.findPendingRenewal(actor.sub, licenseId);
+    const canRenew = ['ACTIVE', 'EXPIRED', 'SUSPENDED'].includes(offer.status)
+      && offer.planPublished && offer.productPublished;
+    const months = pendingOrder?.durationMonthsSnapshot ?? offer.durationMonths;
+    return {
+      licenseId, planId: offer.planId, planName: pendingOrder?.planNameSnapshot ?? offer.planName,
+      productName: offer.productName, currentExpiresAt: offer.expiresAt,
+      durationMonths: months, priceVnd: pendingOrder?.priceVndSnapshot ?? offer.priceVnd,
+      estimatedExpiresAt: pendingOrder?.renewalExpiresAt ?? renewalExpiry(offer.expiresAt, new Date(), months),
+      canRenew, pendingOrder: pendingOrder ?? null,
+    };
   }
 
   async findOrder(actor: AuthPrincipal, id: string) {
     this.requireCustomer(actor);
+    await this.repository.cancelOverdueOrders(actor.sub);
     const order = await this.repository.findOrder(actor.sub, id);
     if (!order) this.notFound();
     return order;
   }
 
-  async getOrderTerms(actor: AuthPrincipal, id: string) {
+  cancelOverdueOrders() {
+    return this.repository.cancelOverdueOrders();
+  }
+
+  async getServiceTerms(actor: AuthPrincipal, id: string) {
     this.requireCustomer(actor);
     const order = await this.repository.findOrder(actor.sub, id);
     if (!order) this.notFound();
-    try {
-      const terms = await this.terms.load(order.termsVersionSnapshot);
-      if (terms.hash.toLowerCase() !== order.termsHashSnapshot.toLowerCase()) {
-        throw new Error('TERMS_ARTEFACT_MISMATCH');
-      }
-      return terms;
-    } catch {
-      throw new ServiceUnavailableException({
-        code: 'TERMS_ARTEFACT_UNAVAILABLE',
-        message: 'The exact Terms snapshot is temporarily unavailable.',
+    // Serve the immutable snapshot taken when the Order was created, never the
+    // currently published platform document, so acceptance stays well-defined.
+    if (
+      order.serviceTermsContentSnapshot === null ||
+      order.serviceTermsHashSnapshot === null ||
+      order.serviceTermsVersionSnapshot === null
+    ) {
+      throw new ConflictException({
+        code: 'ORDER_TERMS_SNAPSHOT_MISSING',
+        message: 'The Service Terms snapshot for this order is unavailable.',
       });
     }
+    return {
+      content: order.serviceTermsContentSnapshot,
+      hash: order.serviceTermsHashSnapshot,
+      version: order.serviceTermsVersionSnapshot,
+    };
   }
 
-  async acceptTerms(actor: AuthPrincipal, id: string, dto: AcceptTermsDto) {
+  async acceptServiceTerms(actor: AuthPrincipal, id: string, dto: AcceptServiceTermsDto) {
     this.requireCustomer(actor);
+    if (dto.accepted !== true) throw new BadRequestException('Service Terms must be accepted explicitly.');
     try {
-      return await this.repository.acceptTerms(
-        actor.sub,
-        id,
-        dto.termsVersion,
-        dto.termsHash,
-      );
+      // Compare against the Order's own snapshot rather than the newest platform
+      // content, so a concurrent content update cannot silently re-consent a buyer.
+      return await this.repository.acceptServiceTerms(actor.sub, id, dto);
     } catch (error) {
       this.translate(error);
       throw error;
@@ -146,11 +166,12 @@ export class CommerceService {
       const checkout = await this.payment.createCheckout({
         amountVnd: preparation.amountVnd,
         attemptId: preparation.attemptId,
+        checkoutReference: preparation.checkoutReference,
+        orderId: preparation.orderId,
       });
-      await this.repository.completeCheckout(
-        preparation.attemptId,
-        checkout.checkoutReference,
-      );
+      if (checkout.checkoutReference !== preparation.checkoutReference) {
+        throw new Error('PAYMENT_CHECKOUT_REFERENCE_MISMATCH');
+      }
       return {
         ...checkout,
         amountVnd: preparation.amountVnd,
@@ -189,12 +210,31 @@ export class CommerceService {
       });
     }
 
+    return this.fulfillPayment(event, payload);
+  }
+
+  // Operator-only recovery of already-authenticated, durable sandbox evidence.
+  // This is deliberately not exposed through the unauthenticated IPN endpoint.
+  async reconcileSandboxPayment(actor: AuthPrincipal, id: string, reason: string) {
+    if (actor.role !== 'SYSTEM_ADMIN') this.forbidden();
+    if (this.payment.sandboxReceiptTiming !== true) {
+      throw new ConflictException('SANDBOX_RECEIPT_TIMING_NOT_ENABLED');
+    }
+    if (!reason.trim() || reason.length > 1000) throw new BadRequestException('A reconciliation reason is required.');
+    const evidence = await this.repository.findSandboxPaymentEvidence(id);
+    if (!evidence) throw new NotFoundException('SANDBOX_PAYMENT_EVIDENCE_NOT_FOUND');
+    return this.fulfillPayment({ ...evidence.event, timingBasis: 'SANDBOX_RECEIPT' }, evidence.payload, { transactionId: id, actor, reason: reason.trim() });
+  }
+
+  private async fulfillPayment(event: VerifiedPaymentEvent, payload: unknown,
+    reconciliation?: { transactionId: string; actor: AuthPrincipal; reason: string }) {
     const activation = this.newActivation(1);
     const result = await this.repository.ingestPayment(
       event,
       payload,
       activation.material,
       this.chain,
+      reconciliation,
     );
     if (
       result.classification === 'MATCHED' &&
@@ -242,7 +282,9 @@ export class CommerceService {
 
   async listPaymentReview(actor: AuthPrincipal) {
     this.requireReviewRole(actor);
-    return this.repository.listPaymentReview();
+    // Resolved/closed outcomes are evidence too; they stay visible so the queue
+    // does not keep showing already-decided anomalies as open work.
+    return this.repository.listPaymentReview(true);
   }
 
   async reviewPayment(
@@ -302,16 +344,6 @@ export class CommerceService {
     }
   }
 
-  private licenseCommitment(key: string | undefined): Hex {
-    if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
-      throw new UnauthorizedException({
-        code: 'INVALID_LICENSE_KEY',
-        message: 'A valid X-License-Key header is required for renewal.',
-      });
-    }
-    return activationCommitment(key as Hex);
-  }
-
   private requireReviewRole(actor: AuthPrincipal): void {
     if (!['SYSTEM_ADMIN', 'SUPPORT_STAFF'].includes(actor.role)) {
       this.forbidden();
@@ -347,6 +379,7 @@ export class CommerceService {
     }
     if (
       code === 'ORDER_TERMS_MISMATCH' ||
+      code === 'ORDER_TERMS_SNAPSHOT_CHANGED' ||
       code === 'ORDER_NOT_CANCELLABLE' ||
       code === 'ORDER_NOT_WAITING_PAYMENT' ||
       code === 'ORDER_PAYMENT_EXPIRED'

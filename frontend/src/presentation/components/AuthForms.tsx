@@ -1,9 +1,9 @@
-import { Alert, Button, Checkbox, Form, Input, Select } from 'antd';
+import { Alert, Button, Form, Input, Select } from 'antd';
 import { useState } from 'react';
 
 import type { AuthUser, RegisterInput } from '../../application/auth/authContext';
 
-export type AuthMode = 'forgot' | 'login' | 'register' | 'reset' | 'verify';
+export type AuthMode = 'forgot' | 'licensing-action' | 'login' | 'register' | 'reset' | 'verify';
 
 const emailRules = [
   { message: 'Vui lòng nhập email.', required: true },
@@ -18,22 +18,35 @@ export function LoginForm({
   onForgotPassword,
   onLogin,
   onSuccess,
+  submitLabel = 'Đăng nhập',
 }: {
   readonly onForgotPassword: () => void;
   readonly onLogin: (email: string, password: string) => Promise<AuthUser>;
   readonly onSuccess: (user: AuthUser) => void;
+  readonly submitLabel?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   return (
     <Form
       layout="vertical"
+      validateTrigger="onBlur"
       onFinish={(values: { email: string; password: string }) => {
         setLoading(true);
         setError(null);
         void onLogin(values.email, values.password)
           .then((user) => onSuccess(user))
-          .catch(() => setError('Không thể đăng nhập. Vui lòng kiểm tra thông tin và thử lại.'))
+          .catch((cause: unknown) => {
+            const error = cause as { code?: string; status?: number; message?: string; retryAfterSeconds?: number };
+            const message = error.code === 'EMAIL_NOT_VERIFIED'
+              ? 'Email chưa được xác minh. Hãy kiểm tra hộp thư hoặc yêu cầu gửi lại email xác minh.'
+              : error.code === 'ACCOUNT_LOCKED'
+                ? 'Tài khoản đang bị khóa tạm thời. Vui lòng thử lại sau.'
+                : error.status === 429
+                  ? `Bạn thử quá nhiều lần. Vui lòng thử lại sau ${error.retryAfterSeconds ?? 60} giây.`
+                  : error.message || 'Không thể đăng nhập. Vui lòng kiểm tra thông tin và thử lại.';
+            setError(message);
+          })
           .finally(() => setLoading(false));
       }}
     >
@@ -42,7 +55,6 @@ export function LoginForm({
         <Input autoComplete="email" inputMode="email" />
       </Form.Item>
       <Form.Item
-        extra="Tối thiểu 8 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt."
         label="Mật khẩu"
         name="password"
         rules={[
@@ -54,12 +66,9 @@ export function LoginForm({
         <Input.Password autoComplete="current-password" />
       </Form.Item>
       <div className="remember-row">
-        <Form.Item name="remember" noStyle valuePropName="checked">
-          <Checkbox>Ghi nhớ đăng nhập</Checkbox>
-        </Form.Item>
         <Button onClick={onForgotPassword} type="link">Quên mật khẩu?</Button>
       </div>
-      <Button block htmlType="submit" loading={loading} type="primary">Đăng nhập</Button>
+      <Button block htmlType="submit" loading={loading} type="primary">{submitLabel}</Button>
     </Form>
   );
 }
@@ -149,29 +158,50 @@ export function ForgotPasswordForm({
 }
 
 export function ResetPasswordForm({
+  onRequestNewLink,
   onResetPassword,
+  token = '',
 }: {
+  readonly onRequestNewLink: () => void;
   readonly onResetPassword: (token: string, password: string) => Promise<void>;
+  readonly token?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  if (submitted) return <Alert showIcon type="success" title="Đã đặt lại mật khẩu" description={<a href="/auth">Đăng nhập bằng mật khẩu mới</a>} />;
   return (
     <Form
       layout="vertical"
-      onFinish={(values: { password: string; passwordConfirmation: string; token: string }) => {
+      initialValues={{ token }}
+      onFinish={(values: { password: string; passwordConfirmation: string }) => {
         setLoading(true);
         setError(null);
-        void onResetPassword(values.token, values.password)
-          .catch(() => setError('Không thể đặt lại mật khẩu. Mã có thể đã hết hạn.'))
+        void onResetPassword(token, values.password)
+          .then(() => setSubmitted(true))
+          .catch(() => setError('Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu liên kết mới.'))
           .finally(() => setLoading(false));
       }}
     >
-      {error ? <Alert message={error} role="alert" type="error" /> : null}
-      <Form.Item label="Mã đặt lại mật khẩu" name="token" rules={[{ required: true }]}>
+      {error ? (
+        <Alert
+          action={<Button onClick={onRequestNewLink} size="small" type="link">Yêu cầu liên kết mới</Button>}
+          message={error}
+          role="alert"
+          type="error"
+        />
+      ) : null}
+      <Form.Item
+        label="Mã đặt lại mật khẩu"
+        name="token"
+        rules={[{ required: true }]}
+        hidden={Boolean(token)}
+      >
         <Input autoComplete="one-time-code" />
       </Form.Item>
       <Form.Item
         label="Mật khẩu mới"
+        extra="Mật khẩu mới cần ít nhất 12 ký tự, gồm chữ hoa, chữ thường, số và ký tự đặc biệt."
         name="password"
         rules={[{ required: true }, { min: 12 }, passwordComplexityRule]}
       >

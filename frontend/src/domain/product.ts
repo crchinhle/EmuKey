@@ -5,6 +5,8 @@ export interface DevicePlan {
   readonly devices: number;
   readonly label: string;
   readonly priceVnd: number;
+  readonly durationMonths?: number;
+  readonly entitlements?: Readonly<Record<string, unknown>>;
 }
 
 export interface Product {

@@ -26,6 +26,9 @@ jobs:
       - name: Verify source and contracts
         run: |
           corepack pnpm baseline:check
+          RELEASE_CHECK_STRUCTURAL_ONLY=true corepack pnpm release:check
+          corepack pnpm test:security
+          corepack pnpm test:dependency-audit
           corepack pnpm lint
           corepack pnpm typecheck
           corepack pnpm test
@@ -33,6 +36,7 @@ jobs:
           corepack pnpm delivery:check
           corepack pnpm openapi:check
           corepack pnpm build
+          git diff --check
       - name: Build standalone image
         run: docker build -t emukey-backend:ci .
       - name: Verify runtime image excludes sensitive maintenance files

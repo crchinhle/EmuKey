@@ -26,7 +26,7 @@ import { CurrentUser, Roles } from '../../identity-access/security.decorators.js
 import { AuthGuard, RolesGuard } from '../../identity-access/security.guards.js';
 import { CommerceService } from '../application/commerce.service.js';
 import {
-  AcceptTermsDto,
+  AcceptServiceTermsDto,
   CheckoutSessionDto,
   CreateOrderDto,
   OrderDto,
@@ -36,6 +36,7 @@ import {
   PaymentReceiptDto,
   PaymentReviewDto,
   ReviewPaymentDto,
+  RenewalPreviewDto,
 } from './commerce.dto.js';
 
 @ApiTags('commerce')
@@ -48,22 +49,27 @@ export class CommerceController {
 
   @Post()
   @ApiHeader({ name: 'Idempotency-Key', required: true })
-  @ApiHeader({ name: 'X-License-Key', required: false })
-  @ApiOperation({ summary: 'Create an authenticated idempotent purchase or renewal order' })
+  @ApiOperation({ summary: 'Create a purchase or resume an account-owned renewal. No license secret required.' })
   @ApiCreatedResponse({ type: OrderDto })
   create(
     @CurrentUser() actor: AuthPrincipal,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @Headers('x-license-key') licenseKey: string | undefined,
     @Body() dto: CreateOrderDto,
   ) {
-    return this.service.createOrder(actor, idempotencyKey, licenseKey, dto);
+    return this.service.createOrder(actor, idempotencyKey, undefined, dto);
   }
 
   @Get()
   @ApiOkResponse({ type: OrderDto, isArray: true })
   list(@CurrentUser() actor: AuthPrincipal) {
     return this.service.listOrders(actor);
+  }
+
+  @Get('renewal-preview/:licenseId')
+  @ApiOkResponse({ type: RenewalPreviewDto })
+  @ApiNotFoundResponse()
+  renewalPreview(@CurrentUser() actor: AuthPrincipal, @Param('licenseId', ParseUUIDPipe) licenseId: string) {
+    return this.service.renewalPreview(actor, licenseId);
   }
 
   @Get(':id')
@@ -76,26 +82,26 @@ export class CommerceController {
     return this.service.findOrder(actor, id);
   }
 
-  @Get(':id/terms')
-  @ApiOperation({ summary: 'Get the exact Terms artefact snapshotted by an order' })
+  @Get(':id/service-terms')
+  @ApiOperation({ summary: 'Get the platform Service Terms content' })
   @ApiOkResponse({ type: OrderTermsDto })
   @ApiNotFoundResponse()
-  terms(
+  serviceTerms(
     @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.service.getOrderTerms(actor, id);
+    return this.service.getServiceTerms(actor, id);
   }
 
-  @Post(':id/accept-terms')
+  @Post(':id/accept-service-terms')
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({ type: OrderDto })
-  acceptTerms(
+  acceptServiceTerms(
     @CurrentUser() actor: AuthPrincipal,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: AcceptTermsDto,
+    @Body() dto: AcceptServiceTermsDto,
   ) {
-    return this.service.acceptTerms(actor, id, dto);
+    return this.service.acceptServiceTerms(actor, id, dto);
   }
 
   @Post(':id/checkout')
@@ -130,7 +136,7 @@ export class PaymentController {
   @ApiOkResponse({ type: PaymentIngestResultDto })
   ingest(
     @Body() payload: unknown,
-    @Headers('x-emukey-payment-signature') signature?: string,
+    @Headers('x-secret-key') signature?: string,
   ) {
     return this.service.ingestIpn(payload, signature);
   }
@@ -147,7 +153,7 @@ export class PaymentController {
 
   @Get('review')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'SUPPORT_STAFF')
+  @Roles('SYSTEM_ADMIN')
   @ApiBearerAuth()
   @ApiOkResponse({ type: PaymentReviewDto, isArray: true })
   @ApiForbiddenResponse()
@@ -158,7 +164,7 @@ export class PaymentController {
   @Post('review/:id')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles('SYSTEM_ADMIN', 'SUPPORT_STAFF')
+  @Roles('SYSTEM_ADMIN')
   @ApiBearerAuth()
   @ApiOkResponse({ type: PaymentReviewDto })
   @ApiNotFoundResponse()

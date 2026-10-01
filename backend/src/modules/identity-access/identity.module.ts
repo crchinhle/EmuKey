@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import { Redis } from 'ioredis';
@@ -16,7 +16,7 @@ import { OperationsModule } from '../operations/operations.module.js';
 import { IdentityEmailDelivery } from './infrastructure/identity-email-delivery.js';
 
 @Module({
-  imports: [OperationsModule],
+  imports: [forwardRef(() => OperationsModule)],
   controllers: [IdentityController],
   providers: [
     {
