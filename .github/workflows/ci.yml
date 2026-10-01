@@ -126,10 +126,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.21.0
       - name: Validate external-database platform model
         # Structural validation uses Compose defaults and does not need runtime secrets.
         run: |
           touch backend/.env
           docker compose --env-file /dev/null config --quiet
       - name: Validate release structure without secrets
-        run: RELEASE_CHECK_STRUCTURAL_ONLY=true corepack pnpm --dir backend release:check
+        working-directory: backend
+        env:
+          RELEASE_CHECK_STRUCTURAL_ONLY: 'true'
+        run: corepack pnpm release:check
