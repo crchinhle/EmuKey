@@ -139,4 +139,5 @@ jobs:
         working-directory: backend
         env:
           RELEASE_CHECK_STRUCTURAL_ONLY: 'true'
-        run: corepack pnpm release:check
+        # This script uses only Node built-ins; avoid pnpm's automatic install on a clean runner.
+        run: node --env-file-if-exists=.env scripts/release-check.mjs
