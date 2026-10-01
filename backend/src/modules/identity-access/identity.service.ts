@@ -207,6 +207,26 @@ export class IdentityService {
     await this.delivery.sendLicensingActionVerification(user.email, token, action);
   }
 
+  async resolveLicensingActionVerification(token: string | undefined, userId: string): Promise<{ action: string; deviceId: string | null; licenseId: string; expiresAt: string }> {
+    if (!token) throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
+    const key = `licensing-action:${this.digest(token)}`;
+    const value = await this.redis.get(key);
+    if (!value) throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
+    try {
+      const data = JSON.parse(value) as { action?: string; deviceId?: string | null; licenseId?: string; userId?: string; expiresAt?: string };
+      if (data.userId !== userId || typeof data.action !== 'string' || typeof data.licenseId !== 'string') throw new Error('mismatch');
+      return {
+        action: data.action,
+        deviceId: data.deviceId ?? null,
+        licenseId: data.licenseId,
+        // Redis TTL remains authoritative; this value is informational only.
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+      };
+    } catch {
+      throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
+    }
+  }
+
   async consumeLicensingActionVerification(token: string | undefined, userId: string, licenseId: string, action: string, deviceId?: string): Promise<void> {
     if (!token) throw new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN', message: 'The email verification token is invalid or expired.' });
     const key = `licensing-action:${this.digest(token)}`;

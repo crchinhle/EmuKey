@@ -289,4 +289,46 @@ describe('LicensingService Phase 6 boundaries', () => {
       86_400,
     );
   });
+
+  it('resolves an email action token to its permitted context without consuming it', async () => {
+    const { repository } = fixture();
+    repository.findDeviceById = vi.fn().mockResolvedValue({
+      bindingGeneration: 2,
+      devicePublicKey: deviceAddress,
+      deviceRef: 'other-device',
+      id: '00000000-0000-4000-8000-000000000902',
+      status: 'ACTIVE',
+    });
+    const identity = { resolveLicensingActionVerification: vi.fn().mockResolvedValue({
+      action: 'REMOTE_REVOKE_DEVICE',
+      deviceId: '00000000-0000-4000-8000-000000000902',
+      expiresAt: new Date().toISOString(),
+      licenseId,
+    }) };
+    const service = new LicensingService(
+      repository as never, {} as never, {} as never, {} as never,
+      new TextEncoder().encode('test-secret'),
+      { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+      identity as never,
+    );
+
+    await expect(service.resolveActionVerification(customer, 'resolve-action-token')).resolves.toMatchObject({
+      action: 'REMOTE_REVOKE_DEVICE', licenseId,
+    });
+    expect(identity.resolveLicensingActionVerification).toHaveBeenCalledWith('resolve-action-token', customer.sub);
+  });
+
+  it('does not resolve an action token that belongs to another account', async () => {
+    const identity = { resolveLicensingActionVerification: vi.fn().mockRejectedValue(
+      new UnauthorizedException({ code: 'INVALID_OR_EXPIRED_ACTION_TOKEN' }),
+    ) };
+    const service = new LicensingService(
+      {} as never, {} as never, {} as never, {} as never,
+      new TextEncoder().encode('test-secret'),
+      { chainId: 31_337, contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3', network: 'hardhat' },
+      identity as never,
+    );
+
+    await expect(service.resolveActionVerification(customer, 'other-account-token')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
 });

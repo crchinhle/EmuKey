@@ -29,7 +29,7 @@ function AssistantSession() {
     try {
       const id = conversationId ?? (await create.mutateAsync({ contextType: 'GENERAL', title: 'Hỏi trợ lý AI' })).id;
       setConversationId(id);
-      await answer.mutateAsync({ conversationId: id, question: question.trim() });
+      await answer.mutateAsync({ conversationId: id, clientMessageId: crypto.randomUUID(), question: question.trim() });
     } catch { setError(true); }
   };
 

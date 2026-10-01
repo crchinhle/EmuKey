@@ -45,6 +45,16 @@ export class LicensingService {
     private readonly identity?: IdentityService,
   ) {}
 
+  async resolveActionVerification(actor: AuthPrincipal, token: string) {
+    this.requireCustomer(actor);
+    const resolved = await this.identity?.resolveLicensingActionVerification(token, actor.sub);
+    if (!resolved) throw new UnauthorizedException({ code: 'IDENTITY_SERVICE_UNAVAILABLE' });
+    const license = await this.repository.findSecurity(resolved.licenseId, actor.sub);
+    if (!license) this.notFound();
+    if (resolved.deviceId && !(await this.repository.findDeviceById(resolved.licenseId, resolved.deviceId))) this.notFound();
+    return resolved;
+  }
+
   async requestActionVerification(actor: AuthPrincipal, dto: LicensingActionVerificationDto) {
     this.requireCustomer(actor);
     const license = await this.repository.findSecurity(dto.licenseId, actor.sub);

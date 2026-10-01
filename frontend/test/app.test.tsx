@@ -119,7 +119,7 @@ describe('Emukey public web screens', () => {
     expect(artwork.tagName).toBe('IMG');
     expect(artwork.getAttribute('src')).toBe('https://picsum.photos/seed/emukey-securedesk/1200/800');
     expect(screen.getByRole('combobox', { name: 'Gói' })).toBeTruthy();
-    expect(screen.getAllByText('25 thiết bị').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('10 thiết bị').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Mua ngay' })).toBeTruthy();
   });
 

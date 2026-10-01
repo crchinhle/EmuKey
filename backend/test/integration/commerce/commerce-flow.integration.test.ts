@@ -38,6 +38,13 @@ describe('customer commerce and payment flow', () => {
     return { notification_type: 'ORDER_PAID', order: { order_amount: String(amount), order_currency: 'VND', order_invoice_number: reference, order_status: 'CAPTURED' }, transaction: { id: eventId, transaction_amount: String(amount), transaction_currency: 'VND', transaction_id: `bank-${eventId}`, transaction_status: 'APPROVED', transaction_type: 'PAYMENT', transaction_date: '2025-09-01 00:00:15' } };
   }
 
+  async function acceptTerms(orderId: string) {
+    const terms = await service.getServiceTerms(customer, orderId);
+    return service.acceptServiceTerms(customer, orderId, {
+      accepted: true, hash: terms.hash, version: terms.version,
+    });
+  }
+
   beforeAll(async () => {
     [postgres, redisContainer] = await Promise.all([
       new PostgreSqlContainer('pgvector/pgvector:pg15')
@@ -51,13 +58,17 @@ describe('customer commerce and payment flow', () => {
     const schema = await readFile(resolve(process.cwd(), 'database/schema.sql'), 'utf8');
     // Exercise upgrading the pre-policy schema, not only fresh installations.
     const legacySchema = schema
-      .replace(/ {4}timing_basis VARCHAR\(30\)[\s\S]*?CHECK \(timing_basis IN \('PROVIDER', 'SANDBOX_RECEIPT'\)\),\r?\n/, '')
+      .replace(/\x20{4}service_terms_version_snapshot VARCHAR\(40\),\r?\n\x20{4}service_terms_hash_snapshot CHAR\(64\),\r?\n\x20{4}service_terms_content_snapshot TEXT,\r?\n/, '')
+      .replace(/\x20{4}CONSTRAINT ck_orders_terms_snapshot CHECK \([\s\S]*?\r?\n\x20{4}\),\r?\n\x20{4}CONSTRAINT ck_orders_payment_gate/, '\x20{4}CONSTRAINT ck_orders_payment_gate')
+      .replace(/\x20{11}NEW\.created_at,\r?\n\x20{11}NEW\.service_terms_version_snapshot, NEW\.service_terms_hash_snapshot,\r?\n\x20{11}NEW\.service_terms_content_snapshot\)\r?\n\x20{7}IS DISTINCT FROM\r?\n\x20{7}ROW\(([^]*?)\x20{11}OLD\.created_at,\r?\n\x20{11}OLD\.service_terms_version_snapshot, OLD\.service_terms_hash_snapshot,\r?\n\x20{11}OLD\.service_terms_content_snapshot\) THEN/, '\x20{11}NEW.created_at)\n\x20{7}IS DISTINCT FROM\n\x20{7}ROW($1\x20{11}OLD.created_at) THEN')
+      .replace(/\x20{4}timing_basis VARCHAR\(30\)[\s\S]*?CHECK \(timing_basis IN \('PROVIDER', 'SANDBOX_RECEIPT'\)\),\r?\n/, '')
       .replace(/-- Sandbox receipt timing[\s\S]*?(?=-- Callers supply provider_occurred_at)/, '')
       .replaceAll('payment_effective_time(pt)', 'pt.provider_occurred_at')
       .replaceAll('payment_effective_time(NEW)', 'NEW.provider_occurred_at');
     await pool.query(legacySchema);
     await pool.query(await readFile(resolve(process.cwd(), 'database/migrations/20260928-sandbox-payment-timing.sql'), 'utf8'));
     await pool.query(await readFile(resolve(process.cwd(), 'database/migrations/20260929-order-auto-cancellation.sql'), 'utf8'));
+    await pool.query(await readFile(resolve(process.cwd(), 'database/migrations/20260930-order-service-terms-snapshot.sql'), 'utf8'));
     await seedBaseline(pool, 'Commerce-test@123');
     redis = new Redis(redisContainer.getConnectionUrl());
     const envelopes = new RedisActivationEnvelope(redis, '00'.repeat(32));
@@ -123,7 +134,7 @@ describe('customer commerce and payment flow', () => {
       billing_cycle_snapshot, duration_months_snapshot, max_active_devices_snapshot, entitlements_snapshot,
       plan_commitment_snapshot, statement_timestamp()+interval '2 seconds', statement_timestamp()+interval '60 seconds'
       FROM orders WHERE id=$1`, [original.id, fixtureId]);
-    await service.acceptServiceTerms(customer, overdueId, { accepted: true });
+    await acceptTerms(overdueId);
     const checkout = await service.checkout(customer, overdueId);
     const occurredAt = (await pool.query<{ at: Date }>('SELECT statement_timestamp() AS at')).rows[0]!.at;
     await pool.query('SELECT pg_sleep(2.1)');
@@ -138,7 +149,7 @@ describe('customer commerce and payment flow', () => {
     const tooLate = (await pool.query<{ at: Date }>('SELECT statement_timestamp() AS at')).rows[0]!.at;
     expect((await repo.ingestPayment({ ...payment, eventId: 'paid-after-deadline', occurredAt: tooLate }, {}, issuance, chain)).classification).toBe('UNMATCHED');
     const manual = await service.createOrder(customer, '00000000-0000-4000-8000-000000000714', undefined, { planId });
-    await service.acceptServiceTerms(customer, manual.id, { accepted: true });
+    await acceptTerms(manual.id);
     const manualCheckout = await service.checkout(customer, manual.id);
     await service.cancelOrder(customer, manual.id);
     expect((await repo.ingestPayment({ ...payment, eventId: 'manual-cancelled', providerReference: manualCheckout.checkoutReference, occurredAt: (await pool.query<{ at: Date }>('SELECT statement_timestamp() AS at')).rows[0]!.at }, {}, issuance, chain)).classification).toBe('UNMATCHED');
@@ -151,7 +162,7 @@ describe('customer commerce and payment flow', () => {
 
   it('accepts payment and creates a license owned by the customer account', async () => {
     const order = await service.createOrder(customer, '00000000-0000-4000-8000-000000000702', undefined, { planId });
-    await service.acceptServiceTerms(customer, order.id, { accepted: true });
+    await acceptTerms(order.id);
     const checkout = await service.checkout(customer, order.id);
     const providerClock = await pool.query<{ occurred_at: Date }>(
       "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
@@ -176,7 +187,7 @@ describe('customer commerce and payment flow', () => {
   it('uses database receipt for sandbox without rewriting provider time and rejects wrong amounts', async () => {
     const sandbox = sandboxService(true);
     const order = await service.createOrder(customer, '00000000-0000-4000-8000-000000000703', undefined, { planId });
-    await service.acceptServiceTerms(customer, order.id, { accepted: true });
+    await acceptTerms(order.id);
     const checkout = await service.checkout(customer, order.id);
     const payload = sandboxPayload(checkout.checkoutReference, order.priceVndSnapshot, 'sandbox-clock-drift');
     await expect(sandbox.ingestIpn(payload, 'wrong')).rejects.toThrow();
@@ -190,7 +201,7 @@ describe('customer commerce and payment flow', () => {
 
   it('reconciles stored clock-drift evidence once with administrator audit and preserves source evidence', async () => {
     const order = await service.createOrder(customer, '00000000-0000-4000-8000-000000000704', undefined, { planId });
-    await service.acceptServiceTerms(customer, order.id, { accepted: true });
+    await acceptTerms(order.id);
     const checkout = await service.checkout(customer, order.id);
     const payload = sandboxPayload(checkout.checkoutReference, order.priceVndSnapshot, 'sandbox-legacy');
     const rejected = await sandboxService(false).ingestIpn(payload, webhookSecret);
@@ -213,7 +224,7 @@ describe('customer commerce and payment flow', () => {
 
   it('does not accept sandbox callbacks received after attempt expiry or revive a cancelled order', async () => {
     const order = await service.createOrder(customer, '00000000-0000-4000-8000-000000000705', undefined, { planId });
-    await service.acceptServiceTerms(customer, order.id, { accepted: true });
+    await acceptTerms(order.id);
     const attemptId = '00000000-0000-4000-8000-000000000805';
     await pool.query("INSERT INTO payment_attempts (id, order_id, attempt_no, provider_reference, amount_vnd, expires_at) VALUES ($1::uuid,$2,1,$1::text,$3,statement_timestamp()+interval '1 second')", [attemptId, order.id, order.priceVndSnapshot]);
     await pool.query('SELECT pg_sleep(1.1)');
@@ -229,7 +240,7 @@ describe('customer commerce and payment flow', () => {
 
   it('recovers a pre-signing failure using its reserved nonce, but rejects recovery after signing', async () => {
     const order = await service.createOrder(customer, '00000000-0000-4000-8000-000000000706', undefined, { planId });
-    await service.acceptServiceTerms(customer, order.id, { accepted: true });
+    await acceptTerms(order.id);
     const checkout = await service.checkout(customer, order.id);
     const payment = await sandboxService(true).ingestIpn(sandboxPayload(checkout.checkoutReference, order.priceVndSnapshot, 'reserved-nonce-recovery'), webhookSecret);
     const commands = new ChainCommandRepository(pool);

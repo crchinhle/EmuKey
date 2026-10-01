@@ -168,6 +168,9 @@ CREATE TABLE orders (
     payment_due_at TIMESTAMPTZ NOT NULL,
     ipn_accept_until TIMESTAMPTZ NOT NULL,
     service_terms_accepted_at TIMESTAMPTZ,
+    service_terms_version_snapshot VARCHAR(40),
+    service_terms_hash_snapshot CHAR(64),
+    service_terms_content_snapshot TEXT,
     payment_accepted_at TIMESTAMPTZ,
     cancelled_at TIMESTAMPTZ,
     expired_at TIMESTAMPTZ,
@@ -213,6 +216,15 @@ CREATE TABLE orders (
         (order_status = 'WAITING_SERVICE_TERMS_ACCEPTANCE' AND service_terms_accepted_at IS NULL) OR
         (order_status IN ('WAITING_PAYMENT', 'PAYMENT_ACCEPTED') AND service_terms_accepted_at IS NOT NULL) OR
         order_status IN ('CANCELLED', 'EXPIRED')
+    ),
+    CONSTRAINT ck_orders_terms_snapshot CHECK (
+        (service_terms_version_snapshot IS NULL
+            AND service_terms_hash_snapshot IS NULL
+            AND service_terms_content_snapshot IS NULL) OR
+        (service_terms_version_snapshot IS NOT NULL
+            AND service_terms_hash_snapshot ~ '^[0-9a-f]{64}$'
+            AND service_terms_content_snapshot IS NOT NULL
+            AND btrim(service_terms_content_snapshot) <> '')
     ),
     CONSTRAINT ck_orders_payment_gate CHECK (
         (order_status = 'PAYMENT_ACCEPTED' AND payment_accepted_at IS NOT NULL) OR
@@ -276,7 +288,9 @@ BEGIN
            NEW.billing_cycle_snapshot, NEW.duration_months_snapshot,
             NEW.max_active_devices_snapshot, NEW.entitlements_snapshot,
             NEW.plan_commitment_snapshot, NEW.payment_due_at, NEW.ipn_accept_until,
-           NEW.created_at)
+           NEW.created_at,
+           NEW.service_terms_version_snapshot, NEW.service_terms_hash_snapshot,
+           NEW.service_terms_content_snapshot)
        IS DISTINCT FROM
        ROW(OLD.id, OLD.order_number, OLD.idempotency_key,
            OLD.customer_user_id, OLD.provider_user_id, OLD.product_id, OLD.plan_id,
@@ -286,7 +300,9 @@ BEGIN
            OLD.billing_cycle_snapshot, OLD.duration_months_snapshot,
             OLD.max_active_devices_snapshot, OLD.entitlements_snapshot,
             OLD.plan_commitment_snapshot, OLD.payment_due_at, OLD.ipn_accept_until,
-           OLD.created_at) THEN
+           OLD.created_at,
+           OLD.service_terms_version_snapshot, OLD.service_terms_hash_snapshot,
+           OLD.service_terms_content_snapshot) THEN
         RAISE EXCEPTION 'Order identity, commercial snapshot and payment cutoffs are immutable';
     END IF;
 

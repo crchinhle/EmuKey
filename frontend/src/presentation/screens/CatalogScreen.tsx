@@ -1,6 +1,7 @@
 import { Alert, Button, Card, Empty, Input, Pagination, Select, Spin } from 'antd';
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 import {
   formatVnd,
@@ -15,11 +16,11 @@ const sortOptions = [
 ] as const;
 
 export function CatalogScreen({ authenticated = false }: { readonly authenticated?: boolean }) {
-  const [search, setSearch] = useState('');
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState(() => params.get('q') ?? '');
   const [page, setPage] = useState(1);
   const [sort, setSort] =
     useState<(typeof sortOptions)[number]['value']>('popular');
-  const navigate = useNavigate();
   const { data: products = [], isLoading, isError, refetch } = useProducts();
   const visibleProducts = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('vi');
@@ -42,7 +43,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
   return (
     <div className="page-shell">
       {!authenticated ? <SiteHeader /> : null}
-      <main className="catalog-content">
+       <main className="catalog-content" id="main-content" tabIndex={-1}>
         <section className="catalog-hero">
           <div>
             <h1>Sản phẩm</h1>
@@ -57,7 +58,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
               aria-label="Tìm sản phẩm"
               placeholder="Tìm theo tên hoặc mô tả"
               value={search}
-              onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+              onChange={(event) => { const value = event.target.value; setSearch(value); setPage(1); const next = new URLSearchParams(params); if (value.trim()) next.set('q', value); else next.delete('q'); setParams(next, { replace: true }); }}
             />
           </label>
           <div className="catalog-compare-action">
@@ -85,35 +86,25 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
           {!isLoading && !isError && products.length === 0 ? (
             <Empty description="Chưa có sản phẩm và gói giá được công bố." />
           ) : null}
-          {!isLoading && !isError && visibleProducts.slice((currentPage - 1) * 12, currentPage * 12).map((product) => (
-            <Card
-              aria-label={`Mở chi tiết ${product.name}`}
-              className="product-card"
-              key={product.slug}
-              onClick={() => void navigate(`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  void navigate(`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`);
-                }
-              }}
-              role="link"
-              tabIndex={0}
-            >
-              <ProductArtwork imageUrl={product.imageUrl} productName={product.name} tone={product.tone} />
-              <h2>{product.name}</h2>
-              <p>{product.summary}</p>
-              <strong>{product.plans.length ? `Từ ${formatVnd(Math.min(...product.plans.map((plan) => plan.priceVnd)))}` : 'Chưa có gói'}</strong>
-              <div className="product-actions">
-                <Link
-                  className="primary-link"
-                  to={`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`}
-                >
-                  Xem gói & chi tiết
-                </Link>
-              </div>
-            </Card>
-          ))}
+{!isLoading && !isError && visibleProducts.slice((currentPage - 1) * 12, currentPage * 12).map((product) => (
+             <Card
+               className="product-card"
+               key={product.slug}
+             >
+               <ProductArtwork imageUrl={product.imageUrl} productName={product.name} tone={product.tone} />
+               <h2>{product.name}</h2>
+               <p>{product.summary}</p>
+               <strong>{product.plans.length ? `Từ ${formatVnd(Math.min(...product.plans.map((plan) => plan.priceVnd)))}` : 'Chưa có gói'}</strong>
+               <div className="product-actions">
+                 <Link
+                   className="primary-link"
+                   to={`${authenticated ? '/buyer/products/' : '/products/'}${product.slug}`}
+                 >
+                   Xem gói & chi tiết
+                 </Link>
+               </div>
+             </Card>
+           ))}
           {!isLoading && !isError && products.length > 0 && visibleProducts.length === 0 ? (
             <Empty description="Không tìm thấy sản phẩm phù hợp" />
           ) : null}

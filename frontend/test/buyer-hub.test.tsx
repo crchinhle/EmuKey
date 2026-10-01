@@ -21,6 +21,7 @@ describe('Customer hub', () => {
     render(<App initialEntries={['/buyer/licenses']} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Mã bản quyền' }));
     fireEvent.click(screen.getByRole('button', { name: 'Nhận mã bản quyền' }));
+     fireEvent.click(await screen.findByRole('button', { name: /^Nhận mã$/ }));
     const key = '0x' + '12'.repeat(32);
     await screen.findByText(key);
     fireEvent.click(screen.getByRole('button', { name: 'Đã thu hồi' }));
@@ -69,7 +70,6 @@ describe('Customer hub', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: /ORD-2026-0218/i }),
     );
-    expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(await screen.findByText('SecureDesk Pro')).toBeTruthy();
   });
 
@@ -82,6 +82,9 @@ describe('Customer hub', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Mã bản quyền' }));
     fireEvent.click(
       await screen.findByRole('button', { name: 'Nhận mã bản quyền' }),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: /^Nhận mã$/ }),
     );
     expect(await screen.findByText(key)).toBeTruthy();
     fireEvent.click(

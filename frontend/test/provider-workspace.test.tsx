@@ -38,7 +38,7 @@ describe('Provider workspace', () => {
     });
 
     expect(await screen.findByText(/ORD-2026-0218/)).toBeTruthy();
-    expect(screen.getByText('MATCHED')).toBeTruthy();
+    expect(screen.getByText('Đã khớp')).toBeTruthy();
   });
 
   it('exposes license lifecycle controls in the Provider workspace', async () => {
@@ -47,14 +47,16 @@ describe('Provider workspace', () => {
     expect(await screen.findByRole('heading', { name: 'Bản quyền nhà cung cấp' })).toBeTruthy();
     expect(await screen.findByText(/EMU-/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Tạm ngưng' }));
-    expect(await screen.findByText(/Command PENDING/)).toBeTruthy();
+    fireEvent.change(await screen.findByLabelText('Lý do thay đổi trạng thái license'), { target: { value: 'Bảo trì định kỳ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }));
+    expect(await screen.findByText(/Đang chờ xử lý/)).toBeTruthy();
     await waitFor(() => expect(
       vi.mocked(fetch).mock.calls.some(([input]) => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         return url.endsWith('/commands/00000000-0000-4000-8000-000000000902');
       }),
     ).toBe(true));
-    expect(await screen.findByText(/Command CONFIRMED/)).toBeTruthy();
+    expect(await screen.findByText(/Đã xác nhận · 00000000-0000-4000-8000-000000000902/)).toBeTruthy();
     await waitFor(() => expect(screen.getByText('Hoạt động')).toBeTruthy());
   });
 });

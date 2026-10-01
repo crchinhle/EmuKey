@@ -20,6 +20,17 @@ export class AcceptServiceTermsDto {
   @ApiProperty({ enum: [true] })
   @IsIn([true])
   accepted!: true;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  version!: string;
+
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' })
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/i)
+  hash!: string;
 }
 
 export class ReviewPaymentDto {
@@ -84,10 +95,16 @@ export class OrderDto {
   targetLicenseId!: string | null;
   @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String })
   serviceTermsAcceptedAt!: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true })
+  serviceTermsVersionSnapshot!: string | null;
+  @ApiPropertyOptional({ pattern: '^[0-9a-f]{64}$', nullable: true, type: String })
+  serviceTermsHashSnapshot!: string | null;
 }
 
 export class OrderTermsDto {
   @ApiProperty() content!: string;
+  @ApiProperty() version!: string;
+  @ApiProperty({ pattern: '^[0-9a-f]{64}$' }) hash!: string;
 }
 
 export class RenewalPreviewDto {
@@ -127,15 +144,16 @@ export class PaymentIngestResultDto {
 export class PaymentHistoryDto {
   @ApiProperty() amountVnd!: number;
   @ApiProperty({ enum: PAYMENT_CLASSIFICATIONS }) classification!: string;
-  @ApiProperty({ format: 'uuid' }) orderId!: string;
-  @ApiProperty() orderNumber!: string;
-  @ApiProperty({ enum: ['NEW_PURCHASE', 'RENEWAL'] })
-  orderType!: 'NEW_PURCHASE' | 'RENEWAL';
-  @ApiProperty() planNameSnapshot!: string;
-  @ApiProperty() productNameSnapshot!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String }) orderId!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) orderNumber!: string | null;
+  @ApiPropertyOptional({ enum: ['NEW_PURCHASE', 'RENEWAL'], nullable: true, type: String })
+  orderType!: 'NEW_PURCHASE' | 'RENEWAL' | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) planNameSnapshot!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) productNameSnapshot!: string | null;
   @ApiProperty() providerEventId!: string;
   @ApiPropertyOptional({ nullable: true, type: String })
   providerTransactionReference!: string | null;
+  @ApiProperty({ format: 'date-time' }) providerOccurredAt!: string;
   @ApiProperty({ format: 'date-time' }) receivedAt!: string;
   @ApiPropertyOptional({ nullable: true, type: String }) reviewStatus!: string | null;
   @ApiProperty({ format: 'uuid' }) transactionId!: string;
@@ -149,6 +167,10 @@ export class PaymentReceiptDto {
   @ApiProperty({ enum: ['NEW_PURCHASE', 'RENEWAL'] })
   orderType!: 'NEW_PURCHASE' | 'RENEWAL';
   @ApiProperty({ format: 'date-time' }) paidAt!: string;
+  @ApiProperty({ format: 'date-time', description: 'Timestamp reported by the payment provider.' })
+  providerOccurredAt!: string;
+  @ApiProperty({ format: 'date-time' }) receivedAt!: string;
+  @ApiProperty({ enum: ['PROVIDER', 'SANDBOX_RECEIPT'] }) timingBasis!: string;
   @ApiProperty() planNameSnapshot!: string;
   @ApiProperty() productNameSnapshot!: string;
   @ApiProperty() providerNameSnapshot!: string;
@@ -158,15 +180,18 @@ export class PaymentReceiptDto {
 }
 
 export class PaymentReviewDto {
-  @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty({ enum: PAYMENT_CLASSIFICATIONS }) classification!: string;
   @ApiProperty() amountVnd!: number;
+  @ApiProperty({ enum: PAYMENT_CLASSIFICATIONS }) classification!: string;
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String }) orderId!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) orderNumber!: string | null;
   @ApiProperty() providerEventId!: string;
   @ApiPropertyOptional({ nullable: true, type: String })
   providerTransactionReference!: string | null;
   @ApiPropertyOptional({ nullable: true, type: String }) reviewReason!: string | null;
   @ApiPropertyOptional({ nullable: true, type: String }) reviewStatus!: string | null;
   @ApiProperty({ format: 'date-time' }) receivedAt!: string;
+  @ApiProperty({ format: 'date-time' }) providerOccurredAt!: string;
   @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String })
   reviewedAt?: string | null;
 }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ConfigProvider } from 'antd';
 import type { ReactElement } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -40,6 +41,9 @@ import {
   systemShell,
 } from '../components/RoleShell';
 import { AiAssistantLauncher } from '../components/AiAssistantLauncher';
+import { AppErrorBoundary } from '../components/AppErrorBoundary';
+import { ForbiddenPage } from '../components/ForbiddenPage';
+import { NotFoundPage } from '../components/NotFoundPage';
 import { antTheme, themeCssVariables, themeRootCss } from '../theme';
 import { AuthProvider, useAuth } from '../../application/auth/authContext';
 
@@ -69,13 +73,34 @@ function ProtectedRoute({ children, roles }: { readonly children: ReactElement; 
   const location = useLocation();
   if (loading) return <div role="status">Đang khôi phục phiên đăng nhập...</div>;
   if (user && roles.includes(user.role)) return children;
+  // A known authenticated user with a different role must not flash the login
+  // screen; keep the intended URL visible on a dedicated 403 page.
+  if (user) return <ForbiddenPage />;
   const redirect = `${location.pathname}${location.search}`;
   return <Navigate replace to={`/auth?redirect=${encodeURIComponent(redirect)}`} />;
 }
 
+function DocumentTitle() {
+  const location = useLocation();
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      '/': 'EmuKey — Quản lý bản quyền',
+      '/auth': 'Đăng nhập — EmuKey',
+      '/help': 'Hướng dẫn sử dụng — EmuKey',
+      '/products': 'Sản phẩm & gói — EmuKey',
+      '/verify': 'Xác minh License — EmuKey',
+    };
+    document.title = titles[location.pathname]
+      ?? (location.pathname.startsWith('/buyer') ? 'Khu vực người mua — EmuKey' : location.pathname.startsWith('/provider') ? 'Khu vực Provider — EmuKey' : location.pathname.startsWith('/support') ? 'Hỗ trợ — EmuKey' : location.pathname.startsWith('/system') ? 'Quản trị hệ thống — EmuKey' : 'EmuKey');
+  }, [location.pathname]);
+  return null;
+}
+
 function AppRoutes() {
   return (
-    <Routes>
+    <>
+      <DocumentTitle />
+      <Routes>
       <Route element={<PublicHomeScreen />} path="/" />
       <Route element={<AuthScreen />} path="/auth" />
       <Route element={<CatalogScreen />} path="/products" />
@@ -114,8 +139,9 @@ function AppRoutes() {
         <Route index element={<SystemConsoleScreen />} />
         <Route element={<AccountProfileScreen />} path="profile" />
       </Route>
-      <Route element={<Navigate replace to="/auth" />} path="*" />
-    </Routes>
+      <Route element={<NotFoundPage />} path="*" />
+      </Routes>
+    </>
   );
 }
 
@@ -137,10 +163,12 @@ export function App({ initialEntries }: AppProps) {
       <AuthProvider {...(testUser === undefined ? {} : { initialUser: testUser })} skipBootstrap={initialEntries !== undefined}>
       <ConfigProvider theme={antTheme}>
       <style>{themeRootCss}</style>
-      <div className="app-theme" style={themeCssVariables}>
-        {routes}
-        <AiAssistantLauncher />
-      </div>
+         <div className="app-theme" style={themeCssVariables}>
+           <AppErrorBoundary>
+             {routes}
+             <AiAssistantLauncher />
+           </AppErrorBoundary>
+         </div>
       </ConfigProvider>
       </AuthProvider>
       </QueryClientProvider>

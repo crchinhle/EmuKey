@@ -3,16 +3,19 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import {
   CatalogScreen,
   CheckoutScreen,
+  ComparePlansScreen,
   PaymentScreen,
   ProfileScreen,
 } from '../../src/presentation/EmuKeyMobileApp';
 import {
   acceptServiceTerms,
+  comparePlans,
   createOrder,
   createCheckout,
-  getOrder,
+getOrder,
   getOrderTerms,
   getProfile,
+  listNotifications,
   listProducts,
   updateProfile,
   type MobileOrderDetail,
@@ -20,19 +23,24 @@ import {
 
 jest.mock('../../src/infrastructure/api/client', () => ({
   acceptServiceTerms: jest.fn(),
-  createOrder: jest.fn(),
+  closeConversation: jest.fn(),
+  comparePlans: jest.fn(),
   createCheckout: jest.fn(),
+  createOrder: jest.fn(),
   getOrder: jest.fn(),
   getOrderTerms: jest.fn(),
   getProfile: jest.fn(),
+  listNotifications: jest.fn(),
   listProducts: jest.fn(),
   updateProfile: jest.fn(),
 }));
 
 const listProductsMock = listProducts as jest.MockedFunction<typeof listProducts>;
+const listNotificationsMock = listNotifications as jest.MockedFunction<typeof listNotifications>;
 const getProfileMock = getProfile as jest.MockedFunction<typeof getProfile>;
 const updateProfileMock = updateProfile as jest.MockedFunction<typeof updateProfile>;
 const createOrderMock = createOrder as jest.MockedFunction<typeof createOrder>;
+const comparePlansMock = comparePlans as jest.MockedFunction<typeof comparePlans>;
 const createCheckoutMock = createCheckout as jest.MockedFunction<typeof createCheckout>;
 const getOrderMock = getOrder as jest.MockedFunction<typeof getOrder>;
 const getOrderTermsMock = getOrderTerms as jest.MockedFunction<typeof getOrderTerms>;
@@ -63,7 +71,10 @@ const order: MobileOrderDetail = {
 };
 
 describe('mobile Phase 3 and Phase 4 screens', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    listNotificationsMock.mockResolvedValue([]);
+  });
 
   it('renders the published catalog and opens checkout with the selected plan', async () => {
     listProductsMock.mockResolvedValue([
@@ -117,6 +128,32 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
     expect(createOrderMock).toHaveBeenCalledWith({ planId: 'plan-1' });
   });
 
+  it('blocks accepting terms when loading fails and retries the same order', async () => {
+    createOrderMock.mockResolvedValue(order);
+    getOrderTermsMock.mockRejectedValueOnce(new Error('terms unavailable')).mockResolvedValueOnce({ content: 'Điều khoản dịch vụ' });
+    const navigation = { replace: jest.fn() };
+    const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
+    await render(<CheckoutScreen navigation={navigation as never} route={route as never} />);
+    await act(async () => fireEvent.press(screen.getByText('Tạo đơn hàng')));
+    expect(await screen.findByText('Chưa tải được điều khoản cấp phép.')).toBeOnTheScreen();
+    expect(screen.getByText('Tiếp tục thanh toán')).toBeDisabled();
+    await act(async () => fireEvent.press(screen.getByText('Tải lại điều khoản')));
+    expect(await screen.findByText('Điều khoản dịch vụ')).toBeOnTheScreen();
+    expect(getOrderTermsMock).toHaveBeenLastCalledWith(order.id);
+    expect(createOrderMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the server order snapshot price instead of the route quote', async () => {
+    createOrderMock.mockResolvedValue({ ...order, priceVndSnapshot: 1_200_000 });
+    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản dịch vụ' });
+    const navigation = { replace: jest.fn() };
+    const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
+    await render(<CheckoutScreen navigation={navigation as never} route={route as never} />);
+    await act(async () => fireEvent.press(screen.getByText('Tạo đơn hàng')));
+    expect(await screen.findByText('1.200.000 ₫')).toBeOnTheScreen();
+    expect(screen.getByText(/Giá server đã thay đổi/)).toBeOnTheScreen();
+  });
+
   it('renders the signed SePay POST fields inside the native checkout WebView', async () => {
     getOrderMock.mockResolvedValue({ ...order, orderStatus: 'WAITING_PAYMENT' });
     createCheckoutMock.mockResolvedValue({
@@ -140,5 +177,57 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
     const webView = await screen.findByTestId('payment-webview');
     expect((webView.props.source as { html: string }).html).toContain('name="signature" value="signed-value"');
     await result.unmount();
+  });
+
+  it('offers a direct purchase CTA from every compared plan and hides false entitlements', async () => {
+    comparePlansMock.mockResolvedValue({
+      dimensions: [
+        { key: 'priceVnd', label: 'Giá', values: { 'plan-1': 990_000, 'plan-2': 1_990_000 } },
+        { key: 'maxActiveDevices', label: 'Thiết bị', values: { 'plan-1': 2, 'plan-2': 25 } },
+        { key: 'entitlements', label: 'Quyền lợi', values: { 'plan-1': { offline: true, priority: false }, 'plan-2': { offline: true, priority: true } } },
+      ],
+      plans: [
+        { billingCycle: 'YEARLY', id: 'plan-1', name: 'Pro', productId: 'product-1', productName: 'Emukey Desktop', version: 1 },
+        { billingCycle: 'YEARLY', id: 'plan-2', name: 'Ultra', productId: 'product-1', productName: 'Emukey Desktop', version: 1 },
+      ],
+    });
+    const navigate = jest.fn();
+    await render(<ComparePlansScreen navigation={{ navigate } as never} route={{ params: { ids: ['plan-1', 'plan-2'] } } as never} />);
+
+    expect(screen.getByText(/Ultra/)).toBeOnTheScreen();
+    expect(screen.getAllByText('Mua gói này')).toHaveLength(2);
+    expect(screen.queryByText('false')).toBeNull();
+    expect(screen.getByText(/priority: Không/)).toBeOnTheScreen();
+    await act(async () => fireEvent.press(screen.getAllByText('Mua gói này')[1]));
+    expect(navigate).toHaveBeenCalledWith('Checkout', expect.objectContaining({ planId: 'plan-2', priceVnd: 1_990_000 }));
+  });
+
+  it('filters the catalog and explains the four-plan comparison limit', async () => {
+    listProductsMock.mockResolvedValue([
+      {
+        name: 'Emukey Desktop',
+        plans: [{ billingCycle: 'YEARLY', code: 'PRO', durationMonths: 12, entitlements: {}, id: 'plan-1', maxActiveDevices: 2, name: 'Pro', priceVnd: 990_000 }],
+        slug: 'emukey-desktop',
+        summary: 'Bản quyền desktop',
+      },
+      {
+        name: 'Emukey Mobile',
+        plans: [{ billingCycle: 'YEARLY', code: 'MOB', durationMonths: 12, entitlements: {}, id: 'plan-2', maxActiveDevices: 1, name: 'Mobile', priceVnd: 490_000 }],
+        slug: 'emukey-mobile',
+        summary: 'Bản quyền di động',
+      },
+    ]);
+    const navigate = jest.fn();
+    await render(<CatalogScreen navigation={{ navigate } as never} route={{} as never} />);
+
+    await screen.findByText('Emukey Mobile');
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Tìm sản phẩm hoặc gói'), 'desktop'));
+    await waitFor(() => expect(screen.queryByText('Emukey Mobile')).toBeNull());
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Tìm sản phẩm hoặc gói'), 'không tồn tại'));
+    expect(await screen.findByText('Không tìm thấy sản phẩm hoặc gói phù hợp.')).toBeOnTheScreen();
+    await act(async () => fireEvent.changeText(screen.getByLabelText('Tìm sản phẩm hoặc gói'), ''));
+    const toggles = await screen.findAllByLabelText(/ - So sánh$/);
+    for (const toggle of toggles.slice(0, 2)) await act(async () => fireEvent.press(toggle));
+    expect(screen.getAllByLabelText(/ - So sánh$/)).toHaveLength(2);
   });
 });

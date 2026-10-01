@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import {
+  activationKeyErrorLabel,
   useOrderLicense,
   useRetrieveActivationKey,
 } from '../../application/licenses/licenseQueries';
@@ -53,18 +54,13 @@ export function PaymentStatusScreen() {
   const checkoutStarted = useRef(false);
   const checkoutSubmitted = useRef(false);
   const [copyStatus, setCopyStatus] = useState('');
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  // PAY-12: loading the status page only reads the order. Creating a signed
+  // checkout attempt and submitting it are both explicit user actions.
   useEffect(() => {
-    if (!providerReturned && order.data?.orderStatus === 'WAITING_PAYMENT' && !checkout.data && !checkoutStarted.current) {
-      checkoutStarted.current = true;
-      checkout.mutate(id);
-    }
-  }, [checkout, id, order.data?.orderStatus, providerReturned]);
-  useEffect(() => {
-    if (!providerReturned && order.data?.orderStatus === 'WAITING_PAYMENT' && checkout.data && !checkoutSubmitted.current) {
-      checkoutSubmitted.current = true;
-      (document.getElementById('sepay-checkout-form') as HTMLFormElement | null)?.requestSubmit();
-    }
-  }, [checkout.data, providerReturned, order.data?.orderStatus]);
+    checkoutStarted.current = false;
+    checkoutSubmitted.current = false;
+  }, [id]);
   const renewalProjectionUpdated = Boolean(order.data?.renewalExpiresAt && license.data &&
     Math.floor(Date.parse(license.data.expiresAt) / 1000) >= Math.floor(Date.parse(order.data.renewalExpiresAt) / 1000));
   const licenseReady = license.data?.status === 'ACTIVE' && license.data.activationKeyTrustStatus === 'TRUSTED' &&
@@ -78,6 +74,7 @@ export function PaymentStatusScreen() {
     return <Alert type="error" message="Không thể tải đơn hàng." />;
   const current = order.data;
   const payment = checkout.data;
+  const checkoutAttemptExpired = Boolean(payment && Date.parse(payment.expiresAt) <= Date.now());
   const paymentStatus = current.orderStatus === 'PAYMENT_ACCEPTED'
     ? license.data
       ? 'LICENSE_ISSUING'
@@ -95,18 +92,8 @@ export function PaymentStatusScreen() {
         ? 'REVIEW'
         : paymentStatus;
   const paymentTone = current.orderStatus === 'PAYMENT_ACCEPTED' ? 'success' : paymentNeedsReview ? 'warning' : ['CANCELLED', 'EXPIRED'].includes(current.orderStatus) || searchParams.get('sepay') === 'error' ? 'error' : confirmationDelayed || unsuccessfulReturn ? 'warning' : current.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? 'neutral' : 'info';
-  const keyUnavailable = retrieveError !== null;
-  const activationUnavailable = keyUnavailable &&
-    typeof retrieveError === 'object' &&
-    retrieveError !== null &&
-    'status' in retrieveError &&
-    retrieveError.status === 404;
   const keyAvailable = license.data?.activationKeyAvailable !== false;
-  const retrieveErrorMessage = activationUnavailable
-    ? 'Mã bản quyền đã được nhận trước đó. Nếu bạn đã mất mã, hãy sử dụng quy trình khôi phục mã.'
-    : keyUnavailable
-      ? 'Không thể nhận mã bản quyền lúc này. Vui lòng thử lại khi bản quyền vẫn đang sẵn sàng.'
-    : null;
+  const retrieveErrorMessage = retrieveError !== null ? activationKeyErrorLabel(retrieveError) : null;
   const licenseQueryErrorMessage = license.error
     ? 'Thanh toán đã xác nhận. Bản quyền đang được xử lý; trạng thái blockchain chưa thể tải ngay lúc này.'
     : null;
@@ -203,9 +190,42 @@ export function PaymentStatusScreen() {
           ) : current.orderStatus === 'PAYMENT_ACCEPTED' ? null : current.orderStatus !== 'WAITING_PAYMENT' ? (
             <Alert type="warning" title="Đơn hàng chưa thể thanh toán" description={<a href="/buyer/orders">Mở đơn hàng để kiểm tra điều khoản hoặc trạng thái hủy/hết hạn.</a>} />
           ) : paymentNeedsReview ? null : unsuccessfulReturn ? (
-            <Button type="primary" onClick={() => { checkout.reset(); checkoutStarted.current = false; checkoutSubmitted.current = false; setSearchParams({}); }}>Thanh toán lại</Button>
+            <Button
+              type="primary"
+              onClick={() => {
+                checkout.reset();
+                checkoutStarted.current = false;
+                checkoutSubmitted.current = false;
+                setCheckoutNotice(null);
+                setSearchParams({});
+              }}
+            >
+              Thanh toán lại
+            </Button>
           ) : providerReturned ? null : !payment ? (
-            checkout.isError ? null : <Alert showIcon type="info" message="Đang chuyển bạn đến cổng thanh toán SePay..." />
+            checkout.isPending ? (
+              <Spin aria-label="Đang tạo yêu cầu thanh toán" />
+            ) : (
+              <>
+                <Alert
+                  showIcon
+                  type="info"
+                  message="Đơn hàng đã sẵn sàng thanh toán."
+                  description="Chọn nút bên dưới để tạo yêu cầu thanh toán SePay. Không có yêu cầu nào được gửi đi khi bạn vừa mở trang này."
+                />
+                {checkoutNotice ? <Alert showIcon type="warning" message={checkoutNotice} /> : null}
+                <Button
+                  type="primary"
+                  disabled={checkout.isPending}
+                  onClick={() => {
+                    checkoutStarted.current = true;
+                    checkout.mutate(id);
+                  }}
+                >
+                  Tạo yêu cầu thanh toán
+                </Button>
+              </>
+            )
           ) : (
             <>
               <FactList
@@ -213,26 +233,46 @@ export function PaymentStatusScreen() {
                   { label: 'Mã thanh toán', value: payment.checkoutReference },
                   { label: 'Số tiền', value: formatMoney(payment.amountVnd) },
                   {
-                    label: 'Hết hạn',
+                    label: payment.expiresWithOrder ? 'Hết hạn cùng đơn hàng' : 'Hết hạn yêu cầu',
                     value: new Date(payment.expiresAt).toLocaleString('vi-VN'),
                   },
                 ]}
               />
-              <form
-                action={payment.checkoutUrl}
-                id="sepay-checkout-form"
-                data-testid="sepay-checkout-form"
-                method="post"
-              >
-                {Object.entries(payment.checkoutFields).map(([name, value]) => (
-                  <input key={name} name={name} type="hidden" value={value} />
-                ))}
-                <Button htmlType="submit" type="primary">
-                  {payment.checkoutUrl.includes('sandbox')
-                    ? 'Thanh toán trên SePay Sandbox'
-                    : 'Thanh toán trên SePay'}
-                </Button>
-              </form>
+              {checkoutAttemptExpired ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="Yêu cầu thanh toán đã hết hạn."
+                  description="Tạo yêu cầu mới để tiếp tục thanh toán đơn hàng này."
+                  action={
+                    <Button
+                      onClick={() => {
+                        checkout.reset();
+                        checkoutStarted.current = false;
+                        checkoutSubmitted.current = false;
+                      }}
+                    >
+                      Tạo yêu cầu mới
+                    </Button>
+                  }
+                />
+              ) : (
+                <form
+                  action={payment.checkoutUrl}
+                  id="sepay-checkout-form"
+                  data-testid="sepay-checkout-form"
+                  method="post"
+                >
+                  {Object.entries(payment.checkoutFields).map(([name, value]) => (
+                    <input key={name} name={name} type="hidden" value={value} />
+                  ))}
+                  <Button htmlType="submit" type="primary">
+                    {payment.checkoutUrl.includes('sandbox')
+                      ? 'Thanh toán trên SePay Sandbox'
+                      : 'Thanh toán trên SePay'}
+                  </Button>
+                </form>
+              )}
               <Alert
                 showIcon
                 type="info"

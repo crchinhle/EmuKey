@@ -1,8 +1,8 @@
-import { Alert, Button, Empty, Input, Spin } from 'antd';
+import { Alert, Button, Empty, Input, Modal, Spin } from 'antd';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { licenseStatusLabel as statusLabel, useLicenseDevices, useLicenses, useRetrieveActivationKey } from '../../application/licenses/licenseQueries';
+import { licenseStatusLabel as statusLabel, activationKeyErrorLabel, useLicenseDevices, useLicenses, useRetrieveActivationKey } from '../../application/licenses/licenseQueries';
 
 import { LicenseRecoveryPanel } from '../components/LicenseRecoveryPanel';
 
@@ -60,14 +60,19 @@ export function BuyerLicenseHubScreen() {
           <section aria-label="Chi tiết bản quyền" className="buyer-license-detail">
             <header className="buyer-license-detail-header"><div><h2>{selected.productName} · {selected.plan.name}</h2><p>Mã tra cứu: {selected.publicLicenseId} · Hết hạn {dateLabel(selected.expiresAt)}</p></div><span className={`buyer-license-status buyer-license-status--${selected.status.toLowerCase()}`}>{statusLabel(selected.status)}</span></header>
             {devices.isError ? <Alert type="error" title="Không thể tải thiết bị" action={<Button onClick={() => void devices.refetch()}>Thử lại</Button>} /> : null}
-            {retrieve.isError ? <Alert type="error" title="Không thể nhận mã bản quyền. Mã có thể đã được nhận hoặc bản quyền chưa sẵn sàng." /> : null}
+               {retrieve.isError ? <Alert type="error" message={activationKeyErrorLabel(retrieve.error)} /> : null}
             <nav aria-label="Chi tiết bản quyền" className="buyer-license-detail-tabs"><button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')} type="button">Tổng quan</button><button className={tab === 'key' ? 'active' : ''} onClick={() => setTab('key')} type="button">Mã bản quyền</button><button className={tab === 'devices' ? 'active' : ''} onClick={() => setTab('devices')} type="button">Thiết bị</button></nav>
             {tab === 'overview' ? <>
               {['ACTIVE', 'EXPIRED', 'SUSPENDED'].includes(selected.status) ? <div className="workspace-actions"><Button href={`/buyer/licenses/${encodeURIComponent(selected.id)}/renew`} type="primary">Gia hạn bản quyền</Button></div> : null}
               <div className="buyer-license-summary"><article><span>Phạm vi</span><strong>{selected.maxActiveDevices} thiết bị</strong></article><article><span>Đã kích hoạt</span><strong>{devices.data ? activeDevices : '—'}</strong></article><article><span>Còn lại</span><strong>{devices.data ? remainingDevices : '—'}</strong></article></div>
               <section className="buyer-license-devices"><h3>Thiết bị gần đây</h3>{(devices.data ?? []).slice(0, 2).map((device) => <div className="buyer-license-device-row" key={device.id}><span>{device.deviceRef} · {statusLabel(device.status)}</span><Button onClick={() => setTab('devices')}>Xem thiết bị</Button></div>)}</section>
             </> : null}
-            {tab === 'key' ? <section className="buyer-license-action-panel"><Input.Password aria-label="Mã bản quyền" onChange={(event) => setActivationKey(event.target.value || undefined)} placeholder="Dán mã bản quyền đã lưu hoặc nhận mã lần đầu" value={activationKey ?? ''} /><Button disabled={!selected.activationKeyAvailable || Boolean(activationKey)} loading={retrieve.isPending} onClick={() => retrieve.mutate({ id: selected.id }, { onSuccess: (value) => setActivationKey(value.activationKey) })}>Nhận mã bản quyền</Button>{activationKey ? <><code>{activationKey}</code><Button onClick={() => { if (!navigator.clipboard) { setCopyStatus('Không thể sao chép tự động. Vui lòng lưu mã thủ công.'); return; } void navigator.clipboard.writeText(activationKey).then(() => setCopyStatus('Đã sao chép mã bản quyền')).catch(() => setCopyStatus('Không thể sao chép. Vui lòng lưu mã thủ công.')); }}>Sao chép mã bản quyền</Button></> : null}<span aria-live="polite">{copyStatus}</span></section> : null}
+             {tab === 'key' ? <section className="buyer-license-action-panel">
+               <Input.Password aria-label="Mã bản quyền" onChange={(event) => setActivationKey(event.target.value || undefined)} placeholder="Dán mã bản quyền đã lưu" value={activationKey ?? ''} />
+                <Button disabled={!selected.activationKeyAvailable || Boolean(activationKey)} loading={retrieve.isPending} onClick={() => Modal.confirm({ title: 'Nhận mã bản quyền một lần?', content: 'Mã chỉ hiển thị một lần. Hãy chắc chắn bạn có thể lưu mã an toàn trước khi tiếp tục.', okText: 'Nhận mã', cancelText: 'Hủy', onOk: () => retrieve.mutateAsync({ id: selected.id }).then((value) => { setActivationKey(value.activationKey); }).catch(() => undefined) })}>Nhận mã bản quyền</Button>
+               {activationKey ? <><code>{activationKey}</code><Button onClick={() => { if (!navigator.clipboard) { setCopyStatus('Không thể sao chép tự động. Vui lòng lưu mã thủ công.'); return; } void navigator.clipboard.writeText(activationKey).then(() => setCopyStatus('Đã sao chép mã bản quyền')).catch(() => setCopyStatus('Không thể sao chép. Vui lòng lưu mã thủ công.')); }}>Sao chép mã bản quyền</Button></> : null}
+               <span aria-live="polite">{copyStatus}</span>
+             </section> : null}
             {tab === 'devices' ? <section className="buyer-license-action-panel"><h3>Thiết bị đã đăng ký</h3>{devices.isPending ? <Spin /> : null}{devices.data?.length ? devices.data.map((device) => <div className="buyer-license-device-row" key={device.id}><span>{device.deviceRef} · {statusLabel(device.status)}</span></div>) : !devices.isPending && !devices.isError ? <Empty description="Chưa có thiết bị." /> : null}</section> : null}
             {tab === 'key' ? <p>Để kích hoạt, mở phần mềm trên thiết bị cần sử dụng và nhập mã đã lưu. Nếu mất mã, <a href="/buyer/support">liên hệ hỗ trợ</a> để được hướng dẫn khôi phục.</p> : null}
             {tab === 'key' && selected.status === 'ACTIVE' ? <LicenseRecoveryPanel key={selected.id} licenseId={selected.id} initialToken={actionToken} onKey={(id, key) => { setActivationKeys((current) => ({ ...current, [id]: key })); setCopyStatus(''); void licenses.refetch(); }} /> : null}

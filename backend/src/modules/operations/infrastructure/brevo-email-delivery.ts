@@ -87,6 +87,9 @@ export class BrevoEmailDelivery implements EmailDeliveryPort {
     if (input.template === 'identity-email-verification-v1') {
       url.searchParams.set('mode', 'verify');
       url.searchParams.set('token', token);
+      if (typeof input.data.email === 'string' && input.data.email.trim() !== '') {
+        url.searchParams.set('email', input.data.email.trim());
+      }
       const verificationUrl = url.toString();
       const testRunId = typeof input.data.testRunId === 'string' ? input.data.testRunId : undefined;
       return {

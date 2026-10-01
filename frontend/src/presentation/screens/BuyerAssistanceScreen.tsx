@@ -2,6 +2,7 @@ import { Alert, Button, Empty, Spin } from 'antd';
 import { useState } from 'react';
 
 import { conversationContextLabels, conversationStatusLabels, useAppendConversationMessage, useAskAi, useConversationMessages, useConversations, useCreateConversation } from '../../application/assistance/assistanceQueries';
+import { useRequestSupport } from '../../application/assistance/supportQueries';
 import { ConversationPanel } from '../components/ConversationPanel';
 import {
   FactList,
@@ -15,6 +16,7 @@ export function BuyerAssistanceScreen() {
   const append = useAppendConversationMessage();
   const askAi = useAskAi();
   const create = useCreateConversation();
+  const requestSupport = useRequestSupport();
   const conversation = conversations.data?.find((item) => item.id === selectedId) ?? conversations.data?.[0];
   const messages = useConversationMessages(conversation?.id);
   const startConversation = () => create.mutate(
@@ -40,7 +42,7 @@ export function BuyerAssistanceScreen() {
     <>
       <PageHeader
         title="Hội thoại hỗ trợ"
-        action={<Button loading={create.isPending} onClick={startConversation} type="primary">Tạo yêu cầu mới</Button>}
+        action={<span className="workspace-actions"><Button loading={create.isPending} onClick={startConversation} type="primary">Tạo yêu cầu mới</Button>{conversation.status === 'AI_ACTIVE' ? <Button loading={requestSupport.isPending} onClick={() => requestSupport.mutate({ conversationId: conversation.id, reason: 'AI chưa giải quyết được yêu cầu.' })}>Chuyển cho nhân viên</Button> : null}</span>}
       />
       {create.isError ? <Alert type="error" title="Không thể tạo hội thoại. Vui lòng thử lại." /> : null}
       <StatusChip tone={conversation.status === 'CLOSED' ? 'success' : 'info'}>{conversationStatusLabels[conversation.status]}</StatusChip>
@@ -72,7 +74,7 @@ export function BuyerAssistanceScreen() {
             }))}
             inputLabel="Tin nhắn hỗ trợ"
             onSubmit={(content) => append.mutateAsync({ clientMessageId: crypto.randomUUID(), content, conversationId: conversation.id })}
-            onAskAi={(question) => askAi.mutateAsync({ conversationId: conversation.id, question })}
+            onAskAi={(question) => askAi.mutateAsync({ conversationId: conversation.id, question, clientMessageId: crypto.randomUUID() })}
             readOnly={conversation.status === 'CLOSED'}
             submitLabel="Gửi tin nhắn"
           />

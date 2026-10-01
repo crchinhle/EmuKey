@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
+import type { NotificationDto } from '../presentation/notification.dto.js';
 
 export interface NotificationCreateInput {
   channel: 'IN_APP' | 'EMAIL' | 'PUSH';
@@ -22,8 +23,8 @@ export interface NotificationRecord {
 export class NotificationService {
   constructor(private readonly repository: {
     create(input: NotificationCreateInput): Promise<NotificationRecord>;
-    list(userId: string): Promise<NotificationRecord[]>;
-    markRead(userId: string, notificationId: string): Promise<NotificationRecord | null>;
+    list(userId: string): Promise<NotificationDto[]>;
+    markRead(userId: string, notificationId: string): Promise<NotificationDto | null>;
     registerPushToken(userId: string, token: string, provider: 'FCM' | 'EXPO'): Promise<NotificationRecord>;
     unregisterPushToken(userId: string, token: string): Promise<NotificationRecord | null>;
   }) {}

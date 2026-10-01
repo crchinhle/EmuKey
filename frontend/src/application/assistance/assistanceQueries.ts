@@ -33,7 +33,12 @@ export const conversationContextLabels: Record<ConversationDto['contextType'], s
 };
 
 export function useConversations() {
-  return useQuery({ queryKey: ['assistance', 'conversations'], queryFn: () => requestJson<ConversationDto[]>('/conversations') });
+  return useQuery({
+    queryKey: ['assistance', 'conversations'],
+    queryFn: () => requestJson<ConversationDto[]>('/conversations'),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+  });
 }
 
 export function useCreateConversation() {
@@ -58,7 +63,13 @@ export function useConversation(conversationId: string | undefined) {
 }
 
 export function useConversationMessages(conversationId: string | undefined) {
-  return useQuery({ enabled: Boolean(conversationId), queryKey: ['assistance', 'messages', conversationId], queryFn: () => requestJson<MessageDto[]>(`/conversations/${conversationId}/messages`) });
+  return useQuery({
+    enabled: Boolean(conversationId),
+    queryKey: ['assistance', 'messages', conversationId],
+    queryFn: () => requestJson<MessageDto[]>(`/conversations/${encodeURIComponent(conversationId!)}/messages`),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+  });
 }
 
 export function useAppendConversationMessage() {
@@ -76,11 +87,7 @@ export function useAppendConversationMessage() {
 export function useAskAi() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ conversationId, question }: { conversationId: string; question: string }) => requestJson<{ answer: string; citedSourceIds: string[]; grounded: boolean }>(`/conversations/${conversationId}/ai-ask`, { method: 'POST', body: JSON.stringify({ question }) }),
-    onSuccess: (_answer, input) => { void queryClient.invalidateQueries({ queryKey: ['assistance', 'conversation', input.conversationId] }); },
+    mutationFn: ({ conversationId, question, clientMessageId }: { conversationId: string; question: string; clientMessageId: string }) => requestJson<{ answer: string; citedSourceIds: string[]; grounded: boolean }>(`/conversations/${encodeURIComponent(conversationId)}/ai-ask`, { method: 'POST', body: JSON.stringify({ clientMessageId, question }) }),
+    onSuccess: (_answer, input) => { void queryClient.invalidateQueries({ queryKey: ['assistance', 'conversation', input.conversationId] }); void queryClient.invalidateQueries({ queryKey: ['assistance', 'messages', input.conversationId] }); },
   });
-}
-
-export function useNotifications() {
-  return useQuery({ queryKey: ['notifications'], queryFn: () => requestJson<Array<{ id: string; title: string; content: string; isRead: boolean }>>('/notifications') });
 }

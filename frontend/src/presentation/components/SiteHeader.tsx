@@ -57,6 +57,7 @@ export function SiteHeader() {
 
   return (
     <header className="site-header public-header">
+      <a className="skip-link" href="#main-content">Bỏ qua đến nội dung chính</a>
       <Link aria-label="Về trang chủ EmuKey" className="brand-wordmark brand-wordmark--header" to="/">
         EmuKey
       </Link>

@@ -31,15 +31,21 @@ export class AppendMessageDto {
 }
 
 export class AiAskDto {
-  @ApiPropertyOptional({ format: 'uuid' })
-  @IsOptional()
+  @ApiProperty({ format: 'uuid' })
   @IsUUID()
-  clientMessageId?: string;
+  clientMessageId!: string;
 
   @ApiProperty({ minLength: 1, maxLength: 4_000 })
   @IsString()
   @Length(1, 4_000)
   question!: string;
+}
+
+export class RequestSupportDto {
+  @ApiProperty({ minLength: 1, maxLength: 1_000 })
+  @IsString()
+  @Length(1, 1_000)
+  reason!: string;
 }
 
 export class AiAnswerDto {

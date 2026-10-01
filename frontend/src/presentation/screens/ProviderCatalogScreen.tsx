@@ -1,5 +1,5 @@
 import { Alert, Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Spin, Table, message } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { describeApiError } from '../../application/auth/authContext';
 import {
@@ -36,18 +36,31 @@ export function ProviderCatalogScreen() {
   const [messageApi, contextHolder] = message.useMessage();
   const [productForm] = Form.useForm<ProductFormValues>();
   const [planForm] = Form.useForm<PlanFormValues>();
+  const billingCycle = Form.useWatch('billingCycle', planForm);
   const products = useAdminProducts();
   const plans = useAdminPlans();
   const mutations = useCatalogMutations();
   const catalogError = products.error ?? plans.error;
   const mutationError = Object.values(mutations).find((mutation) => mutation.error)?.error;
 
-  const closeProduct = () => {
+  useEffect(() => {
+    if (billingCycle) planForm.setFieldValue('durationMonths', billingCycle === 'MONTHLY' ? 1 : 12);
+  }, [billingCycle, planForm]);
+
+  const closeProduct = (force = false) => {
+    if (!force && productForm.isFieldsTouched()) {
+      Modal.confirm({ title: 'Bỏ thay đổi chưa lưu?', content: 'Các thay đổi trong form sẽ bị mất.', okText: 'Bỏ thay đổi', cancelText: 'Tiếp tục chỉnh sửa', onOk: () => closeProduct(true) });
+      return;
+    }
     setProductOpen(false);
     setEditingProduct(null);
     productForm.resetFields();
   };
-  const closePlan = () => {
+  const closePlan = (force = false) => {
+    if (!force && planForm.isFieldsTouched()) {
+      Modal.confirm({ title: 'Bỏ thay đổi chưa lưu?', content: 'Các thay đổi trong form sẽ bị mất.', okText: 'Bỏ thay đổi', cancelText: 'Tiếp tục chỉnh sửa', onOk: () => closePlan(true) });
+      return;
+    }
     setPlanOpen(false);
     setEditingPlan(null);
     planForm.resetFields();
@@ -94,7 +107,7 @@ export function ProviderCatalogScreen() {
         return;
       }
     }
-    const updateInput = { name: values.name.trim(), billingCycle: values.billingCycle, durationMonths: values.durationMonths, priceVnd: values.priceVnd, maxActiveDevices: values.maxActiveDevices, ...(entitlements ? { entitlements } : {}) };
+    const updateInput = { name: values.name.trim(), billingCycle: values.billingCycle, durationMonths: values.durationMonths, priceVnd: values.priceVnd, maxActiveDevices: values.maxActiveDevices, entitlements: entitlements ?? {} };
     const createInput = { productId: values.productId, code: values.code.trim(), ...updateInput };
     const request = editingPlan ? mutations.updatePlan.mutateAsync({ id: editingPlan.id, input: updateInput }) : mutations.createPlan.mutateAsync(createInput);
     void request.then(() => { closePlan(); void messageApi.success(editingPlan ? 'Đã cập nhật gói.' : 'Đã tạo gói nháp.'); }).catch(() => undefined);
@@ -127,17 +140,17 @@ export function ProviderCatalogScreen() {
         {!plans.isLoading && !plans.isError && plans.data?.length ? <Table dataSource={plans.data.filter((plan) => matches(`${plan.name} ${plan.code} ${products.data?.find((product) => product.id === plan.productId)?.name ?? ''}`))} pagination={{ pageSize: 10, showSizeChanger: false, hideOnSinglePage: true }} rowKey="id" scroll={{ x: 1150 }} columns={[
           { title: 'Sản phẩm', dataIndex: 'productId', render: (id: string) => products.data?.find((product) => product.id === id)?.name ?? id },
           { title: 'Mã', dataIndex: 'code' }, { title: 'Tên gói', dataIndex: 'name' }, { title: 'Chu kỳ', dataIndex: 'billingCycle', render: (value: string) => value === 'MONTHLY' ? 'Hàng tháng' : 'Hàng năm' }, { title: 'Giá', dataIndex: 'priceVnd', render: (value: number) => formatVnd(value) }, { title: 'Thiết bị', dataIndex: 'maxActiveDevices' }, { title: 'Trạng thái', dataIndex: 'status', render: (value: string) => <StatusChip tone={productStatusTone(value)}>{value === 'PUBLISHED' ? 'Đã công bố' : value === 'DRAFT' ? 'Bản nháp' : 'Đã lưu trữ'}</StatusChip> },
-          { title: 'Thao tác', render: (_: unknown, record: AdminPlan) => <div className="table-actions"><Button size="small" onClick={() => openPlan(record)} disabled={record.status === 'ARCHIVED'}>Sửa</Button>{record.status === 'DRAFT' ? <Button size="small" onClick={() => run('publishPlan', record.id)}>Công bố</Button> : null}{record.status === 'PUBLISHED' ? <Button size="small" onClick={() => run('archivePlan', record.id)}>Lưu trữ</Button> : null}{record.status === 'DRAFT' ? <Popconfirm title="Xóa gói nháp?" description="Thao tác này không thể hoàn tác." okText="Xóa" cancelText="Giữ lại" onConfirm={() => run('deletePlan', record.id)}><Button danger size="small">Xóa</Button></Popconfirm> : null}</div> },
+          { title: 'Thao tác', render: (_: unknown, record: AdminPlan) => <div className="table-actions"><Button size="small" onClick={() => openPlan(record)} disabled={record.status !== 'DRAFT'}>{record.status === 'PUBLISHED' ? 'Tạo bản nháp' : 'Sửa'}</Button>{record.status === 'DRAFT' ? <Button size="small" onClick={() => run('publishPlan', record.id)}>Công bố</Button> : null}{record.status === 'PUBLISHED' ? <Button size="small" onClick={() => run('archivePlan', record.id)}>Lưu trữ</Button> : null}{record.status === 'DRAFT' ? <Popconfirm title="Xóa gói nháp?" description="Thao tác này không thể hoàn tác." okText="Xóa" cancelText="Giữ lại" onConfirm={() => run('deletePlan', record.id)}><Button danger size="small">Xóa</Button></Popconfirm> : null}</div> },
         ]} /> : null}
       </section>
-      <Modal open={productOpen} title={editingProduct ? 'Sửa sản phẩm' : 'Tạo sản phẩm'} okText="Lưu" cancelText="Hủy" confirmLoading={mutations.createProduct.isPending || mutations.updateProduct.isPending} onCancel={closeProduct} onOk={() => void productForm.submit()}>
+      <Modal open={productOpen} title={editingProduct ? 'Sửa sản phẩm' : 'Tạo sản phẩm'} okText="Lưu" cancelText="Hủy" confirmLoading={mutations.createProduct.isPending || mutations.updateProduct.isPending} onCancel={() => closeProduct()} onOk={() => void productForm.submit()}>
         <Form form={productForm} layout="vertical" onFinish={submitProduct}>
           <Form.Item label="Mã sản phẩm" name="code" rules={[{ required: true, message: 'Vui lòng nhập mã sản phẩm.' }]}><Input disabled={Boolean(editingProduct)} /></Form.Item>
           <Form.Item label="Tên sản phẩm" name="name" rules={[{ required: true, message: 'Vui lòng nhập tên sản phẩm.' }]}><Input /></Form.Item>
           <Form.Item label="Mô tả" name="description"><Input.TextArea /></Form.Item>
         </Form>
       </Modal>
-      <Modal open={planOpen} title={editingPlan ? 'Sửa gói' : 'Tạo gói'} okText="Lưu" cancelText="Hủy" confirmLoading={mutations.createPlan.isPending || mutations.updatePlan.isPending} onCancel={closePlan} onOk={() => void planForm.submit()}>
+      <Modal open={planOpen} title={editingPlan ? 'Sửa gói' : 'Tạo gói'} okText="Lưu" cancelText="Hủy" confirmLoading={mutations.createPlan.isPending || mutations.updatePlan.isPending} onCancel={() => closePlan()} onOk={() => void planForm.submit()}>
         <Form form={planForm} layout="vertical" onFinish={submitPlan}>
           <Form.Item label="Sản phẩm" name="productId" rules={[{ required: true, message: 'Vui lòng chọn sản phẩm.' }]}><Select disabled={Boolean(editingPlan)} options={(products.data ?? []).filter((product) => product.status !== 'ARCHIVED').map((product) => ({ value: product.id, label: `${product.name} (${product.code})` }))} /></Form.Item>
           <div className="form-grid"><Form.Item label="Mã gói" name="code" rules={[{ required: true, message: 'Vui lòng nhập mã gói.' }]}><Input disabled={Boolean(editingPlan)} /></Form.Item><Form.Item label="Tên gói" name="name" rules={[{ required: true, message: 'Vui lòng nhập tên gói.' }]}><Input /></Form.Item></div>

@@ -15,7 +15,12 @@ export class AssistanceSupportService {
     this.requireCustomer(actor);
     if ((dto.contextType ?? 'GENERAL') === 'GENERAL' && dto.contextId) throw new ConflictException({ code: 'INVALID_CONVERSATION_CONTEXT' });
     if ((dto.contextType ?? 'GENERAL') !== 'GENERAL' && !dto.contextId) throw new ConflictException({ code: 'INVALID_CONVERSATION_CONTEXT' });
-    return this.repository.createConversation(actor.sub, dto);
+    try {
+      return await this.repository.createConversation(actor.sub, dto);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'CONVERSATION_CONTEXT_NOT_FOUND') throw new NotFoundException({ code: 'CONVERSATION_CONTEXT_NOT_FOUND' });
+      throw error;
+    }
   }
 
   list(actor: AuthPrincipal) {
@@ -34,10 +39,10 @@ export class AssistanceSupportService {
     return conversation;
   }
 
-  async requestSupport(actor: AuthPrincipal, conversationId: string) {
+  async requestSupport(actor: AuthPrincipal, conversationId: string, reason: string) {
     this.requireCustomer(actor);
     try {
-      return await this.repository.requestSupport(actor.sub, conversationId);
+      return await this.repository.requestSupport(actor.sub, conversationId, reason);
     } catch (error) {
       this.translate(error);
     }
@@ -47,6 +52,15 @@ export class AssistanceSupportService {
     if (actor.role !== 'SUPPORT_STAFF') throw new ForbiddenException();
     try {
       return await this.repository.claimConversation(actor.sub, conversationId);
+    } catch (error) {
+      this.translate(error);
+    }
+  }
+
+  async release(actor: AuthPrincipal, conversationId: string) {
+    if (actor.role !== 'SUPPORT_STAFF') throw new ForbiddenException();
+    try {
+      return await this.repository.releaseConversation(actor.sub, conversationId);
     } catch (error) {
       this.translate(error);
     }
@@ -71,6 +85,13 @@ export class AssistanceSupportService {
     return messages;
   }
 
+  async listQueuePreviewMessages(actor: AuthPrincipal, conversationId: string) {
+    if (actor.role !== 'SUPPORT_STAFF' && actor.role !== 'SYSTEM_ADMIN') throw new ForbiddenException();
+    const messages = await this.repository.listQueuePreviewMessages(actor, conversationId);
+    if (!messages) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND' });
+    return messages;
+  }
+
   async close(actor: AuthPrincipal, conversationId: string) {
     try {
       return await this.repository.closeConversation(actor, conversationId);
@@ -79,12 +100,12 @@ export class AssistanceSupportService {
     }
   }
 
-  async askAi(actor: AuthPrincipal, conversationId: string, question: string, clientMessageId?: string) {
+  async askAi(actor: AuthPrincipal, conversationId: string, question: string, clientMessageId: string) {
     this.requireCustomer(actor);
     const conversation = await this.repository.findConversationForActor(actor, conversationId);
     if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND' });
     if (!this.ai) throw new ConflictException({ code: 'AI_ADAPTER_UNAVAILABLE' });
-    return this.ai.answer({ conversationId, customerUserId: actor.sub, question, ...(clientMessageId ? { clientMessageId } : {}) });
+    return this.ai.answer({ conversationId, customerUserId: actor.sub, question, clientMessageId });
   }
 
   private requireCustomer(actor: AuthPrincipal) {

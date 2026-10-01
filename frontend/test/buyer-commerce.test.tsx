@@ -18,9 +18,11 @@ describe('Customer commerce', () => {
       }
       return original(input, init);
     });
-    try {
+try {
       render(<App initialEntries={['/buyer/checkout']} />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Thử tạo lại đơn hàng' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Tạo đơn hàng' }));
+      await screen.findByText(/Không thể tạo đơn hàng/i);
+      fireEvent.click(screen.getByRole('button', { name: 'Tạo đơn hàng' }));
       await screen.findByRole('heading', { name: 'Điều khoản cấp phép' });
       expect(keys).toHaveLength(2);
       expect(keys[0]).toBeTruthy();
@@ -48,22 +50,26 @@ describe('Customer commerce', () => {
     expect(screen.getByRole('button', { name: 'Bản quyền của tôi' })).toBeTruthy();
   });
 
-  it('creates the server snapshot before asking for Terms acceptance', async () => {
+  it('creates the server snapshot only after explicit intent and asks for Terms acceptance', async () => {
+    vi.mocked(fetch).mockClear();
     render(<App initialEntries={['/buyer/checkout']} />);
 
-    expect(
-      await screen.findByRole('heading', { name: 'Điều khoản cấp phép' }),
-    ).toBeTruthy();
-    expect(screen.getByText(/Đơn hàng và bản quyền sẽ được lưu trong tài khoản EmuKey/)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Xác nhận ý định mua' })).toBeTruthy();
+    expect(screen.getByText(/mở trang này chưa tạo đơn/i)).toBeTruthy();
+    expect(vi.mocked(fetch).mock.calls.filter(([input, init]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return url.endsWith('/orders') && init?.method === 'POST';
+    })).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo đơn hàng' }));
+    expect(await screen.findByRole('heading', { name: 'Điều khoản cấp phép' })).toBeTruthy();
     expect(screen.getByText(/platform Service Terms/i)).toBeTruthy();
-    expect(
-      screen.getByRole('checkbox', { name: /đồng ý với điều khoản cấp phép/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /đồng ý với điều khoản cấp phép/i })).toBeTruthy();
   });
 
-  it('creates an order after explicit Terms acceptance and opens payment', async () => {
+  it('creates an order after explicit intent and Terms acceptance and opens payment', async () => {
     render(<App initialEntries={['/buyer/checkout']} />);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Tạo đơn hàng' }));
     fireEvent.click(
       await screen.findByRole('checkbox', {
         name: /đồng ý với điều khoản cấp phép/i,
@@ -87,6 +93,8 @@ describe('Customer commerce', () => {
       />,
     );
 
+    expect(await screen.findByRole('button', { name: 'Tạo yêu cầu thanh toán' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo yêu cầu thanh toán' }));
     const form = await screen.findByTestId('sepay-checkout-form');
     expect(form.getAttribute('action')).toBe(
       'https://pay-sandbox.sepay.vn/v1/checkout/init',
@@ -107,6 +115,8 @@ describe('Customer commerce', () => {
     expect(screen.queryByText('Đang xác nhận thanh toán')).toBeNull();
     expect(vi.mocked(fetch).mock.calls.filter(([input]) => (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith('/checkout'))).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Thanh toán lại' }));
+    expect(await screen.findByRole('button', { name: 'Tạo yêu cầu thanh toán' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo yêu cầu thanh toán' }));
     expect(await screen.findByTestId('sepay-checkout-form')).toBeTruthy();
   });
 

@@ -12,12 +12,12 @@ try {
     SELECT table_name, column_name
     FROM information_schema.columns
     WHERE table_schema = 'public'
-      AND ((table_name = 'orders' AND column_name IN ('service_terms_accepted_at', 'terms_version_snapshot', 'terms_hash_snapshot', 'terms_accepted_at'))
+      AND ((table_name = 'orders' AND column_name IN ('service_terms_accepted_at', 'service_terms_version_snapshot', 'service_terms_hash_snapshot', 'service_terms_content_snapshot', 'terms_version_snapshot', 'terms_hash_snapshot', 'terms_accepted_at'))
         OR (table_name = 'plans' AND column_name IN ('terms_version', 'terms_hash')))
     ORDER BY table_name, column_name
   `);
   const columns = Object.fromEntries(result.rows.map((row) => [`${row.table_name}.${row.column_name}`, true]));
-  const expectedPresent = ['orders.service_terms_accepted_at'];
+  const expectedPresent = ['orders.service_terms_accepted_at', 'orders.service_terms_version_snapshot', 'orders.service_terms_hash_snapshot', 'orders.service_terms_content_snapshot'];
   const expectedAbsent = ['plans.terms_version', 'plans.terms_hash', 'orders.terms_version_snapshot', 'orders.terms_hash_snapshot', 'orders.terms_accepted_at'];
   const failures = [
     ...expectedPresent.filter((name) => !columns[name]).map((name) => `${name}:missing`),

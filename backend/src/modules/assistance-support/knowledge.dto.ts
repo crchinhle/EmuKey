@@ -19,6 +19,13 @@ export class KnowledgeDocumentDto {
   @ApiProperty() isCurrent!: boolean;
 }
 
+export class PublishKnowledgeDocumentDto {
+  @ApiPropertyOptional({ minimum: 1 }) @IsOptional() @IsInt() @Min(1) expectedCurrentVersion?: number;
+}
+
+export class KnowledgeDocumentDetailDto extends KnowledgeDocumentDto {
+  @ApiProperty({ type: String, isArray: true }) chunks!: string[];
+}
 export class KnowledgeQueryDto {
   @ApiProperty({ minLength: 1, maxLength: 4_000 })
   @IsString()

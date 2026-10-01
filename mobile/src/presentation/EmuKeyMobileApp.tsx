@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Button,
+  Linking,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +22,8 @@ import { useFonts } from 'expo-font';
 
 import {
   acceptServiceTerms,
+  forgotPassword,
+  closeConversation,
   comparePlans,
   createCheckout,
   createOrder,
@@ -27,6 +31,7 @@ import {
   getCommandStatus,
   getOrderTerms,
   getProfile,
+  getRenewalPreview,
   listConversationMessages,
   listConversations,
   listDevices,
@@ -67,6 +72,7 @@ import {
   type MobileConversationMessage,
   updateProfile,
 } from '../infrastructure/api/client';
+import { MobileApiError } from '../infrastructure/api/client';
 import { createOrLoadDeviceIdentity } from '../infrastructure/device-identity';
 
 type RootStackParamList = {
@@ -95,6 +101,10 @@ export function LoginScreen({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
+  const [forgotPending, setForgotPending] = useState(false);
   const submit = async () => {
     setError(null);
     try {
@@ -103,6 +113,18 @@ export function LoginScreen({
       setError('Không thể đăng nhập. Vui lòng kiểm tra tài khoản và mật khẩu.');
     }
   };
+  if (forgotMode) return (
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text accessibilityRole="header" style={styles.brand}>Emukey</Text>
+      <Text accessibilityRole="header" style={styles.heading}>Quên mật khẩu</Text>
+      <Text style={styles.subtitle}>Nhập email tài khoản. Nếu email hợp lệ, hướng dẫn đặt lại mật khẩu sẽ được gửi qua email.</Text>
+      <TextInput accessibilityLabel="Email" autoCapitalize="none" onChangeText={setForgotEmail} style={styles.input} value={forgotEmail} />
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      {forgotSent ? <Text accessibilityLiveRegion="polite" style={styles.success}>Nếu email hợp lệ, hướng dẫn đặt lại mật khẩu đã được gửi.</Text> : null}
+      <Button disabled={!forgotEmail.trim() || forgotPending} onPress={() => { void (async () => { setForgotPending(true); setError(null); try { await forgotPassword(forgotEmail); setForgotSent(true); } catch { setError('Không thể gửi yêu cầu. Vui lòng thử lại sau.'); } finally { setForgotPending(false); } })(); }} title={forgotPending ? 'Đang gửi...' : 'Gửi hướng dẫn'} />
+      <Button onPress={() => { setForgotMode(false); setForgotSent(false); setError(null); }} title="Quay lại đăng nhập" />
+    </ScrollView>
+  );
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text accessibilityRole="header" style={styles.brand}>Emukey</Text>
@@ -111,19 +133,34 @@ export function LoginScreen({
       <TextInput accessibilityLabel="Mật khẩu" onChangeText={setPassword} secureTextEntry style={styles.input} value={password} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <Button disabled={!email.trim() || password.length < 8} onPress={() => void submit()} title="Đăng nhập" />
+      <Button onPress={() => { setForgotMode(true); setError(null); }} title="Quên mật khẩu" />
       <Button onPress={onVerify} title="Xác minh License công khai" />
     </ScrollView>
   );
 }
 
 function CustomerNavigation({ navigation }: { readonly navigation: Pick<NativeStackNavigationProp<RootStackParamList>, 'navigate'> }) {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      void listNotifications()
+        .then((items) => {
+          if (active) setUnread(items.filter((item) => !item.isRead).length);
+        })
+        .catch(() => undefined);
+    };
+    void load();
+    const timer = setInterval(load, 15_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
   return (
     <View style={styles.actions}>
       <Button onPress={() => navigation.navigate('Catalog')} title="Sản phẩm" />
       <Button onPress={() => navigation.navigate('Orders')} title="Đơn hàng" />
       <Button onPress={() => navigation.navigate('Licenses')} title="License" />
       <Button onPress={() => navigation.navigate('Profile')} title="Hồ sơ" />
-      <Button onPress={() => navigation.navigate('Notifications')} title="Thông báo" />
+      <Button onPress={() => navigation.navigate('Notifications')} title={unread > 0 ? `Thông báo (${unread})` : 'Thông báo'} />
       <Button onPress={() => navigation.navigate('Assistance')} title="Hỗ trợ" />
     </View>
   );
@@ -133,81 +170,100 @@ export function AssistanceScreen() {
   const [conversations, setConversations] = useState<MobileConversation[]>([]);
   const [selected, setSelected] = useState<MobileConversation | null>(null);
   const [messages, setMessages] = useState<MobileConversationMessage[]>([]);
-  const [draft, setDraft] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [aiAnswer, setAiAnswer] = useState<{ answer: string; grounded: boolean; citedSourceIds: string[] } | null>(null);
+  const requestGeneration = useRef(0);
+  const outgoingIds = useRef<Record<string, string>>({});
+  const draft = selected ? drafts[selected.id] ?? '' : '';
+  const setDraft = (value: string) => { if (selected) setDrafts((current) => ({ ...current, [selected.id]: value })); };
 
+  const loadMessages = async (conversationId: string, generation = requestGeneration.current) => {
+    const items = await listConversationMessages(conversationId);
+    if (generation === requestGeneration.current) setMessages(items);
+  };
   useEffect(() => {
+    let active = true;
     void listConversations().then((items) => {
+      if (!active) return;
       setConversations(items);
       if (items[0]) {
         setSelected(items[0]);
-        return listConversationMessages(items[0].id).then(setMessages);
+        requestGeneration.current += 1;
+        return listConversationMessages(items[0].id).then((loaded) => { if (active) setMessages(loaded); });
       }
       return undefined;
-    }).catch(() => setError('Không thể tải hội thoại hỗ trợ.'));
+    }).catch(() => { if (active) setError('Không thể tải hội thoại hỗ trợ.'); });
+    return () => { active = false; };
   }, []);
+  useEffect(() => {
+    if (!selected) return;
+    const conversationId = selected.id;
+    const timer = setInterval(() => { void listConversationMessages(conversationId).then((items) => { if (selected?.id === conversationId) setMessages(items); }).catch(() => undefined); }, 5_000);
+    return () => clearInterval(timer);
+  }, [selected]);
 
   const selectConversation = async (conversation: MobileConversation) => {
+    const generation = ++requestGeneration.current;
     setSelected(conversation);
     setAiAnswer(null);
-    try { setMessages(await listConversationMessages(conversation.id)); }
-    catch { setError('Không thể tải nội dung hội thoại.'); }
+    try { await loadMessages(conversation.id, generation); }
+    catch { if (generation === requestGeneration.current) setError('Không thể tải nội dung hội thoại.'); }
   };
-
   const send = async () => {
     const content = draft.trim();
-    if (!content || !selected) return;
+    const conversation = selected;
+    if (!content || !conversation || conversation.status === 'CLOSED' || content.length > 8000) return;
+    const clientMessageId = outgoingIds.current[conversation.id] ?? crypto.randomUUID();
+    outgoingIds.current[conversation.id] = clientMessageId;
     try {
-      await appendConversationMessage(selected.id, crypto.randomUUID(), content);
-      setDraft('');
-      setMessages(await listConversationMessages(selected.id));
-    } catch { setError('Không thể gửi tin nhắn.'); }
+      await appendConversationMessage(conversation.id, clientMessageId, content);
+      delete outgoingIds.current[conversation.id];
+      setDrafts((current) => ({ ...current, [conversation.id]: '' }));
+      await loadMessages(conversation.id);
+    } catch { setError('Không thể gửi tin nhắn. Có thể thử lại.'); }
   };
-
   const ask = async () => {
     const question = draft.trim();
-    if (!question || !selected) return;
+    const conversation = selected;
+    if (!question || !conversation || conversation.status === 'CLOSED' || question.length > 4000) return;
+    const clientMessageId = outgoingIds.current[conversation.id] ?? crypto.randomUUID();
+    outgoingIds.current[conversation.id] = clientMessageId;
     try {
-      setAiAnswer(await askConversationAi(selected.id, question));
-      setDraft('');
-      setMessages(await listConversationMessages(selected.id));
-    } catch { setError('Không thể hỏi AI lúc này.'); }
+      const answer = await askConversationAi(conversation.id, question, clientMessageId);
+      delete outgoingIds.current[conversation.id];
+      if (selected?.id === conversation.id) setAiAnswer(answer);
+      setDrafts((current) => ({ ...current, [conversation.id]: '' }));
+      await loadMessages(conversation.id);
+    } catch { setError('Không thể hỏi AI lúc này. Có thể thử lại.'); }
   };
-
+  const close = async () => {
+    if (!selected) return;
+    try {
+      const closed = await closeConversation(selected.id);
+      setSelected(closed);
+      setConversations((items) => items.map((item) => item.id === closed.id ? closed : item));
+    } catch { setError('Không thể đóng hội thoại.'); }
+  };
   const start = async () => {
-    try {
-      const conversation = await createConversation();
-      setConversations((items) => [conversation, ...items]);
-      setSelected(conversation);
-      setMessages([]);
-    } catch { setError('Không thể tạo hội thoại mới.'); }
+    try { const conversation = await createConversation(); setConversations((items) => [conversation, ...items]); setSelected(conversation); setMessages([]); }
+    catch { setError('Không thể tạo hội thoại mới.'); }
   };
-
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text accessibilityRole="header" style={styles.heading}>Hỗ trợ</Text>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <Button onPress={() => void start()} title="Hội thoại mới" />
-      {conversations.map((conversation) => (
-        <Pressable key={conversation.id} onPress={() => void selectConversation(conversation)} style={[styles.card, selected?.id === conversation.id ? styles.selectedCard : null]}>
-          <Text style={styles.cardTitle}>{conversation.title ?? 'Hội thoại hỗ trợ'}</Text>
-          <Text style={styles.muted}>{conversation.status}</Text>
-        </Pressable>
-      ))}
-      {!selected ? <Text>Chưa có hội thoại hỗ trợ.</Text> : (
-        <View style={styles.card}>
-          {messages.map((message) => (
-            <View key={message.id} style={styles.messageRow}>
-              <Text style={styles.muted}>{message.senderType === 'CUSTOMER' ? 'Bạn' : message.senderType === 'AI' ? 'AI' : 'Hỗ trợ'}</Text>
-              <Text>{message.content}</Text>
-            </View>
-          ))}
-          {aiAnswer ? <View style={styles.aiNotice}><Text>{aiAnswer.answer}</Text><Text style={styles.muted}>{aiAnswer.grounded ? `Nguồn: ${aiAnswer.citedSourceIds.join(', ')}` : 'AI từ chối vì không đủ nguồn chính thức.'}</Text></View> : null}
-          <TextInput accessibilityLabel="Tin nhắn hỗ trợ" onChangeText={setDraft} placeholder="Nhập câu hỏi hoặc tin nhắn" style={styles.input} value={draft} />
-          <View style={styles.actions}><Button disabled={!draft.trim()} onPress={() => void send()} title="Gửi tin nhắn" /><Button disabled={!draft.trim()} onPress={() => void ask()} title="Hỏi AI có nguồn" /></View>
-        </View>
-      )}
+      {conversations.map((conversation) => <Pressable accessibilityRole="button" accessibilityState={{ selected: selected?.id === conversation.id }} key={conversation.id} onPress={() => void selectConversation(conversation)} style={[styles.card, selected?.id === conversation.id ? styles.selectedCard : null]}><Text style={styles.cardTitle}>{conversation.title ?? 'Hội thoại hỗ trợ'}</Text><Text style={styles.muted}>{conversation.status}</Text></Pressable>)}
+      {!selected ? <Text>Chưa có hội thoại hỗ trợ.</Text> : <View style={styles.card}>
+        {messages.map((message) => <View key={message.id} style={styles.messageRow}><Text style={styles.muted}>{message.senderType === 'CUSTOMER' ? 'Bạn' : message.senderType === 'AI' ? 'AI' : 'Hỗ trợ'}</Text><Text>{message.content}</Text></View>)}
+        {aiAnswer ? <View style={styles.aiNotice}><Text>{aiAnswer.answer}</Text><Text style={styles.muted}>{aiAnswer.grounded ? `Mã nguồn tham khảo: ${aiAnswer.citedSourceIds.join(', ')}` : 'AI không đủ nguồn chính thức.'}</Text></View> : null}
+        {selected.status === 'CLOSED' ? <><Text style={styles.muted}>Hội thoại đã đóng.</Text><Button onPress={() => void start()} title="Tạo yêu cầu tiếp theo" /></> : <>
+          <TextInput accessibilityLabel="Tin nhắn hỗ trợ" maxLength={8000} onChangeText={setDraft} placeholder="Nhập câu hỏi hoặc tin nhắn" style={styles.input} value={draft} />
+          <Text style={styles.muted}>{draft.length}/8000 ký tự hỗ trợ · Hỏi AI tối đa 4000</Text>
+          <View style={styles.actions}><Button disabled={!draft.trim() || draft.trim().length > 8000} onPress={() => void send()} title="Gửi tin nhắn" /><Button disabled={!draft.trim() || draft.trim().length > 4000} onPress={() => void ask()} title="Hỏi AI có nguồn" /><Button onPress={() => void close()} title="Đã giải quyết" /></View>
+        </>}
+      </View>}
     </ScrollView>
   );
 }
@@ -215,12 +271,15 @@ export function AssistanceScreen() {
 export function NotificationsScreen() {
   const [notifications, setNotifications] = useState<MobileNotification[]>([]);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { void listNotifications().then(setNotifications).catch(() => setError('Không thể tải thông báo.')); }, []);
-  return <ScrollView contentContainerStyle={styles.content}>
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const load = async (refresh = false) => { if (refresh) setRefreshing(true); else setLoading(true); setError(null); try { setNotifications(await listNotifications()); } catch { setError('Không thể tải thông báo.'); } finally { setLoading(false); setRefreshing(false); } };
+  useEffect(() => { void load(); }, []);
+  return <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />} contentContainerStyle={styles.content}>
     <Text accessibilityRole="header" style={styles.heading}>Thông báo</Text>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {notifications.length === 0 && !error ? <Text>Chưa có thông báo.</Text> : null}
-    {notifications.map((notification) => <Pressable key={notification.id} onPress={() => { if (!notification.isRead) void markNotificationRead(notification.id).then(() => setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, isRead: true } : item))); }} style={styles.card}>
+    {!loading && notifications.length === 0 && !error ? <Text>Chưa có thông báo.</Text> : null}
+    {notifications.map((notification) => <Pressable accessibilityRole="button" key={notification.id} onPress={() => { if (!notification.isRead) void markNotificationRead(notification.id).then(() => setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, isRead: true } : item))); }} style={styles.card}>
       <Text style={styles.cardTitle}>{notification.title}</Text>
       <Text>{notification.content}</Text>
       {!notification.isRead ? <Text style={styles.muted}>Chưa đọc</Text> : null}
@@ -232,8 +291,11 @@ export function CatalogScreen({ navigation }: NativeStackScreenProps<RootStackPa
   const [products, setProducts] = useState<MobileProduct[]>([]);
   const [selectedPlanIds, setSelectedPlanIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    void listProducts().then(setProducts).catch(() => setError('Không thể tải danh mục sản phẩm.'));
+    setLoading(true);
+    void listProducts().then(setProducts).catch(() => setError('Không thể tải danh mục sản phẩm.')).finally(() => setLoading(false));
   }, []);
   const toggleComparison = (planId: string) => setSelectedPlanIds((current) =>
     current.includes(planId)
@@ -242,13 +304,20 @@ export function CatalogScreen({ navigation }: NativeStackScreenProps<RootStackPa
         ? [...current, planId]
         : current,
   );
+  const needle = query.trim().toLocaleLowerCase('vi-VN');
+  const visibleProducts = needle
+    ? products.filter((product) => product.name.toLocaleLowerCase('vi-VN').includes(needle) || product.summary.toLocaleLowerCase('vi-VN').includes(needle) || product.plans.some((plan) => plan.name.toLocaleLowerCase('vi-VN').includes(needle)))
+    : products;
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text accessibilityRole="header" style={styles.heading}>Danh mục sản phẩm</Text>
       <Text style={styles.subtitle}>Chọn gói đã công bố hoặc so sánh từ hai đến bốn gói.</Text>
       <CustomerNavigation navigation={navigation} />
+      <TextInput accessibilityLabel="Tìm sản phẩm hoặc gói" onChangeText={setQuery} placeholder="Tìm sản phẩm hoặc gói" style={styles.input} value={query} />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {products.map((product) => (
+      {selectedPlanIds.length >= 4 ? <Text style={styles.muted}>Đã chọn 4/4 gói. Bỏ bớt một gói để chọn gói khác.</Text> : null}
+      {!loading && needle && visibleProducts.length === 0 ? <Text>Không tìm thấy sản phẩm hoặc gói phù hợp.</Text> : null}
+      {visibleProducts.map((product) => (
         <View key={product.slug} style={styles.card}>
           <Text style={styles.cardTitle}>{product.name}</Text>
           <Text style={styles.muted}>{product.summary}</Text>
@@ -269,7 +338,9 @@ export function CatalogScreen({ navigation }: NativeStackScreenProps<RootStackPa
               />
               <Pressable
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: selectedPlanIds.includes(plan.id) }}
+                accessibilityLabel={`${plan.name} - So sánh`}
+                accessibilityState={{ checked: selectedPlanIds.includes(plan.id), disabled: selectedPlanIds.length >= 4 && !selectedPlanIds.includes(plan.id) }}
+                disabled={selectedPlanIds.length >= 4 && !selectedPlanIds.includes(plan.id)}
                 onPress={() => toggleComparison(plan.id)}
                 style={[styles.compareToggle, selectedPlanIds.includes(plan.id) ? styles.compareToggleSelected : null]}
               >
@@ -288,10 +359,14 @@ export function CatalogScreen({ navigation }: NativeStackScreenProps<RootStackPa
   );
 }
 
-export function ComparePlansScreen({ route }: NativeStackScreenProps<RootStackParamList, 'ComparePlans'>) {
+export function ComparePlansScreen({
+  navigation,
+  route,
+}: NativeStackScreenProps<RootStackParamList, 'ComparePlans'>) {
   const [comparison, setComparison] = useState<MobilePlanComparison | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
+    setError(null);
     void comparePlans(route.params.ids).then(setComparison).catch(() => setError('Không thể so sánh các gói đã chọn.'));
   }, [route.params.ids]);
   return (
@@ -308,20 +383,45 @@ export function ComparePlansScreen({ route }: NativeStackScreenProps<RootStackPa
               <Text>{formatComparisonValue(dimension.key, dimension.values[plan.id])}</Text>
             </View>
           ))}
+          <Button onPress={() => navigation.navigate('Checkout', { planId: plan.id, planName: plan.name, priceVnd: comparisonPrice(comparison, plan.id), productName: plan.productName })} title="Mua gói này" />
         </View>
       ))}
     </ScrollView>
   );
 }
 
+function comparisonPrice(comparison: MobilePlanComparison, planId: string): number {
+  const value = comparison.dimensions.find((dimension) => dimension.key === 'priceVnd')?.values[planId];
+  return typeof value === 'number' ? value : 0;
+}
+
+function licenseStatusLabel(status: MobileLicense['status']): string {
+  switch (status) {
+    case 'PENDING_ONCHAIN': return 'Đang chờ blockchain';
+    case 'ACTIVE': return 'Đang hoạt động';
+    case 'SUSPENDED': return 'Tạm ngưng';
+    case 'EXPIRED': return 'Đã hết hạn';
+    case 'REVOKED': return 'Đã thu hồi';
+    default: return status;
+  }
+}
+
+function finalityLabel(finality: string): string {
+  switch (finality) {
+    case 'CHAIN_CONFIRMED': return 'Xác nhận trên chuỗi';
+    case 'PENDING_FINALITY': return 'Chờ finality';
+    case 'UNTRUSTED_REORG': return 'Chưa tin cậy (reorg)';
+    default: return finality;
+  }
+}
+
 function formatComparisonValue(key: string, value: unknown): string {
   if (key === 'priceVnd' && typeof value === 'number') return `${value.toLocaleString('vi-VN')} ₫`;
   if (key === 'durationMonths' && typeof value === 'number') return `${value} tháng`;
   if (key === 'maxActiveDevices' && typeof value === 'number') return `${value} thiết bị`;
-  if (value && typeof value === 'object') return Object.keys(value).join(', ') || 'Không có';
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
+  if (typeof value === 'boolean') return value ? 'Có' : 'Không';
+  if (value && typeof value === 'object') return Object.entries(value).map(([name, item]) => `${name}: ${typeof item === 'boolean' ? (item ? 'Có' : 'Không') : String(item)}`).join(', ') || 'Không có';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
   return '—';
 }
 
@@ -376,9 +476,9 @@ export function ProfileScreen({
 function OrdersScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Orders'>) {
   const [orders, setOrders] = useState<MobileOrderSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    void listOrders().then(setOrders).catch(() => setError('Không thể tải danh sách đơn hàng.'));
-  }, []);
+  const [loading, setLoading] = useState(true);
+  const load = async () => { setError(null); setLoading(true); try { setOrders(await listOrders()); } catch { setError('Không thể tải danh sách đơn hàng.'); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, []);
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text accessibilityRole="header" style={styles.brand}>Emukey</Text>
@@ -386,7 +486,7 @@ function OrdersScreen({ navigation }: NativeStackScreenProps<RootStackParamList,
       <CustomerNavigation navigation={navigation} />
       <Button onPress={() => navigation.navigate('VerifyLicense')} title="Xác minh License công khai" />
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {orders.length === 0 ? <Text>Chưa có đơn hàng.</Text> : null}
+      {!loading && orders.length === 0 && !error ? <Text>Chưa có đơn hàng.</Text> : null}
       {orders.map((order) => (
         <Pressable key={order.id} onPress={() => navigation.navigate('OrderDetail', { id: order.id })} style={styles.card}>
           <Text style={styles.cardTitle}>{order.orderNumber}</Text>
@@ -401,16 +501,29 @@ function OrdersScreen({ navigation }: NativeStackScreenProps<RootStackParamList,
 export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Checkout'>) {
   const [order, setOrder] = useState<MobileOrderDetail | null>(null);
   const [terms, setTerms] = useState<string | null>(null);
+  const [termsState, setTermsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadTerms = async (orderId: string) => {
+    setTermsState('loading');
+    try {
+      const loaded = await getOrderTerms(orderId);
+      setTerms(loaded.content);
+      setAccepted(false);
+      setTermsState('ready');
+    } catch {
+      setTermsState('error');
+      setError('Không thể tải điều khoản. Vui lòng thử lại.');
+    }
+  };
   const startOrder = async () => {
     setError(null);
     try {
       const created = await createOrder({ planId: route.params.planId });
       setOrder(created);
-      setTerms((await getOrderTerms(created.id)).content);
+      await loadTerms(created.id);
     } catch {
-      setError('Không thể tạo đơn hàng hoặc tải điều khoản.');
+      setError('Không thể tạo đơn hàng.');
     }
   };
   const continueToPayment = async () => {
@@ -427,25 +540,39 @@ export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<Roo
     <ScrollView contentContainerStyle={styles.content}>
       <Text accessibilityRole="header" style={styles.heading}>Hoàn tất mua bản quyền</Text>
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>{route.params.productName}</Text>
-        <Text>{route.params.planName}</Text>
-        <Text style={styles.price}>{route.params.priceVnd.toLocaleString('vi-VN')} ₫</Text>
+        <Text style={styles.cardTitle}>{order ? order.productNameSnapshot : route.params.productName}</Text>
+        <Text>{order ? order.planNameSnapshot : route.params.planName}</Text>
+        <Text style={styles.price}>{(order ? order.priceVndSnapshot : route.params.priceVnd).toLocaleString('vi-VN')} ₫</Text>
+        {order && order.priceVndSnapshot !== route.params.priceVnd ? <Text style={styles.error}>Giá server đã thay đổi so với danh mục: {order.priceVndSnapshot.toLocaleString('vi-VN')} ₫.</Text> : null}
       </View>
       {!order ? (
         <Button onPress={() => void startOrder()} title="Tạo đơn hàng" />
       ) : (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Điều khoản cấp phép</Text>
-          <Text style={styles.terms}>{terms ?? 'Đang tải điều khoản...'}</Text>
-          <Pressable
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: accepted }}
-            onPress={() => setAccepted((value) => !value)}
-            style={[styles.acceptance, accepted ? styles.acceptanceSelected : null]}
-          >
-            <Text>{accepted ? '✓ ' : ''}Tôi đã đọc và đồng ý với điều khoản cấp phép</Text>
-          </Pressable>
-          <Button disabled={!accepted} onPress={() => void continueToPayment()} title="Tiếp tục thanh toán" />
+          {termsState === 'error' ? (
+            <>
+              <Text style={styles.terms}>Chưa tải được điều khoản cấp phép.</Text>
+              <Button disabled title="Tiếp tục thanh toán" />
+              <Button onPress={() => void loadTerms(order.id)} title="Tải lại điều khoản" />
+            </>
+          ) : (
+            <>
+              <Text style={styles.terms}>{terms ?? 'Đang tải điều khoản...'}</Text>
+              {termsState === 'ready' ? (
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityLabel="Tôi đã đọc và đồng ý với điều khoản cấp phép"
+                  accessibilityState={{ checked: accepted }}
+                  onPress={() => setAccepted((value) => !value)}
+                  style={[styles.acceptance, accepted ? styles.acceptanceSelected : null]}
+                >
+                  <Text>{accepted ? '✓ ' : ''}Tôi đã đọc và đồng ý với điều khoản cấp phép</Text>
+                </Pressable>
+              ) : null}
+              <Button disabled={termsState !== 'ready' || !accepted} onPress={() => void continueToPayment()} title="Tiếp tục thanh toán" />
+            </>
+          )}
         </View>
       )}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -461,6 +588,17 @@ function htmlAttribute(value: string): string {
     .replaceAll('>', '&gt;');
 }
 
+function mobileOrderStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    WAITING_SERVICE_TERMS_ACCEPTANCE: 'Chờ đồng ý điều khoản',
+    WAITING_PAYMENT: 'Chờ thanh toán',
+    PAYMENT_ACCEPTED: 'Đã nhận thanh toán',
+    CANCELLED: 'Đã hủy',
+    EXPIRED: 'Đã hết hạn',
+  };
+  return labels[status] ?? 'Đang xử lý';
+}
+
 function checkoutDocument(checkout: MobileCheckoutSession): string {
   const fields = Object.entries(checkout.checkoutFields)
     .map(([name, value]) => `<input type="hidden" name="${htmlAttribute(name)}" value="${htmlAttribute(value)}">`)
@@ -468,16 +606,31 @@ function checkoutDocument(checkout: MobileCheckoutSession): string {
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:sans-serif;background:#f3f0e9;padding:24px"><p>Đang chuyển đến cổng thanh toán SePay…</p><form id="checkout" method="post" action="${htmlAttribute(checkout.checkoutUrl)}">${fields}</form><script>document.getElementById('checkout').submit()</script></body></html>`;
 }
 
-export function PaymentScreen({ route }: NativeStackScreenProps<RootStackParamList, 'Payment'>) {
+export function PaymentScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Payment'>) {
   const [order, setOrder] = useState<MobileOrderDetail | null>(null);
   const [checkout, setCheckout] = useState<MobileCheckoutSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const handlePaymentReturn = (url: string) => {
+    if (!url.startsWith('emukey://payment/')) return false;
+    setCheckout(null);
+    setError('Đã quay lại từ cổng thanh toán. Hệ thống đang kiểm tra trạng thái đơn từ backend.');
+    void getOrder(route.params.orderId)
+      .then(setOrder)
+      .catch(() => setError('Không thể kiểm tra trạng thái thanh toán.'));
+    return true;
+  };
+  useEffect(() => {
+    const handleDeepLink = ({ url }: { url: string }) => { handlePaymentReturn(url); };
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+    void Linking.getInitialURL().then((url) => { if (url) handlePaymentReturn(url); }).catch(() => undefined);
+    return () => subscription.remove();
+  }, [route.params.orderId]);
   useEffect(() => {
     let active = true;
     const refresh = () => void getOrder(route.params.orderId)
       .then((value) => { if (active) setOrder(value); })
       .catch(() => { if (active) setError('Không thể cập nhật trạng thái đơn hàng.'); });
-    refresh();
+    void refresh();
     const timer = setInterval(refresh, 5_000);
     return () => { active = false; clearInterval(timer); };
   }, [route.params.orderId]);
@@ -496,7 +649,13 @@ export function PaymentScreen({ route }: NativeStackScreenProps<RootStackParamLi
       <View style={styles.webViewContainer}>
         <WebView
           javaScriptEnabled
-          onShouldStartLoadWithRequest={(request) => request.url === 'about:blank' || request.url.startsWith('https://')}
+          onShouldStartLoadWithRequest={(request) => {
+            if (request.url.startsWith('emukey://payment/')) {
+              handlePaymentReturn(request.url);
+              return false;
+            }
+            return request.url === 'about:blank' || request.url.startsWith('https://');
+          }}
           originWhitelist={['*']}
           source={{ html: checkoutDocument(checkout) }}
           style={styles.webView}
@@ -510,14 +669,17 @@ export function PaymentScreen({ route }: NativeStackScreenProps<RootStackParamLi
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{order?.orderNumber ?? 'Đang tải đơn hàng...'}</Text>
         <Text>{order?.productNameSnapshot}</Text>
-        <Text>{order?.orderStatus}</Text>
+          <Text>{order ? mobileOrderStatusLabel(order.orderStatus) : 'Đang tải trạng thái'}</Text>
         {order ? <Text style={styles.price}>{order.priceVndSnapshot.toLocaleString('vi-VN')} ₫</Text> : null}
       </View>
       {order?.orderStatus === 'WAITING_PAYMENT' ? (
         <Button onPress={() => void openCheckout()} title="Thanh toán trên SePay" />
       ) : null}
       {order?.orderStatus === 'PAYMENT_ACCEPTED' ? (
-        <Text accessibilityRole="alert" style={styles.success}>Thanh toán đã hoàn tất. License đang được xử lý trên blockchain.</Text>
+        <>
+          <Text accessibilityRole="alert" style={styles.success}>Thanh toán đã hoàn tất. License đang được xử lý trên blockchain.</Text>
+          <Button onPress={() => navigation.navigate('Licenses')} title="Xem license của tôi" />
+        </>
       ) : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </ScrollView>
@@ -537,9 +699,9 @@ export function LicensesScreen({
   const [message, setMessage] = useState<string | null>(null);
   const [commandId, setCommandId] = useState<string | null>(null);
   const [entitlementToken, setEntitlementToken] = useState<string | null>(null);
-  useEffect(() => {
-    void listLicenses().then(setLicenses).catch(() => setError('Không thể tải danh sách License.'));
-  }, []);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadLicenses = async (refresh = false) => { if (refresh) setRefreshing(true); setError(null); try { setLicenses(await listLicenses()); } catch { setError('Không thể tải danh sách License.'); } finally { setRefreshing(false); } };
+  useEffect(() => { void loadLicenses(); }, []);
   const retrieve = async (license: MobileLicense) => {
     try {
       const result = await retrieveActivationKey(license.id);
@@ -568,6 +730,8 @@ export function LicensesScreen({
     return () => { active = false; };
   }, [licenses]);
   const activate = async (license: MobileLicense) => {
+    const key = activationKey?.licenseId === license.id ? activationKey.key : null;
+    if (!key) { setError('Hãy nhận activation key trước khi kích hoạt thiết bị.'); return; }
     setMessage(null);
     setError(null);
     try {
@@ -575,7 +739,7 @@ export function LicensesScreen({
       const challenge = await createActivationChallenge({ deviceRef: identity.deviceRef, licenseId: license.id, purpose: 'ACTIVATE_DEVICE' });
       const proof = identity.signMessage(challenge.challenge);
       const command = await activateDevice({
-        activationKey: activationKey?.licenseId === license.id ? activationKey.key : '',
+        activationKey: key,
         challenge: challenge.challenge,
         devicePublicKey: identity.address,
         deviceRef: identity.deviceRef,
@@ -584,8 +748,14 @@ export function LicensesScreen({
       });
       setMessage(`Activation ${command.status}: ${command.commandId}`);
       setCommandId(command.commandId);
-    } catch {
-      setError('Không thể kích hoạt thiết bị. Kiểm tra activation key, quota và trạng thái on-chain.');
+    } catch (cause) {
+      if (cause instanceof MobileApiError && [409, 422].includes(cause.status)) {
+        setError('Thiết bị đã vượt giới hạn số lượng hoặc trùng thiết bị. Kiểm tra lại danh sách thiết bị.');
+      } else if (cause instanceof MobileApiError && (cause.status === 401 || cause.status === 403 || cause.status === 400)) {
+        setError(cause.message || 'Activation key hoặc chữ ký thiết bị không hợp lệ.');
+      } else {
+        setError('Không thể kích hoạt thiết bị. Kiểm tra activation key, quota và trạng thái on-chain.');
+      }
     }
   };
   const revoke = async (licenseId: string, device: MobileDevice) => {
@@ -640,10 +810,14 @@ export function LicensesScreen({
     if (!commandId) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = [2_000, 5_000, 10_000, 15_000];
+    let attempt = 0;
     const poll = async () => {
       try {
         const command = await getCommandStatus(commandId);
         if (!active) return;
+        attempt = 0;
+        setError(null);
         const transactionHash = typeof command.transactionHash === 'string' ? command.transactionHash : null;
         setMessage(`Command ${command.status}: ${command.commandId}${transactionHash ? ` · ${transactionHash}` : ''}`);
         if (command.status === 'CONFIRMED') {
@@ -660,9 +834,9 @@ export function LicensesScreen({
         }
         if (['DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'].includes(command.status)) return;
       } catch {
-        if (active) setError('Tạm thời không thể đọc trạng thái blockchain command. Ứng dụng sẽ thử lại.');
+        if (active) { setError('Tạm thời không thể đọc trạng thái blockchain command. Ứng dụng sẽ thử lại.'); attempt = Math.min(attempt + 1, schedule.length - 1); }
       }
-      if (active) timer = setTimeout(() => void poll(), 2_000);
+      if (active) timer = setTimeout(() => void poll(), schedule[attempt] ?? 15_000);
     };
     void poll();
     return () => {
@@ -671,7 +845,10 @@ export function LicensesScreen({
     };
   }, [commandId]);
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadLicenses(true)} />}
+    >
       <Text accessibilityRole="header" style={styles.heading}>License của tôi</Text>
       {navigation ? <CustomerNavigation navigation={navigation} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
@@ -681,7 +858,7 @@ export function LicensesScreen({
         <View key={license.id} style={styles.card}>
           <Text style={styles.cardTitle}>{license.productName}</Text>
           <Text>{license.publicLicenseId}</Text>
-          <Text>{license.status} · {license.finality} ({license.confirmationCount})</Text>
+          <Text>{licenseStatusLabel(license.status)} · {finalityLabel(license.finality)} ({license.confirmationCount})</Text>
            {activationKey?.licenseId === license.id ? (
             <Text selectable style={styles.activationKey}>{activationKey.key}</Text>
           ) : (
@@ -721,27 +898,24 @@ export function LicensesScreen({
 export function RenewalScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Renewal'>) {
   const [sourceOrder, setSourceOrder] = useState<MobileOrderDetail | null>(null);
   const [renewalOrder, setRenewalOrder] = useState<MobileOrderDetail | null>(null);
+  const [preview, setPreview] = useState<import('../infrastructure/api/client').MobileRenewalPreview | null>(null);
   const [terms, setTerms] = useState<string | null>(null);
-  const [activationKey, setActivationKey] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    void getOrder(route.params.originOrderId)
-      .then(setSourceOrder)
-      .catch(() => setError('Không thể tải gói hiện tại của License.'));
-  }, [route.params.originOrderId]);
+    void Promise.all([getOrder(route.params.originOrderId), getRenewalPreview(route.params.licenseId)])
+      .then(([orderValue, previewValue]) => { setSourceOrder(orderValue); setPreview(previewValue); })
+      .catch(() => setError('Không thể tải thông tin gia hạn.'));
+  }, [route.params.originOrderId, route.params.licenseId]);
   const startRenewal = async () => {
-    if (!sourceOrder || !activationKey.trim()) return;
+    if (!preview?.canRenew || !sourceOrder) return;
     setError(null);
     try {
-      const created = await createOrder(
-        { planId: sourceOrder.planId, targetLicenseId: route.params.licenseId },
-        activationKey.trim(),
-      );
+      const created = preview.pendingOrder ?? await createOrder({ planId: preview.planId, targetLicenseId: route.params.licenseId });
       setRenewalOrder(created);
       setTerms((await getOrderTerms(created.id)).content);
     } catch {
-      setError('Activation key không hợp lệ hoặc không thể tạo đơn gia hạn.');
+      setError('Không thể tạo hoặc tiếp tục đơn gia hạn.');
     }
   };
   const continueToPayment = async () => {
@@ -758,22 +932,13 @@ export function RenewalScreen({ navigation, route }: NativeStackScreenProps<Root
       <Text accessibilityRole="header" style={styles.heading}>Gia hạn License</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{route.params.productName}</Text>
-        <Text>{sourceOrder?.planNameSnapshot ?? 'Đang tải gói hiện tại...'}</Text>
-        {sourceOrder ? <Text style={styles.price}>{sourceOrder.priceVndSnapshot.toLocaleString('vi-VN')} ₫</Text> : null}
+        <Text>{preview?.planName ?? sourceOrder?.planNameSnapshot ?? 'Đang tải gói hiện tại...'}</Text>
+        {preview ? <Text style={styles.price}>{preview.priceVnd.toLocaleString('vi-VN')} ₫</Text> : null}
+        {preview ? <Text>Hạn hiện tại: {new Date(preview.currentExpiresAt).toLocaleDateString('vi-VN')} · dự kiến: {new Date(preview.estimatedExpiresAt).toLocaleDateString('vi-VN')}</Text> : null}
+        {preview && !preview.canRenew ? <Text style={styles.error}>Gói này hiện chưa thể gia hạn.</Text> : null}
       </View>
       {!renewalOrder ? (
-        <>
-          <TextInput
-            accessibilityLabel="Activation key hiện tại"
-            autoCapitalize="none"
-            onChangeText={setActivationKey}
-            placeholder="Activation key hiện tại"
-            secureTextEntry
-            style={styles.input}
-            value={activationKey}
-          />
-          <Button disabled={!sourceOrder || !activationKey.trim()} onPress={() => void startRenewal()} title="Tạo đơn gia hạn" />
-        </>
+        <Button disabled={!preview?.canRenew} onPress={() => void startRenewal()} title={preview?.pendingOrder ? 'Tiếp tục đơn gia hạn' : 'Tạo đơn gia hạn'} />
       ) : (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Điều khoản gia hạn</Text>
@@ -822,7 +987,7 @@ function OrderDetailScreen({ route }: NativeStackScreenProps<RootStackParamList,
   useEffect(() => { void getOrder(route.params.id).then(setOrder).catch(() => setError(true)); }, [route.params.id]);
   if (error) return <View style={styles.container}><Text accessibilityRole="alert">Không thể tải đơn hàng.</Text></View>;
   if (!order) return <View style={styles.container}><Text>Đang tải...</Text></View>;
-  return <View style={styles.container}><Text style={styles.heading}>{order.orderNumber}</Text><Text>{order.planNameSnapshot}</Text><Text>{order.orderStatus}</Text></View>;
+  return <View style={styles.container}><Text style={styles.heading}>{order.orderNumber}</Text><Text style={styles.cardTitle}>{order.productNameSnapshot}</Text><Text>{order.planNameSnapshot}</Text><Text>{mobileOrderStatusLabel(order.orderStatus)}</Text><Text style={styles.price}>{order.priceVndSnapshot.toLocaleString('vi-VN')} ₫</Text><Text>{order.durationMonthsSnapshot} tháng · tối đa {order.maxActiveDevicesSnapshot} thiết bị</Text></View>;
 }
 
 export function EmuKeyMobileApp() {

@@ -39,7 +39,8 @@ export const supportShell: RoleShellConfig = {
   items: [
     { label: 'Hàng đợi', to: '/support', end: true },
     { label: 'Đang xử lý', to: '/support?view=active' },
-    { label: 'Đã giải quyết', to: '/support?view=resolved' },
+     { label: 'Đã giải quyết', to: '/support?view=resolved' },
+     { label: 'Hồ sơ', to: '/support/profile' },
   ],
 };
 
@@ -51,7 +52,8 @@ export const systemShell: RoleShellConfig = {
     { label: 'Người dùng', to: '/system/console?view=users' },
     { label: 'Thanh toán', to: '/system/console?view=payments' },
     { label: 'Blockchain', to: '/system/console?view=blockchain' },
-    { label: 'Nhật ký', to: '/system/console?view=audit' },
+     { label: 'Nhật ký', to: '/system/console?view=audit' },
+     { label: 'Hồ sơ', to: '/system/console/profile' },
   ],
 };
 

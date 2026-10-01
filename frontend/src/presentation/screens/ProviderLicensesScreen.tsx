@@ -1,32 +1,50 @@
-import { Alert, Button, Empty, Input, Popconfirm, Spin } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { Alert, Button, Empty, Input, Modal, Spin } from 'antd';
+import { useEffect, useState } from 'react';
 
-import { licenseStatusLabel, useLicenseLifecycle, usePhase6Command, useProviderLicenses } from '../../application/licenses/licenseQueries';
+import { describeApiError } from '../../application/auth/authContext';
+import { licenseStatusLabel, finalityLabel, useLicenseLifecycle, usePhase6Command, useProviderLicenses } from '../../application/licenses/licenseQueries';
 import { PageHeader, StatusChip } from '../components/WorkspacePrimitives';
+
+const commandLabels: Record<string, string> = {
+  PENDING: 'Đang chờ xử lý',
+  SUBMITTED: 'Đã gửi lên blockchain',
+  SUBMITTED_UNKNOWN: 'Chưa rõ kết quả, đang đối soát',
+  CONFIRMED: 'Đã xác nhận',
+  RETRYABLE_FAILED: 'Có thể thử lại',
+  DEAD_LETTER: 'Cần kiểm tra thủ công',
+  ABANDONED: 'Đã dừng theo dõi',
+  SUPERSEDED: 'Đã thay thế',
+};
 
 export function ProviderLicensesScreen() {
   const licenses = useProviderLicenses();
   const lifecycle = useLicenseLifecycle();
   const [reason, setReason] = useState('');
-  const [command, setCommand] = useState<{ commandId: string; status: string } | null>(null);
+  const [selected, setSelected] = useState<{ licenseId: string; action: 'SUSPEND_LICENSE' | 'RESUME_LICENSE' | 'REVOKE_LICENSE' } | null>(null);
+  const [command, setCommand] = useState<{ commandId: string; status: string; licenseId: string } | null>(null);
   const commandStatus = usePhase6Command(command?.commandId);
-  const refreshedCommand = useRef<string | null>(null);
+  const [errorByLicense, setErrorByLicense] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (
-      commandStatus.data?.status === 'CONFIRMED' &&
-      refreshedCommand.current !== commandStatus.data.commandId
-    ) {
-      refreshedCommand.current = commandStatus.data.commandId;
-      void licenses.refetch();
-    }
+    if (commandStatus.data?.status === 'CONFIRMED') void licenses.refetch();
   }, [commandStatus.data?.status, licenses]);
 
-  const run = (licenseId: string, action: 'SUSPEND_LICENSE' | 'RESUME_LICENSE' | 'REVOKE_LICENSE') => {
+  const run = () => {
+    if (!selected) return;
+    const current = selected;
     const note = reason.trim();
-    void lifecycle.mutateAsync({ licenseId, command: action, ...(note ? { reason: note } : {}) })
-      .then(setCommand)
-      .catch(() => undefined);
+    lifecycle.mutate(
+      { licenseId: current.licenseId, command: current.action, ...(note ? { reason: note } : {}) },
+      {
+        onSuccess: (result) => {
+          setCommand({ commandId: result.commandId, status: result.status, licenseId: current.licenseId });
+          setSelected(null);
+          setReason('');
+          setErrorByLicense((errors) => ({ ...errors, [current.licenseId]: '' }));
+        },
+        onError: (cause) => setErrorByLicense((errors) => ({ ...errors, [current.licenseId]: describeApiError(cause, 'Không thể gửi yêu cầu thay đổi trạng thái.') })),
+      },
+    );
   };
 
   return (
@@ -34,31 +52,49 @@ export function ProviderLicensesScreen() {
       <PageHeader title="Bản quyền nhà cung cấp" />
       {licenses.isPending ? <Spin aria-label="Đang tải license của nhà cung cấp" /> : null}
       {licenses.isError ? <Alert showIcon type="error" message="Không thể tải danh sách license." action={<Button onClick={() => void licenses.refetch()}>Thử lại</Button>} /> : null}
-      {lifecycle.error ? <Alert showIcon type="error" message="Không thể gửi yêu cầu thay đổi trạng thái." description="Kiểm tra trạng thái bản quyền và thử lại." /> : null}
-      {command ? <Alert showIcon type={commandStatus.data?.status === 'CONFIRMED' ? 'success' : commandStatus.data?.status === 'DEAD_LETTER' ? 'error' : 'info'} message={`Command ${commandStatus.data?.status ?? command.status}: ${command.commandId}`} description={commandStatus.data?.transactionHash ? `Transaction: ${commandStatus.data.transactionHash}` : 'Trạng thái bản quyền sẽ được cập nhật khi giao dịch được xác nhận trên blockchain.'} /> : null}
-      <Input aria-label="Lý do thay đổi trạng thái license" onChange={(event) => setReason(event.target.value)} placeholder="Lý do (không bắt buộc)" value={reason} />
       {!licenses.isPending && !licenses.isError && licenses.data?.length === 0 ? <Empty description="Chưa có license." /> : null}
+      {command ? (
+        <Alert
+          showIcon
+          type={commandStatus.data?.status === 'CONFIRMED' ? 'success' : commandStatus.data?.status === 'DEAD_LETTER' ? 'error' : 'info'}
+          message={`${commandLabels[commandStatus.data?.status ?? command.status] ?? 'Đang xử lý'} · ${command.commandId}`}
+          description={commandStatus.data?.transactionHash ? `Transaction: ${commandStatus.data.transactionHash}` : 'Chưa cập nhật bản quyền cho đến khi blockchain xác nhận.'}
+        />
+      ) : null}
       <div className="stack-list">
-        {(licenses.data ?? []).map((license) => (
-          <article className="workspace-card" key={license.id}>
-            <div>
-              <strong>{license.productName} · {license.publicLicenseId}</strong>
-              <small>{license.plan.name} v{license.plan.version} · hết hạn {new Date(license.expiresAt).toLocaleDateString('vi-VN')}</small>
-              <small>Xác nhận blockchain: {license.finality} ({license.confirmationCount})</small>
-            </div>
-            <StatusChip tone={license.status === 'ACTIVE' ? 'success' : license.status === 'REVOKED' ? 'error' : 'warning'}>{licenseStatusLabel(license.status)}</StatusChip>
-            <div className="table-actions">
-              {license.status === 'ACTIVE' ? <Button loading={lifecycle.isPending} onClick={() => run(license.id, 'SUSPEND_LICENSE')}>Tạm ngưng</Button> : null}
-              {license.status === 'SUSPENDED' ? <Button loading={lifecycle.isPending} onClick={() => run(license.id, 'RESUME_LICENSE')}>Tiếp tục</Button> : null}
-              {license.status === 'ACTIVE' || license.status === 'SUSPENDED' ? (
-                <Popconfirm description="Thu hồi bản quyền là thao tác không thể hoàn tác." onConfirm={() => run(license.id, 'REVOKE_LICENSE')} title="Thu hồi bản quyền?">
-                  <Button danger loading={lifecycle.isPending}>Thu hồi</Button>
-                </Popconfirm>
-              ) : null}
-            </div>
-          </article>
-        ))}
+        {(licenses.data ?? []).map((license) => {
+          const rowPending = lifecycle.isPending && selected?.licenseId === license.id;
+          return (
+            <article className="workspace-card" key={license.id}>
+              <div>
+                <strong>{license.productName} · {license.publicLicenseId}</strong>
+                <small>{license.plan.name} v{license.plan.version} · hết hạn {new Date(license.expiresAt).toLocaleDateString('vi-VN')}</small>
+                <small>{finalityLabel(license.finality)} ({license.confirmationCount})</small>
+              </div>
+              <StatusChip tone={license.status === 'ACTIVE' ? 'success' : license.status === 'REVOKED' ? 'error' : 'warning'}>{licenseStatusLabel(license.status)}</StatusChip>
+              {errorByLicense[license.id] ? <Alert type="error" showIcon message={errorByLicense[license.id]} /> : null}
+              <div className="table-actions">
+                {license.status === 'ACTIVE' ? <Button loading={rowPending} disabled={lifecycle.isPending} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'SUSPEND_LICENSE' }); }}>Tạm ngưng</Button> : null}
+                {license.status === 'SUSPENDED' ? <Button loading={rowPending} disabled={lifecycle.isPending} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'RESUME_LICENSE' }); }}>Tiếp tục</Button> : null}
+                {license.status === 'ACTIVE' || license.status === 'SUSPENDED' ? <Button danger loading={rowPending} disabled={lifecycle.isPending} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'REVOKE_LICENSE' }); }}>Thu hồi</Button> : null}
+              </div>
+            </article>
+          );
+        })}
       </div>
+      <Modal
+        open={Boolean(selected)}
+        title={selected?.action === 'REVOKE_LICENSE' ? 'Xác nhận thu hồi bản quyền' : selected?.action === 'SUSPEND_LICENSE' ? 'Xác nhận tạm ngưng bản quyền' : 'Xác nhận tiếp tục bản quyền'}
+        okText="Xác nhận"
+        cancelText="Hủy"
+        confirmLoading={lifecycle.isPending}
+        okButtonProps={{ disabled: selected?.action !== 'RESUME_LICENSE' && reason.trim().length < 3 }}
+        onCancel={() => { if (!lifecycle.isPending) { setSelected(null); setReason(''); } }}
+        onOk={run}
+      >
+        <p>Thao tác chỉ áp dụng cho license đã chọn và sẽ được cập nhật sau khi blockchain xác nhận.</p>
+        <Input.TextArea aria-label="Lý do thay đổi trạng thái license" placeholder="Lý do (ít nhất 3 ký tự)" value={reason} onChange={(event) => setReason(event.target.value)} />
+      </Modal>
     </>
   );
 }

@@ -8,7 +8,10 @@ vi.stubGlobal('crypto', webcrypto);
 
 const testOrderId = '00000000-0000-4000-8000-000000000501';
 const acceptedOrderId = '00000000-0000-4000-8000-000000000502';
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
 
 const publicProducts = [
   {

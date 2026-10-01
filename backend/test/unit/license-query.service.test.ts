@@ -106,6 +106,7 @@ describe('LicenseQueryService boundaries', () => {
     await expect(service.list(customer)).resolves.toEqual([
       { ...license, activationKeyAvailable: true },
     ]);
-    expect(envelopes.exists).toHaveBeenCalledWith('command-1');
+    const existsCalls = (envelopes.exists as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(existsCalls).toEqual([['command-1']]);
   });
 });

@@ -38,6 +38,8 @@ const environment = {
   OTEL_ENABLED: 'false',
   PAYMENT_ADAPTER: 'fake',
   PAYMENT_WEBHOOK_SECRET: 'openapi-payment-secret',
+  SEPAY_SANDBOX_RECEIPT_TIMING: 'false',
+  SEPAY_SANDBOX_CLOCK_OFFSET_SECONDS: '0',
   PORT: '3100',
   PUSH_ADAPTER: 'fake',
   FCM_TIMEOUT_MS: '10000',

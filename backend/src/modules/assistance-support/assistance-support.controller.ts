@@ -4,7 +4,7 @@ import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags
 import { CurrentUser, Roles } from '../identity-access/security.decorators.js';
 import { AuthGuard, RolesGuard } from '../identity-access/security.guards.js';
 import type { AuthPrincipal } from '../identity-access/identity.types.js';
-import { AiAnswerDto, AiAskDto, AppendMessageDto, ConversationDto, CreateConversationDto, MessageDto } from './assistance-support.dto.js';
+import { AiAnswerDto, AiAskDto, AppendMessageDto, ConversationDto, CreateConversationDto, MessageDto, RequestSupportDto } from './assistance-support.dto.js';
 import { AssistanceSupportService } from './assistance-support.service.js';
 
 @ApiTags('assistance')
@@ -53,12 +53,24 @@ export class AssistanceSupportController {
   @Roles('CUSTOMER')
   @ApiOperation({ summary: 'Escalate an AI conversation to the Support queue' })
   @ApiOkResponse({ type: ConversationDto })
-  requestSupport(@CurrentUser() actor: AuthPrincipal, @Param('conversationId', ParseUUIDPipe) conversationId: string) { return this.service.requestSupport(actor, conversationId); }
+  requestSupport(@CurrentUser() actor: AuthPrincipal, @Param('conversationId', ParseUUIDPipe) conversationId: string, @Body() dto: RequestSupportDto) { return this.service.requestSupport(actor, conversationId, dto.reason); }
+
+  @Get(':conversationId/messages/queue-preview')
+  @Roles('SUPPORT_STAFF', 'SYSTEM_ADMIN')
+  @ApiOperation({ summary: 'Preview messages for an unclaimed queue item' })
+  @ApiOkResponse({ type: MessageDto, isArray: true })
+  queuePreviewMessages(@CurrentUser() actor: AuthPrincipal, @Param('conversationId', ParseUUIDPipe) conversationId: string) { return this.service.listQueuePreviewMessages(actor, conversationId); }
 
   @Post(':conversationId/claim')
   @Roles('SUPPORT_STAFF')
   @ApiOkResponse({ type: ConversationDto })
   claim(@CurrentUser() actor: AuthPrincipal, @Param('conversationId', ParseUUIDPipe) conversationId: string) { return this.service.claim(actor, conversationId); }
+
+  @Post(':conversationId/release')
+  @Roles('SUPPORT_STAFF')
+  @ApiOperation({ summary: 'Release a claimed conversation back to the queue' })
+  @ApiOkResponse({ type: ConversationDto })
+  release(@CurrentUser() actor: AuthPrincipal, @Param('conversationId', ParseUUIDPipe) conversationId: string) { return this.service.release(actor, conversationId); }
 
   @Post(':conversationId/close')
   @Roles('CUSTOMER', 'SUPPORT_STAFF', 'SYSTEM_ADMIN')

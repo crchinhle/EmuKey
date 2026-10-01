@@ -15,8 +15,7 @@ export function ProductDetailScreen({ authenticated = false }: { readonly authen
   const { data: product, isLoading, isError } = useProduct(slug);
   const [selectedPlanId, setSelectedPlanId] = useState('');
 
-  const defaultPlan =
-    product?.plans.find((plan) => plan.devices === 25) ?? product?.plans[0];
+  const defaultPlan = product?.plans[0];
   const selectedPlan =
     product?.plans.find((plan) => plan.id === selectedPlanId) ?? defaultPlan;
 
@@ -104,7 +103,9 @@ export function ProductDetailScreen({ authenticated = false }: { readonly authen
                 type="primary"
                 onClick={() =>
                   void navigate(
-                     `/buyer/checkout?product=${encodeURIComponent(slug)}&planId=${encodeURIComponent(selectedPlan.id)}`,
+                    authenticated
+                      ? `/buyer/checkout?product=${encodeURIComponent(slug)}&planId=${encodeURIComponent(selectedPlan.id)}`
+                      : `/auth?mode=login&redirect=${encodeURIComponent(`/buyer/checkout?product=${slug}&planId=${selectedPlan.id}`)}`,
                   )
                 }
               >

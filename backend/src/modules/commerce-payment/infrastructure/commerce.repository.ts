@@ -36,8 +36,17 @@ export interface OrderRecord {
   publicLicenseId: string | null;
   targetLicenseId: string | null;
   serviceTermsAcceptedAt: Date | null;
+  serviceTermsContentSnapshot: string | null;
+  serviceTermsHashSnapshot: string | null;
+  serviceTermsVersionSnapshot: string | null;
   renewalStatus?: string | null;
   renewalExpiresAt?: Date | null;
+}
+
+export interface ServiceTermsSnapshot {
+  content: string;
+  hash: string;
+  version: string;
 }
 
 export interface CheckoutPreparation {
@@ -52,11 +61,11 @@ export interface CheckoutPreparation {
 export interface PaymentHistoryRecord {
   amountVnd: number;
   classification: string;
-  orderId: string;
-  orderNumber: string;
-  orderType: OrderRecord['orderType'];
-  planNameSnapshot: string;
-  productNameSnapshot: string;
+  orderId: string | null;
+  orderNumber: string | null;
+  orderType: OrderRecord['orderType'] | null;
+  planNameSnapshot: string | null;
+  productNameSnapshot: string | null;
   providerEventId: string;
   providerTransactionReference: string | null;
   receivedAt: Date;
@@ -71,6 +80,9 @@ export interface PaymentReceiptRecord {
   orderNumber: string;
   orderType: OrderRecord['orderType'];
   paidAt: Date;
+  providerOccurredAt: Date;
+  receivedAt: Date;
+  timingBasis: string;
   planNameSnapshot: string;
   productNameSnapshot: string;
   providerNameSnapshot: string;
@@ -82,8 +94,11 @@ export interface PaymentReviewRecord {
   amountVnd: number;
   classification: string;
   id: string;
+  orderId: string | null;
+  orderNumber: string | null;
   providerEventId: string;
   providerTransactionReference: string | null;
+  providerOccurredAt: Date;
   receivedAt: Date;
   reviewedAt: Date | null;
   reviewReason: string | null;
@@ -157,8 +172,11 @@ function mapOrder(row: Record<string, unknown>): OrderRecord {
       typeof row.public_license_id === 'string' ? row.public_license_id : null,
     targetLicenseId:
       typeof row.target_license_id === 'string' ? row.target_license_id : null,
-    serviceTermsAcceptedAt: optionalDate(row.service_terms_accepted_at),
-  };
+     serviceTermsAcceptedAt: optionalDate(row.service_terms_accepted_at),
+     serviceTermsContentSnapshot: typeof row.service_terms_content_snapshot === 'string' ? row.service_terms_content_snapshot : null,
+     serviceTermsHashSnapshot: typeof row.service_terms_hash_snapshot === 'string' ? row.service_terms_hash_snapshot : null,
+     serviceTermsVersionSnapshot: typeof row.service_terms_version_snapshot === 'string' ? row.service_terms_version_snapshot : null,
+   };
 }
 
 function mapPaymentReview(row: Record<string, unknown>): PaymentReviewRecord {
@@ -166,11 +184,14 @@ function mapPaymentReview(row: Record<string, unknown>): PaymentReviewRecord {
     amountVnd: Number(row.amount_vnd),
     classification: String(row.classification),
     id: String(row.id),
+    orderId: typeof row.order_id === 'string' ? row.order_id : null,
+    orderNumber: typeof row.order_number === 'string' ? row.order_number : null,
     providerEventId: String(row.provider_event_id),
     providerTransactionReference:
       typeof row.provider_transaction_ref === 'string'
         ? row.provider_transaction_ref
         : null,
+    providerOccurredAt: date(row.provider_occurred_at),
     receivedAt: date(row.received_at),
     reviewedAt: optionalDate(row.reviewed_at),
     reviewReason: typeof row.review_reason === 'string' ? row.review_reason : null,
@@ -215,7 +236,8 @@ export class CommerceRepository {
     customerUserId: string,
     idempotencyKey: string,
     planId: string,
-    targetLicenseId?: string,
+    targetLicenseId: string | undefined,
+    terms: ServiceTermsSnapshot,
   ): Promise<OrderRecord> {
     return this.withTransaction(async (client) => {
       await client.query(
@@ -295,13 +317,16 @@ export class CommerceRepository {
            plan_name_snapshot, plan_version_snapshot, price_vnd_snapshot,
            billing_cycle_snapshot, duration_months_snapshot,
             max_active_devices_snapshot, entitlements_snapshot,
-            plan_commitment_snapshot, payment_due_at, ipn_accept_until)
+            plan_commitment_snapshot, payment_due_at, ipn_accept_until,
+            service_terms_version_snapshot, service_terms_hash_snapshot,
+            service_terms_content_snapshot)
          VALUES
           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
             $13, $14, $15, $16, $17, $18, decode($19, 'hex'),
             statement_timestamp() + interval '30 minutes',
             statement_timestamp() + interval '30 minutes' +
-              ($20::integer * interval '1 second'))
+              ($20::integer * interval '1 second'),
+            $21, $22, $23)
          RETURNING *`,
         [
           id,
@@ -324,6 +349,9 @@ export class CommerceRepository {
             JSON.stringify(plan.entitlements),
             hex(plan.plan_commitment).slice(2),
           this.ipnDeliveryGraceSeconds,
+          terms.version,
+          terms.hash,
+          terms.content,
         ],
       );
       const order = mapOrder(result.rows[0] ?? {});
@@ -399,7 +427,11 @@ export class CommerceRepository {
     return result.rows.map(mapOrder);
   }
 
-  async acceptServiceTerms(customerUserId: string, id: string): Promise<OrderRecord> {
+  async acceptServiceTerms(
+    customerUserId: string,
+    id: string,
+    terms: { hash: string; version: string },
+  ): Promise<OrderRecord> {
     return this.withTransaction(async (client) => {
       const current = await client.query<Record<string, unknown>>(
         'SELECT * FROM orders WHERE id = $1 AND customer_user_id = $2 FOR UPDATE',
@@ -407,10 +439,12 @@ export class CommerceRepository {
       );
       if (!current.rows[0]) throw new Error('ORDER_NOT_FOUND');
       const order = mapOrder(current.rows[0]);
-      if (
-        order.orderStatus !== 'WAITING_SERVICE_TERMS_ACCEPTANCE'
-      ) {
+      if (order.orderStatus !== 'WAITING_SERVICE_TERMS_ACCEPTANCE') {
         throw new Error('ORDER_TERMS_MISMATCH');
+      }
+      if (order.serviceTermsVersionSnapshot !== terms.version ||
+          order.serviceTermsHashSnapshot !== terms.hash) {
+        throw new Error('ORDER_TERMS_SNAPSHOT_CHANGED');
       }
       const result = await client.query<Record<string, unknown>>(
         `UPDATE orders
@@ -425,7 +459,7 @@ export class CommerceRepository {
         action: 'ORDER_TERMS_ACCEPTED',
         actorRole: 'CUSTOMER',
         actorUserId: customerUserId,
-        metadata: { accepted: true },
+        metadata: { accepted: true, termsHash: terms.hash, termsVersion: terms.version },
         targetId: id,
         targetType: 'ORDER',
       });
@@ -952,30 +986,32 @@ export class CommerceRepository {
       `SELECT pt.id AS transaction_id, pt.provider_event_id,
               pt.provider_transaction_ref, pt.amount_minor AS amount_vnd,
               pt.classification,
-              pt.review_status, pt.received_at, o.id AS order_id,
-              o.order_number, o.order_type, o.product_name_snapshot,
-              o.plan_name_snapshot
-       FROM payment_transactions pt
-       JOIN orders o ON o.id = pt.order_id
-       WHERE ${scope}
-       ORDER BY pt.received_at DESC`,
+               pt.review_status, pt.received_at, pt.provider_occurred_at, o.id AS order_id,
+               o.order_number, o.order_type, o.product_name_snapshot,
+               o.plan_name_snapshot
+        FROM payment_transactions pt
+        LEFT JOIN orders o ON o.id = pt.order_id
+        WHERE ${scope}
+          AND pt.fulfillment_order_id IS NOT NULL
+        ORDER BY pt.received_at DESC`,
       parameters,
     );
     return result.rows.map((row) => ({
       amountVnd: Number(row.amount_vnd),
       classification: String(row.classification),
-      orderId: String(row.order_id),
-      orderNumber: String(row.order_number),
-      orderType: row.order_type as OrderRecord['orderType'],
-      planNameSnapshot: String(row.plan_name_snapshot),
-      productNameSnapshot: String(row.product_name_snapshot),
+      orderId: typeof row.order_id === 'string' ? row.order_id : null,
+      orderNumber: typeof row.order_number === 'string' ? row.order_number : null,
+      orderType: row.order_type as OrderRecord['orderType'] | null,
+      planNameSnapshot: typeof row.plan_name_snapshot === 'string' ? row.plan_name_snapshot : null,
+      productNameSnapshot: typeof row.product_name_snapshot === 'string' ? row.product_name_snapshot : null,
       providerEventId: String(row.provider_event_id),
       providerTransactionReference:
         typeof row.provider_transaction_ref === 'string'
           ? row.provider_transaction_ref
           : null,
-      receivedAt: date(row.received_at),
-      reviewStatus:
+       receivedAt: date(row.received_at),
+       providerOccurredAt: date(row.provider_occurred_at),
+       reviewStatus:
         typeof row.review_status === 'string' ? row.review_status : null,
       transactionId: String(row.transaction_id),
     }));
@@ -994,7 +1030,10 @@ export class CommerceRepository {
     const parameters = scope === 'TRUE' ? [transactionId] : [transactionId, actor.sub];
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT pt.id AS transaction_id, pt.provider_transaction_ref,
-              pt.amount_minor AS amount_vnd, pt.received_at, o.id AS order_id,
+              pt.amount_minor AS amount_vnd, pt.provider_occurred_at,
+              pt.received_at, pt.timing_basis,
+              payment_effective_time(pt) AS paid_at,
+              o.id AS order_id,
               o.order_number, o.order_type, o.currency,
               o.provider_name_snapshot, o.product_name_snapshot,
               o.plan_name_snapshot
@@ -1011,7 +1050,10 @@ export class CommerceRepository {
       orderId: String(row.order_id),
       orderNumber: String(row.order_number),
       orderType: row.order_type as OrderRecord['orderType'],
-      paidAt: date(row.received_at),
+      paidAt: date(row.paid_at),
+      receivedAt: date(row.received_at),
+      providerOccurredAt: date(row.provider_occurred_at),
+      timingBasis: String(row.timing_basis),
       planNameSnapshot: String(row.plan_name_snapshot),
       productNameSnapshot: String(row.product_name_snapshot),
       providerNameSnapshot: String(row.provider_name_snapshot),
@@ -1023,14 +1065,17 @@ export class CommerceRepository {
     };
   }
 
-  async listPaymentReview(): Promise<PaymentReviewRecord[]> {
+  async listPaymentReview(includeClosed = false): Promise<PaymentReviewRecord[]> {
     const result = await this.pool.query<Record<string, unknown>>(
-      `SELECT id, provider_event_id, provider_transaction_ref,
-              amount_minor AS amount_vnd,
-              classification, review_status, review_reason, received_at,
-              reviewed_at
-       FROM payment_transactions
-       WHERE review_status = 'OPEN' ORDER BY received_at`,
+      `SELECT pt.id, pt.provider_event_id, pt.provider_transaction_ref,
+              pt.amount_minor AS amount_vnd, pt.classification,
+              pt.review_status, pt.review_reason, pt.provider_occurred_at,
+              pt.received_at, pt.reviewed_at, o.id AS order_id,
+              o.order_number
+       FROM payment_transactions pt
+       LEFT JOIN orders o ON o.id = pt.order_id
+       WHERE ${includeClosed ? "pt.review_status IN ('OPEN', 'RESOLVED', 'CLOSED_NO_ACTION')" : "pt.review_status = 'OPEN'"}
+       ORDER BY pt.received_at DESC`,
     );
     return result.rows.map(mapPaymentReview);
   }
@@ -1045,15 +1090,25 @@ export class CommerceRepository {
       const result = await client.query<Record<string, unknown>>(
         `UPDATE payment_transactions
          SET review_status = $2, review_reason = $3,
+             review_resolution = CASE WHEN $2 = 'CLOSED_NO_ACTION' THEN 'NO_ACTION'
+                                     ELSE 'ACCEPT_AND_FULFILL' END,
              reviewed_by_user_id = $4, reviewed_at = now()
          WHERE id = $1 AND review_status = 'OPEN'
          RETURNING id, provider_event_id, provider_transaction_ref,
-                   amount_minor AS amount_vnd,
-                   classification, review_status, review_reason, received_at,
-                   reviewed_at`,
+                   amount_minor AS amount_vnd, classification, review_status,
+                   review_reason, provider_occurred_at, received_at, reviewed_at,
+                   order_id`,
         [id, status, reason, actor.sub],
       );
       if (!result.rows[0]) throw new Error('PAYMENT_REVIEW_NOT_FOUND');
+      const orderId = result.rows[0].order_id;
+      if (typeof orderId === 'string') {
+        const order = await client.query<{ order_number: string }>(
+          'SELECT order_number FROM orders WHERE id = $1',
+          [orderId],
+        );
+        result.rows[0].order_number = order.rows[0]?.order_number ?? null;
+      }
       await this.audit.write(client, {
         action: 'PAYMENT_REVIEWED',
         actorRole: actor.role,

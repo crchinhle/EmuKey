@@ -1,5 +1,5 @@
-import { Alert, Button, Form, Input, Tag } from 'antd';
-import { useState } from 'react';
+import { Alert, Button, Form, Input, Popover, Tag } from 'antd';
+import { useEffect, useState } from 'react';
 
 import {
   describeApiError,
@@ -15,12 +15,30 @@ const roleLabels: Record<string, string> = {
   SYSTEM_ADMIN: 'Quản trị hệ thống',
 };
 
+const strongPasswordRules = [
+  { max: 128, message: 'Mật khẩu không được quá 128 ký tự.' },
+  { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).+$/, message: 'Mật khẩu phải có ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt.' },
+];
+
 export function AccountProfileScreen() {
-  const { updateProfile, user } = useAuth();
+  const { logout, updateProfile, user } = useAuth();
   const [form] = Form.useForm<ProfileInput>();
+  const [passwordForm] = Form.useForm<{ currentPassword: string; password: string; confirm: string }>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+
+  useEffect(() => {
+    form.setFieldsValue({
+      address: user?.address ?? '',
+      displayName: user?.displayName ?? '',
+      organizationName: user?.organizationName ?? '',
+      phone: user?.phone ?? '',
+    });
+  }, [form, user]);
 
   if (!user) return null;
 
@@ -44,6 +62,32 @@ export function AccountProfileScreen() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const submitPassword = async (values: { currentPassword: string; password: string; confirm: string }) => {
+    setPasswordError(null);
+    setPasswordSaved(false);
+    setPasswordSaving(true);
+    try {
+      const response = await fetch('/api/v1/auth/password', {
+        body: JSON.stringify({ currentPassword: values.currentPassword, password: values.password }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT',
+      });
+      if (!response.ok) {
+        let payload: unknown;
+        try { payload = await response.json(); } catch { payload = undefined; }
+        throw new Error((payload as { error?: { message?: string } })?.error?.message ?? 'Không thể đổi mật khẩu. Vui lòng thử lại.');
+      }
+      setPasswordSaved(true);
+      passwordForm.resetFields();
+      // Force a session refresh so the new password takes effect immediately.
+      await logout();
+    } catch (cause) {
+      setPasswordError(cause instanceof Error ? cause.message : 'Không thể đổi mật khẩu. Vui lòng thử lại.');
+    } finally {
+      setPasswordSaving(false);
     }
   };
 
@@ -106,6 +150,53 @@ export function AccountProfileScreen() {
           <small>
             Email và vai trò được bảo vệ bởi hệ thống xác thực, không thay đổi tại màn hình này.
           </small>
+          <Popover
+            content={
+              <Form
+                form={passwordForm}
+                layout="vertical"
+                onFinish={(values) => void submitPassword(values)}
+                style={{ width: 320 }}
+              >
+                <Form.Item
+                  label="Mật khẩu hiện tại"
+                  name="currentPassword"
+                  rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại.' }]}
+                >
+                  <Input.Password autoComplete="current-password" />
+                </Form.Item>
+                <Form.Item
+                  label="Mật khẩu mới"
+                  name="password"
+                  rules={[{ required: true, message: 'Vui lòng nhập mật khẩu mới.' }, ...strongPasswordRules]}
+                >
+                  <Input.Password autoComplete="new-password" />
+                </Form.Item>
+                <Form.Item
+                  dependencies={['password']}
+                  label="Xác nhận mật khẩu mới"
+                  name="confirm"
+                  rules={[
+                    { required: true, message: 'Vui lòng xác nhận mật khẩu mới.' },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (!value || getFieldValue('password') === value) return Promise.resolve();
+                        return Promise.reject(new Error('Mật khẩu xác nhận không khớp.'));
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.Password autoComplete="new-password" />
+                </Form.Item>
+                {passwordSaved ? <Alert showIcon message="Đã đổi mật khẩu. Vui lòng đăng nhập lại." type="success" /> : null}
+                {passwordError ? <Alert message={passwordError} role="alert" showIcon type="error" /> : null}
+                <Button htmlType="submit" loading={passwordSaving} type="primary">Đổi mật khẩu</Button>
+              </Form>
+            }
+            trigger="click"
+          >
+            <Button style={{ marginTop: 16 }} type="default">Đổi mật khẩu</Button>
+          </Popover>
         </aside>
       </div>
     </>

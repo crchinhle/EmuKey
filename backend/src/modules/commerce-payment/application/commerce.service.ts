@@ -62,6 +62,7 @@ export class CommerceService {
         idempotencyKey,
         dto.planId,
         dto.targetLicenseId,
+        await this.serviceTerms.loadServiceTermsArtifact(),
       );
     } catch (error) {
       this.translate(error);
@@ -108,14 +109,32 @@ export class CommerceService {
     this.requireCustomer(actor);
     const order = await this.repository.findOrder(actor.sub, id);
     if (!order) this.notFound();
-    return { content: await this.serviceTerms.loadServiceTerms() };
+    // Serve the immutable snapshot taken when the Order was created, never the
+    // currently published platform document, so acceptance stays well-defined.
+    if (
+      order.serviceTermsContentSnapshot === null ||
+      order.serviceTermsHashSnapshot === null ||
+      order.serviceTermsVersionSnapshot === null
+    ) {
+      throw new ConflictException({
+        code: 'ORDER_TERMS_SNAPSHOT_MISSING',
+        message: 'The Service Terms snapshot for this order is unavailable.',
+      });
+    }
+    return {
+      content: order.serviceTermsContentSnapshot,
+      hash: order.serviceTermsHashSnapshot,
+      version: order.serviceTermsVersionSnapshot,
+    };
   }
 
   async acceptServiceTerms(actor: AuthPrincipal, id: string, dto: AcceptServiceTermsDto) {
     this.requireCustomer(actor);
     if (dto.accepted !== true) throw new BadRequestException('Service Terms must be accepted explicitly.');
     try {
-      return await this.repository.acceptServiceTerms(actor.sub, id);
+      // Compare against the Order's own snapshot rather than the newest platform
+      // content, so a concurrent content update cannot silently re-consent a buyer.
+      return await this.repository.acceptServiceTerms(actor.sub, id, dto);
     } catch (error) {
       this.translate(error);
       throw error;
@@ -263,7 +282,9 @@ export class CommerceService {
 
   async listPaymentReview(actor: AuthPrincipal) {
     this.requireReviewRole(actor);
-    return this.repository.listPaymentReview();
+    // Resolved/closed outcomes are evidence too; they stay visible so the queue
+    // does not keep showing already-decided anomalies as open work.
+    return this.repository.listPaymentReview(true);
   }
 
   async reviewPayment(
@@ -358,6 +379,7 @@ export class CommerceService {
     }
     if (
       code === 'ORDER_TERMS_MISMATCH' ||
+      code === 'ORDER_TERMS_SNAPSHOT_CHANGED' ||
       code === 'ORDER_NOT_CANCELLABLE' ||
       code === 'ORDER_NOT_WAITING_PAYMENT' ||
       code === 'ORDER_PAYMENT_EXPIRED'

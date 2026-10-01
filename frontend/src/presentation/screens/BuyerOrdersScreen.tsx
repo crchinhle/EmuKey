@@ -2,6 +2,8 @@ import { Alert, Button, Checkbox, Drawer, Empty, Input, Pagination, Popconfirm, 
 import { useMemo, useState } from 'react';
 
 import { describeApiError } from '../../application/auth/authContext';
+import { useCreateConversation } from '../../application/assistance/assistanceQueries';
+import { useNavigate } from 'react-router-dom';
 import { orderStatusLabel, orderStatusTone, type OrderSummary, useOrder, useOrderMutations, useOrders, useOrderTerms } from '../../application/orders/orderQueries';
 import { formatMoney, FactList, StatusChip } from '../components/WorkspacePrimitives';
 
@@ -39,6 +41,8 @@ export function BuyerOrdersScreen() {
   const [selectedId, setSelectedId] = useState<string>();
   const [accepted, setAccepted] = useState(false);
   const [page, setPage] = useState(1);
+  const navigate = useNavigate();
+  const createConversation = useCreateConversation();
   const ordersQuery = useOrders();
   const detailQuery = useOrder(selectedId ?? '');
   const terms = useOrderTerms(detailQuery.data?.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? selectedId ?? '' : '');
@@ -114,7 +118,9 @@ export function BuyerOrdersScreen() {
           <p className="muted-copy">Thông tin được lưu tại thời điểm tạo đơn. Đơn chưa thanh toán có thời hạn 30 phút.</p>
         </section> : null}
         {detailQuery.data?.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? <section className="checkout-stack">{terms.isPending ? <Spin /> : terms.isError ? <Alert type="error" title="Không thể tải điều khoản" action={<Button onClick={() => void terms.refetch()}>Thử lại</Button>} /> : <><details><summary>Xem điều khoản dịch vụ</summary><pre className="terms-document">{terms.data?.content}</pre></details><Checkbox checked={accepted} onChange={(event) => setAccepted(event.target.checked)}>Tôi đã đọc và đồng ý điều khoản</Checkbox><Button type="primary" disabled={!accepted || !terms.data} loading={mutations.acceptServiceTerms.isPending} onClick={() => mutations.acceptServiceTerms.mutate(detailQuery.data!)}>Xác nhận điều khoản</Button></>}{mutations.acceptServiceTerms.isError ? <Alert type="error" title="Không thể xác nhận điều khoản. Vui lòng thử lại." /> : null}</section> : null}
-        {detailQuery.data?.orderStatus === 'WAITING_PAYMENT' ? <Button type="primary" href={`/buyer/orders/${encodeURIComponent(detailQuery.data.id)}/payment`}>Tiếp tục thanh toán</Button> : null}
+         {detailQuery.data ? <Button loading={createConversation.isPending} onClick={() => void createConversation.mutateAsync({ contextType: 'ORDER', contextId: detailQuery.data.id, title: `Hỗ trợ đơn ${detailQuery.data.orderNumber}` }).then((conversation) => { setSelectedId(undefined); void navigate(`/buyer/support?conversation=${encodeURIComponent(conversation.id)}`); })}>Cần hỗ trợ về đơn này</Button> : null}
+         {detailQuery.data?.orderStatus === 'WAITING_PAYMENT' ? <Button type="primary" href={`/buyer/orders/${encodeURIComponent(detailQuery.data.id)}/payment`}>Tiếp tục thanh toán</Button> : null}
+
       </Drawer>
     </div>
   );

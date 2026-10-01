@@ -15,11 +15,22 @@ describe('knowledge public response', () => {
     expect(await repository.create({ sub: 'provider', role: 'PROVIDER_ADMIN', sessionVersion: 1 }, { productId: 'product', logicalDocumentKey: 'guide', title: 'Guide', sourceType: 'FAQ', chunks: ['Instructions'] })).toEqual({ id: 'new-doc', title: 'Guide', logicalDocumentKey: 'guide', version: 2, status: 'READY', isCurrent: false });
     expect(release).toHaveBeenCalledOnce();
   });
-  it('maps database fields to the API contract without storage internals', async () => {
-    const query = vi.fn().mockResolvedValue({ rows: [{ id: 'document', title: 'Guide', logical_document_key: 'guide', version: 1, status: 'READY', is_current: true, storage_key: 'private' }] });
+  it('returns document chunks scoped to the provider', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ id: 'document', title: 'Guide', logical_document_key: 'guide', version: 1, status: 'READY', is_current: true }] })
+      .mockResolvedValueOnce({ rows: [{ content: 'one' }, { content: 'two' }] });
     const repository = new KnowledgeRepository({ query } as unknown as Pool);
-    expect(await repository.list({ sub: 'provider', role: 'PROVIDER_ADMIN', sessionVersion: 1 })).toEqual([
-      { id: 'document', title: 'Guide', logicalDocumentKey: 'guide', version: 1, status: 'READY', isCurrent: true },
-    ]);
+    await expect(repository.detail({ sub: 'provider', role: 'PROVIDER_ADMIN', sessionVersion: 1 }, 'document')).resolves.toMatchObject({ chunks: ['one', 'two'], isCurrent: true });
   });
+
+  it('rejects publishing when the current version changed', async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ version: 3 }] });
+    const client = { query, release: vi.fn() };
+    const repository = new KnowledgeRepository({ connect: vi.fn().mockResolvedValue(client) } as unknown as Pool);
+    await expect(repository.publish({ sub: 'provider', role: 'PROVIDER_ADMIN', sessionVersion: 1 }, 'document', 2)).rejects.toThrow('KNOWLEDGE_VERSION_CONFLICT');
+    expect(query).toHaveBeenCalledWith('ROLLBACK');
+  });
+
 });

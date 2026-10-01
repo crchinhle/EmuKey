@@ -4,6 +4,7 @@ import { AssistanceSupportService } from '../../src/modules/assistance-support/a
 
 const customer = { role: 'CUSTOMER' as const, sessionVersion: 1, sub: '00000000-0000-4000-8000-000000000004' };
 const support = { role: 'SUPPORT_STAFF' as const, sessionVersion: 1, sub: '00000000-0000-4000-8000-000000000005' };
+const admin = { role: 'SYSTEM_ADMIN' as const, sessionVersion: 1, sub: '00000000-0000-4000-8000-000000000006' };
 const conversation = {
   assignedSupportUserId: null,
   contextId: null,
@@ -28,6 +29,10 @@ function fixture() {
     createConversation: vi.fn().mockResolvedValue(conversation),
     findConversationForActor: vi.fn().mockResolvedValue(conversation),
     listForActor: vi.fn().mockResolvedValue([conversation]),
+    listQueuePreviewMessages: vi.fn().mockResolvedValue([
+      { clientMessageId: 'c1', content: 'I need help', conversationId: conversation.id, senderType: 'CUSTOMER', serverSequence: 1 },
+    ]),
+    releaseConversation: vi.fn().mockResolvedValue({ ...conversation, status: 'WAITING_SUPPORT' }),
     requestSupport: vi.fn().mockResolvedValue({ ...conversation, status: 'WAITING_SUPPORT' }),
   };
   return { repository, service: new AssistanceSupportService(repository as never) };
@@ -65,5 +70,49 @@ describe('AssistanceSupportService', () => {
     repository.claimConversation.mockRejectedValueOnce(new Error('CONVERSATION_ALREADY_CLAIMED'));
 
     await expect(service.claim(support, conversation.id)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('SUP-03: escalates with a customer-supplied reason', async () => {
+    const { repository, service } = fixture();
+
+    await service.requestSupport(customer, conversation.id, 'Activation failed for my license');
+    expect(repository.requestSupport).toHaveBeenCalledWith(customer.sub, conversation.id, 'Activation failed for my license');
+  });
+
+  it('SUP-21: lets staff preview an unclaimed queue item without claiming it', async () => {
+    const { repository, service } = fixture();
+
+    await expect(service.listQueuePreviewMessages(support, conversation.id)).resolves.toHaveLength(1);
+    expect(repository.listQueuePreviewMessages).toHaveBeenCalledWith(support, conversation.id);
+    expect(repository.claimConversation).not.toHaveBeenCalled();
+  });
+
+  it('SUP-21: rejects queue preview for non-staff roles', async () => {
+    const { service } = fixture();
+
+    await expect(service.listQueuePreviewMessages(customer, conversation.id)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('SUP-22: releases a claimed conversation back to the queue', async () => {
+    const { repository, service } = fixture();
+    repository.findConversationForActor.mockResolvedValue({ ...conversation, assignedSupportUserId: support.sub, status: 'SUPPORT_ACTIVE' });
+
+    await expect(service.release(support, conversation.id)).resolves.toMatchObject({ status: 'WAITING_SUPPORT' });
+    expect(repository.releaseConversation).toHaveBeenCalledWith(support.sub, conversation.id);
+  });
+
+  it('SUP-22: only the assigned support agent can release', async () => {
+    const { repository, service } = fixture();
+    const otherSupport = { ...support, sub: '00000000-0000-4000-8000-000000000099' };
+    repository.releaseConversation.mockRejectedValueOnce(new Error('CONVERSATION_STATE_INVALID'));
+
+    await expect(service.release(otherSupport, conversation.id)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects release by a customer or admin', async () => {
+    const { service } = fixture();
+
+    await expect(service.release(customer, conversation.id)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.release(admin, conversation.id)).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

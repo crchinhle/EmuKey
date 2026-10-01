@@ -20,7 +20,7 @@ describe('BrevoEmailDelivery', () => {
 
     await expect(
       delivery.deliver({
-        data: { token: 'verify-token' },
+        data: { email: 'customer@example.com', token: 'verify-token' },
         eventKey: 'email-verification:customer@example.com',
         template: 'identity-email-verification-v1',
         to: 'customer@example.com',
@@ -45,10 +45,10 @@ describe('BrevoEmailDelivery', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(request.htmlContent).toContain(
-      'http://localhost:5173/auth?mode=verify&amp;token=verify-token',
+      'http://localhost:5173/auth?mode=verify&amp;token=verify-token&amp;email=customer%40example.com',
     );
     expect(request.textContent).toContain(
-      'http://localhost:5173/auth?mode=verify&token=verify-token',
+      'http://localhost:5173/auth?mode=verify&token=verify-token&email=customer%40example.com',
     );
   });
 

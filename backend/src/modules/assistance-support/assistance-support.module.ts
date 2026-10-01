@@ -35,6 +35,7 @@ import { PRIVATE_STORAGE, type PrivateStoragePort } from '../../platform/storage
       inject: [AI_GATEWAY, KnowledgeRepository, AssistanceSupportRepository],
       useFactory: (gateway: AiGatewayPort, knowledge: KnowledgeRepository, conversations: AssistanceSupportRepository) => new AiAssistanceService(gateway, {
         appendAiMessage: (input) => conversations.appendAiMessage(input),
+        appendCustomerMessage: (input) => conversations.appendCustomerMessage(input),
         searchSources: (input) => knowledge.searchForConversation(input),
       }),
     },

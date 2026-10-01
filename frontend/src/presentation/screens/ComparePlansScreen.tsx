@@ -1,12 +1,13 @@
 import { Alert, Button, Checkbox, Empty, Input, Spin, Table } from 'antd';
 import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
   formatVnd,
   useComparePlans,
   useProducts,
 } from '../../application/catalog/catalogQueries';
+import { useOptionalAuth } from '../../application/auth/authContext';
 import { SiteHeader } from '../components/SiteHeader';
 
 function displayDimension(key: string, value: unknown): string {
@@ -15,8 +16,7 @@ function displayDimension(key: string, value: unknown): string {
   if (key === 'maxActiveDevices' && typeof value === 'number') return `${value} thiết bị`;
   if (value && typeof value === 'object') {
     return Object.entries(value)
-      .filter(([, enabled]) => Boolean(enabled))
-      .map(([name]) => name)
+      .map(([name, enabled]) => `${name}: ${typeof enabled === 'boolean' ? (enabled ? 'Có' : 'Không') : String(enabled)}`)
       .join(', ') || 'Không có';
   }
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -27,6 +27,8 @@ function displayDimension(key: string, value: unknown): string {
 
 export function ComparePlansScreen() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const auth = useOptionalAuth();
   const initialIds = useMemo(
     () => [...new Set((searchParams.get('ids') ?? '').split(',').filter(Boolean))].slice(0, 4),
     [searchParams],
@@ -42,12 +44,11 @@ export function ComparePlansScreen() {
       productSlug: product.slug,
     })),
   );
-  const firstSelectedChoice = choices.find((choice) => choice.id === selectedIds[0]);
 
   return (
     <div className="page-shell">
       <SiteHeader />
-      <main className="catalog-content comparison-content">
+       <main className="catalog-content comparison-content" id="main-content" tabIndex={-1}>
         <nav aria-label="Breadcrumb" className="breadcrumb">
           <Link to="/products">Sản phẩm</Link><span>/</span><span>So sánh gói</span>
         </nav>
@@ -104,15 +105,12 @@ export function ComparePlansScreen() {
             />
             <div className="workspace-actions comparison-actions">
               <Button href="/products">Chọn lại sản phẩm</Button>
-              <Button
-                disabled={!firstSelectedChoice}
-                {...(firstSelectedChoice
-                  ? { href: `/buyer/checkout?product=${encodeURIComponent(firstSelectedChoice.productSlug)}&planId=${encodeURIComponent(firstSelectedChoice.id)}` }
-                  : {})}
-                type="primary"
-              >
-                Chọn {firstSelectedChoice?.label}
-              </Button>
+              {comparison.data.plans.map((plan) => {
+                const choice = choices.find((item) => item.id === plan.id);
+                if (!choice) return null;
+                const checkout = `/buyer/checkout?product=${encodeURIComponent(choice.productSlug)}&planId=${encodeURIComponent(choice.id)}`;
+                return <Button key={plan.id} type="primary" onClick={() => void navigate(auth?.user ? checkout : `/auth?mode=login&redirect=${encodeURIComponent(checkout)}`)}>Mua {plan.name}</Button>;
+              })}
             </div>
           </section>
         )}

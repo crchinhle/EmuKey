@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import type {
   ActivationChallengeDto,
@@ -19,10 +20,12 @@ import type {
   LicenseProjectionDto,
   OrderDto,
   PublicLicenseVerificationDto,
+  RenewalPreviewDto,
 } from './generated';
 
 const SESSION_KEY = 'emukey_mobile_session_v1';
 const ACTIVATION_KEY_PREFIX = 'emukey_activation_key_v1:';
+const IDEMPOTENCY_PREFIX = 'emukey_order_intent_v1:';
 const API_URL =
   (globalThis as typeof globalThis & {
     process?: { env?: { EXPO_PUBLIC_API_URL?: string } };
@@ -35,6 +38,7 @@ export type MobileProduct = PublicCatalogProductDto;
 export type MobilePlanComparison = ComparePlansResponseDto;
 export type MobileCheckoutSession = CheckoutSessionDto;
 export type MobileOrderTerms = OrderTermsDto;
+export type MobileRenewalPreview = RenewalPreviewDto;
 export type MobileLicense = LicenseProjectionDto;
 export type MobileLicenseVerification = PublicLicenseVerificationDto;
 export type MobileDevice = {
@@ -155,6 +159,10 @@ async function json<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function forgotPassword(email: string): Promise<void> {
+  await json<void>(await request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: email.trim() }) }, false));
+}
+
 export async function login(email: string, password: string): Promise<MobileSession> {
   const session = await json<MobileSession>(
     await request(
@@ -212,32 +220,41 @@ export async function comparePlans(ids: readonly string[]): Promise<MobilePlanCo
   );
 }
 
-function idempotencyKey(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
-    const random = Math.floor(Math.random() * 16);
-    const value = character === 'x' ? random : (random & 0x3) | 0x8;
-    return value.toString(16);
-  });
+async function idempotencyKeyFor(input: CreateOrderDto): Promise<{ storageKey: string; key: string }> {
+  const intent = `${activeSession?.user.id ?? 'anonymous'}:${JSON.stringify(input)}`;
+  const storageKey = `${IDEMPOTENCY_PREFIX}${encodeURIComponent(intent)}`;
+  const existing = await SecureStore.getItemAsync(storageKey);
+  if (existing) return { storageKey, key: existing };
+  const key = Crypto.randomUUID();
+  await SecureStore.setItemAsync(storageKey, key, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+  return { storageKey, key };
 }
 
 export async function createOrder(
   input: CreateOrderDto,
   licenseKey?: string,
 ): Promise<MobileOrderDetail> {
-  return json(
+  const intent = await idempotencyKeyFor(input);
+  const result = await json<MobileOrderDetail>(
     await request('/orders', {
       method: 'POST',
       headers: {
-        'Idempotency-Key': idempotencyKey(),
+        'Idempotency-Key': intent.key,
         ...(licenseKey ? { 'X-License-Key': licenseKey } : {}),
       },
       body: JSON.stringify(input),
     }),
   );
+  await SecureStore.deleteItemAsync(intent.storageKey);
+  return result;
 }
 
 export async function getOrderTerms(id: string): Promise<MobileOrderTerms> {
   return json(await request(`/orders/${encodeURIComponent(id)}/service-terms`));
+}
+
+export async function getRenewalPreview(licenseId: string): Promise<MobileRenewalPreview> {
+  return json(await request(`/orders/renewal-preview/${encodeURIComponent(licenseId)}`));
 }
 
 export async function acceptServiceTerms(order: MobileOrderDetail): Promise<MobileOrderDetail> {
@@ -346,6 +363,14 @@ export async function listConversationMessages(conversationId: string): Promise<
   return json(await request(`/conversations/${encodeURIComponent(conversationId)}/messages`));
 }
 
+export async function closeConversation(conversationId: string): Promise<MobileConversation> {
+  return json(
+    await request(`/conversations/${encodeURIComponent(conversationId)}/close`, {
+      method: 'POST',
+    }),
+  );
+}
+
 export async function createConversation(title = 'Hội thoại hỗ trợ'): Promise<MobileConversation> {
   return json(await request('/conversations', {
     method: 'POST',
@@ -357,8 +382,8 @@ export async function appendConversationMessage(conversationId: string, clientMe
   return json(await request(`/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', body: JSON.stringify({ clientMessageId, content }) }));
 }
 
-export async function askConversationAi(conversationId: string, question: string): Promise<{ answer: string; citedSourceIds: string[]; grounded: boolean }> {
-  return json(await request(`/conversations/${encodeURIComponent(conversationId)}/ai-ask`, { method: 'POST', body: JSON.stringify({ question }) }));
+export async function askConversationAi(conversationId: string, question: string, clientMessageId?: string): Promise<{ answer: string; citedSourceIds: string[]; grounded: boolean }> {
+  return json(await request(`/conversations/${encodeURIComponent(conversationId)}/ai-ask`, { method: 'POST', body: JSON.stringify({ question, ...(clientMessageId ? { clientMessageId } : {}) }) }));
 }
 
 export async function listNotifications(): Promise<MobileNotification[]> {

@@ -102,6 +102,24 @@ export class RotateActivationKeyDto {
   currentKey!: `0x${string}`;
 }
 
+export class ResolveLicensingActionDto {
+  @ApiProperty({ minLength: 20 })
+  @IsString()
+  @MinLength(20)
+  actionToken!: string;
+}
+
+export class LicensingActionResolutionDto {
+  @ApiProperty({ enum: ['ROTATE_KEY', 'REVOKE_DEVICE', 'REMOTE_REVOKE_DEVICE', 'KEY_RECOVERY'] })
+  action!: string;
+  @ApiProperty({ format: 'uuid' })
+  licenseId!: string;
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, type: String })
+  deviceId!: string | null;
+  @ApiProperty({ format: 'date-time' })
+  expiresAt!: string;
+}
+
 export class LicensingActionVerificationDto {
   @ApiProperty({ enum: ['ROTATE_KEY', 'REVOKE_DEVICE', 'REMOTE_REVOKE_DEVICE', 'KEY_RECOVERY'] })
   @IsIn(['ROTATE_KEY', 'REVOKE_DEVICE', 'REMOTE_REVOKE_DEVICE', 'KEY_RECOVERY'])

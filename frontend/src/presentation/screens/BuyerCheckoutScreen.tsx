@@ -1,11 +1,17 @@
 import { Alert, Button, Checkbox, Result, Spin, Steps } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { useProduct } from '../../application/catalog/catalogQueries';
-import { describeApiError } from '../../application/auth/authContext';
+import { describeApiError, useAuth } from '../../application/auth/authContext';
+import {
+  clearCheckoutIntent,
+  readCheckoutIntent,
+  writeCheckoutIntent,
+} from '../../application/orders/checkoutIntent';
 import {
   type OrderDetail,
+  useOrder,
   useOrderMutations,
   useOrderTerms,
 } from '../../application/orders/orderQueries';
@@ -15,23 +21,35 @@ import { PageHeader } from '../components/WorkspacePrimitives';
 export function BuyerCheckoutScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   const productSlug = searchParams.get('product') ?? 'securedesk';
   const { data: product, isLoading, isError } = useProduct(productSlug);
   const planId = searchParams.get('planId') ?? product?.plans[0]?.id;
+  const existingIntent = readCheckoutIntent(user?.id);
   const [order, setOrder] = useState<OrderDetail>();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const orderStarted = useRef(false);
   const orderMutations = useOrderMutations();
   const createOrderMutation = orderMutations.create;
+  const resumedOrder = useOrder(existingIntent?.orderId ?? '');
   const termsQuery = useOrderTerms(order?.id ?? '');
 
   useEffect(() => {
-    if (product && planId && product.plans.some((plan) => plan.id === planId) && !order && !orderStarted.current) {
-      orderStarted.current = true;
-      createOrderMutation.mutate({ planId }, { onSuccess: setOrder });
+    if (resumedOrder.data && existingIntent?.planId === planId) {
+      setOrder(resumedOrder.data);
     }
-  }, [createOrderMutation, order, planId, product]);
+  }, [existingIntent?.planId, planId, resumedOrder.data]);
+
+  function createOrder() {
+    if (!planId) return;
+    setError(null);
+    createOrderMutation.mutate({ planId }, {
+      onSuccess: (created) => {
+        setOrder(created);
+        writeCheckoutIntent(user?.id, { orderId: created.id, planId, productSlug });
+      },
+    });
+  }
 
   function acceptServiceTerms() {
     if (!accepted || !order) {
@@ -40,8 +58,10 @@ export function BuyerCheckoutScreen() {
     }
     setError(null);
     orderMutations.acceptServiceTerms.mutate(order, {
-      onSuccess: (acceptedOrder) =>
-        void navigate(`/buyer/orders/${acceptedOrder.id}/payment`),
+      onSuccess: (acceptedOrder) => {
+        clearCheckoutIntent(user?.id);
+        void navigate(`/buyer/orders/${acceptedOrder.id}/payment`);
+      },
     });
   }
 
@@ -100,56 +120,69 @@ export function BuyerCheckoutScreen() {
               </div>
             </div>
           </section>
-          <section className="workspace-card section-card">
-            {createOrderMutation.isError ? <Button onClick={() => createOrderMutation.mutate({ planId }, { onSuccess: setOrder })}>Thử tạo lại đơn hàng</Button> : !order || termsQuery.isPending ? (
-              <Spin aria-label="Đang tải điều khoản" />
-            ) : termsQuery.isError || !termsQuery.data ? (
-              <Alert
-                showIcon
-                type="error"
-                message="Không thể tải đúng phiên bản điều khoản của đơn hàng."
-                action={<Button onClick={() => void termsQuery.refetch()}>Thử lại</Button>}
-              />
-            ) : (
-              <>
-                <h2>Điều khoản cấp phép</h2>
-                <pre className="terms-document">{termsQuery.data.content}</pre>
-                <p className="muted-copy">Điều khoản này áp dụng riêng cho đơn hàng hiện tại.</p>
-                <Checkbox
-                  checked={accepted}
-                  onChange={(event) => {
-                    setAccepted(event.target.checked);
-                    setError(null);
-                  }}
-                >
-                  Tôi đã đọc và đồng ý với điều khoản cấp phép
-                </Checkbox>
-              </>
-            )}
-            {error ||
-            createOrderMutation.error ||
-            orderMutations.acceptServiceTerms.error ||
-            termsQuery.error ? (
-              <Alert
-                message={
-                  error ??
-                  describeApiError(
-                    createOrderMutation.error ??
-                      orderMutations.acceptServiceTerms.error ??
-                      termsQuery.error,
-                    'Không thể hoàn tất bước đơn hàng và điều khoản. Vui lòng thử lại.',
-                  )
-                }
-                role="alert"
-                type="error"
-              />
-            ) : null}
-          </section>
+           <section className="workspace-card section-card">
+             {!order ? (
+               <>
+                 <h2>Xác nhận ý định mua</h2>
+                 <p>Kiểm tra gói và tạo đơn hàng khi bạn sẵn sàng. Việc mở trang này chưa tạo đơn hoặc yêu cầu thanh toán.</p>
+                 {resumedOrder.isPending && existingIntent ? <Spin aria-label="Đang khôi phục đơn hàng" /> : null}
+                 {resumedOrder.isError && existingIntent ? <Alert showIcon type="warning" message="Không thể khôi phục đơn hàng trước đó." action={<Button onClick={() => void resumedOrder.refetch()}>Thử lại</Button>} /> : null}
+                 {createOrderMutation.isError ? <Alert showIcon type="error" message={describeApiError(createOrderMutation.error, 'Không thể tạo đơn hàng. Vui lòng thử lại.')} /> : null}
+                 <Button type="primary" loading={createOrderMutation.isPending} onClick={createOrder}>Tạo đơn hàng</Button>
+               </>
+             ) : termsQuery.isPending ? (
+               <Spin aria-label="Đang tải điều khoản" />
+             ) : termsQuery.isError || !termsQuery.data ? (
+               <Alert
+                 showIcon
+                 type="error"
+                 message="Không thể tải đúng phiên bản điều khoản của đơn hàng."
+                 action={<Button onClick={() => void termsQuery.refetch()}>Thử lại</Button>}
+               />
+             ) : (
+               <>
+                 <h2>Điều khoản cấp phép</h2>
+                 <pre className="terms-document">{termsQuery.data.content}</pre>
+                 <p className="muted-copy">Điều khoản này áp dụng riêng cho đơn hàng hiện tại.</p>
+                 <Checkbox
+                   checked={accepted}
+                   onChange={(event) => {
+                     setAccepted(event.target.checked);
+                     setError(null);
+                   }}
+                 >
+                   Tôi đã đọc và đồng ý với điều khoản cấp phép
+                 </Checkbox>
+               </>
+             )}
+             {error || orderMutations.acceptServiceTerms.error || termsQuery.error ? (
+               <Alert
+                 message={
+                   error ??
+                   describeApiError(
+                     orderMutations.acceptServiceTerms.error ?? termsQuery.error,
+                     'Không thể hoàn tất bước đơn hàng và điều khoản. Vui lòng thử lại.',
+                   )
+                 }
+                 role="alert"
+                 type="error"
+               />
+             ) : null}
+           </section>
         </div>
         <aside className="checkout-stack">
-          <OrderSummary
-            order={{ total: order?.priceVndSnapshot ?? selectedPlan.priceVnd }}
-          />
+           <OrderSummary
+             order={order ? {
+               total: order.priceVndSnapshot,
+               productName: order.productNameSnapshot,
+               planName: order.planNameSnapshot,
+               billingCycle: order.billingCycleSnapshot,
+               durationMonths: order.durationMonthsSnapshot,
+               maxActiveDevices: order.maxActiveDevicesSnapshot,
+               entitlements: order.entitlementsSnapshot,
+               orderNumber: order.orderNumber,
+             } : { total: selectedPlan.priceVnd }}
+           />
           <section className="workspace-card section-card">
             <span className="status-chip status-chip--warning">{order?.paymentDueAt ? `Hạn thanh toán: ${new Date(order.paymentDueAt).toLocaleString('vi-VN')}` : 'Đang chuẩn bị đơn hàng'}</span>
             <p>Quay lại danh mục nếu bạn muốn chọn một gói khác.</p>

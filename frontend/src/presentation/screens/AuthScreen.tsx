@@ -164,7 +164,11 @@ export function AuthScreen() {
             <ForgotPasswordForm onForgotPassword={forgotPassword} />
           ) : null}
           {mode === 'reset' ? (
-            <ResetPasswordForm onResetPassword={resetPassword} token={verificationToken ?? ''} />
+            <ResetPasswordForm
+              onRequestNewLink={() => selectMode('forgot')}
+              onResetPassword={resetPassword}
+              token={verificationToken ?? ''}
+            />
           ) : null}
         </div>
       </section>

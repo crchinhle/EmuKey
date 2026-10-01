@@ -15,7 +15,34 @@ import type {
   RevokeDeviceDto,
   RotateActivationKeyDto,
 } from '../../infrastructure/api/generated';
-import { requestJson } from '../auth/authContext';
+import { requestJson, type ApiRequestError } from '../auth/authContext';
+
+export function publicVerificationError(error: unknown): { message: string; retryable: boolean } {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as ApiRequestError).status);
+    const retryAfter = Number((error as ApiRequestError).retryAfterSeconds ?? 0);
+    if (status === 400) return { message: 'Mã xác thực không đúng định dạng. Vui lòng kiểm tra và thử lại.', retryable: false };
+    if (status === 404) return { message: 'Không tìm thấy License phù hợp với mã xác thực.', retryable: false };
+    if (status === 429) return { message: retryAfter ? `Hệ thống đang giới hạn yêu cầu. Vui lòng thử lại sau ${retryAfter} giây.` : 'Hệ thống đang giới hạn yêu cầu. Vui lòng thử lại sau ít phút.', retryable: true };
+  }
+  return { message: 'Không thể xác minh lúc này. Vui lòng kiểm tra kết nối và thử lại.', retryable: true };
+}
+
+export function publicVerificationErrorLabel(error: unknown): string {
+  return publicVerificationError(error).message;
+}
+
+export function activationKeyErrorLabel(error: unknown): string {
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as ApiRequestError).status);
+    const code = 'code' in error ? String((error as ApiRequestError).code ?? '') : '';
+    if (status === 404 || code === 'ACTIVATION_KEY_UNAVAILABLE' || code === 'ACTIVATION_KEY_ALREADY_RETRIEVED') return 'Mã bản quyền đã được nhận hoặc hiện không còn sẵn sàng. Nếu bạn đã mất mã, hãy dùng quy trình khôi phục mã.';
+    if (status === 409) return 'Mã bản quyền chưa thể nhận ở trạng thái hiện tại. Hãy kiểm tra lại trạng thái bản quyền.';
+    if (status === 403) return 'Bạn không có quyền nhận mã bản quyền này.';
+    if (status === 429) return 'Bạn đã yêu cầu quá nhiều lần. Vui lòng thử lại sau.';
+  }
+  return 'Không thể nhận mã bản quyền lúc này. Vui lòng thử lại khi bản quyền vẫn đang sẵn sàng.';
+}
 
 export function licenseStatusLabel(status: string): string {
   const labels: Record<string, string> = {
@@ -29,6 +56,17 @@ export function licenseStatusLabel(status: string): string {
   return labels[status] ?? status;
 }
 
+export function finalityLabel(finality: string | null | undefined): string {
+  switch (finality) {
+    case 'CHAIN_CONFIRMED': return 'Đã xác nhận trên blockchain';
+    case 'PENDING_FINALITY': return 'Đang chờ finality';
+    case 'UNTRUSTED_REORG': return 'Chưa tin cậy — blockchain có reorg';
+    case 'PROJECTION_STALE': return 'Dữ liệu đang đồng bộ lại';
+    case 'REORGED': return 'Đang xác minh lại sau reorg';
+    case 'PENDING_ONCHAIN': return 'Đang chờ xác nhận trên blockchain';
+    default: return finality ?? 'Chưa rõ trạng thái';
+  }
+}
 export function useLicenses() {
   return useQuery({
     queryKey: ['licenses'],

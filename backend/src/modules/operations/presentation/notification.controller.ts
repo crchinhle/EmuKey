@@ -1,5 +1,6 @@
 import { Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { NotificationDto } from './notification.dto.js';
 
 import { CurrentUser, Roles } from '../../identity-access/security.decorators.js';
 import { AuthGuard, RolesGuard } from '../../identity-access/security.guards.js';
@@ -17,11 +18,11 @@ export class NotificationController {
   constructor(private readonly service: NotificationService) {}
 
   @Get()
-  @ApiOkResponse()
+  @ApiOkResponse({ type: NotificationDto, isArray: true })
   list(@CurrentUser() actor: AuthPrincipal) { return this.service.list(actor); }
 
   @Post(':notificationId/read')
-  @ApiOkResponse()
+  @ApiOkResponse({ type: NotificationDto })
   markRead(@CurrentUser() actor: AuthPrincipal, @Param('notificationId', ParseUUIDPipe) notificationId: string) { return this.service.markRead(actor, notificationId); }
 
   @Post('push-tokens')

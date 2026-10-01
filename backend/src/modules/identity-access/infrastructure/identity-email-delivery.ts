@@ -15,7 +15,7 @@ export class IdentityEmailDelivery implements IdentityTokenDelivery {
 
   async sendEmailVerification(address: string, token: string): Promise<void> {
     await this.email.deliver({
-      data: { token },
+      data: { email: address, token },
       eventKey: `email-verification:${address}`,
       template: 'identity-email-verification-v1',
       to: address,

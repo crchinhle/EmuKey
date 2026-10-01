@@ -1,4 +1,12 @@
+import { createHash } from 'node:crypto';
 import { Pool, type PoolClient } from 'pg';
+
+function stableEventUuid(value: string): string {
+  const bytes = createHash('sha256').update(value).digest('hex').slice(0, 32).split('');
+  bytes[12] = '5';
+  bytes[16] = ((Number.parseInt(bytes[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${bytes.slice(0, 8).join('')}-${bytes.slice(8, 12).join('')}-${bytes.slice(12, 16).join('')}-${bytes.slice(16, 20).join('')}-${bytes.slice(20).join('')}`;
+}
 
 import type { ConversationActor } from '../assistance-support.types.js';
 import type {
@@ -47,6 +55,19 @@ export class AssistanceSupportRepository {
 
   async createConversation(customerUserId: string, input: { contextId?: string; contextType?: ConversationContextType; title?: string }) {
     const contextType = input.contextType ?? 'GENERAL';
+    if (contextType === 'ORDER') {
+      const owned = await this.pool.query('SELECT 1 FROM orders WHERE id = $1 AND customer_user_id = $2', [input.contextId, customerUserId]);
+      if (!owned.rows[0]) throw new Error('CONVERSATION_CONTEXT_NOT_FOUND');
+    } else if (contextType === 'LICENSE') {
+      const owned = await this.pool.query('SELECT 1 FROM licenses WHERE id = $1 AND customer_user_id = $2', [input.contextId, customerUserId]);
+      if (!owned.rows[0]) throw new Error('CONVERSATION_CONTEXT_NOT_FOUND');
+    } else if (contextType === 'PLAN') {
+      const visible = await this.pool.query("SELECT 1 FROM plans p JOIN products pr ON pr.id = p.product_id WHERE p.id = $1 AND p.status = 'PUBLISHED'", [input.contextId]);
+      if (!visible.rows[0]) throw new Error('CONVERSATION_CONTEXT_NOT_FOUND');
+    } else if (contextType === 'PRODUCT') {
+      const visible = await this.pool.query("SELECT 1 FROM products WHERE id = $1 AND status = 'PUBLISHED'", [input.contextId]);
+      if (!visible.rows[0]) throw new Error('CONVERSATION_CONTEXT_NOT_FOUND');
+    }
     const result = await this.pool.query<Record<string, unknown>>(
       `INSERT INTO conversations (customer_user_id, context_type, context_id, title)
        VALUES ($1, $2, $3, $4) RETURNING *`,
@@ -94,6 +115,23 @@ export class AssistanceSupportRepository {
   async listMessages(actor: ConversationActor, conversationId: string) {
     const conversation = await this.findConversationForActor(actor, conversationId);
     if (!conversation) return null;
+    return this.listMessagesForConversation(conversationId);
+  }
+
+  async listQueuePreviewMessages(actor: ConversationActor, conversationId: string) {
+    if (actor.role !== 'SUPPORT_STAFF' && actor.role !== 'SYSTEM_ADMIN') return null;
+    const result = await this.pool.query<Record<string, unknown>>(
+      `SELECT * FROM conversations WHERE id = $1 AND (
+         $2 = 'SYSTEM_ADMIN' OR
+         (status = 'WAITING_SUPPORT' AND assigned_support_user_id IS NULL)
+       )`,
+      [conversationId, actor.role],
+    );
+    if (!result.rows[0]) return null;
+    return this.listMessagesForConversation(conversationId);
+  }
+
+  private async listMessagesForConversation(conversationId: string) {
     const result = await this.pool.query<Record<string, unknown>>(
       `SELECT * FROM messages WHERE conversation_id = $1 ORDER BY server_sequence`,
       [conversationId],
@@ -101,7 +139,7 @@ export class AssistanceSupportRepository {
     return result.rows.map(mapMessage);
   }
 
-  async requestSupport(customerUserId: string, conversationId: string) {
+  async requestSupport(customerUserId: string, conversationId: string, reason: string) {
     return this.transaction(async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `UPDATE conversations
@@ -111,6 +149,7 @@ export class AssistanceSupportRepository {
         [conversationId, customerUserId],
       );
       if (!result.rows[0]) throw new Error('CONVERSATION_STATE_INVALID');
+      await this.appendSystemMessageInTransaction(client, conversationId, `Customer requested support: ${reason}`);
       const supportUsers = await client.query<{ id: string }>(
         `SELECT id FROM users WHERE role = 'SUPPORT_STAFF' AND status = 'ACTIVE'`,
       );
@@ -148,6 +187,7 @@ export class AssistanceSupportRepository {
         [conversationId, supportUserId],
       );
       const conversation = mapConversation(result.rows[0]!);
+      await this.appendSystemMessageInTransaction(client, conversationId, `Support agent ${supportUserId} claimed this conversation`);
       await this.notifications.enqueueInTransaction(client, {
         channel: 'IN_APP',
         content: 'Hội thoại của bạn đã được nhân viên hỗ trợ tiếp nhận.',
@@ -158,6 +198,30 @@ export class AssistanceSupportRepository {
         userId: conversation.customerUserId,
       });
       return conversation;
+    });
+  }
+
+  async releaseConversation(supportUserId: string, conversationId: string) {
+    return this.transaction(async (client) => {
+      const locked = await client.query<Record<string, unknown>>(
+        'SELECT * FROM conversations WHERE id = $1 FOR UPDATE',
+        [conversationId],
+      );
+      const current = locked.rows[0] ? mapConversation(locked.rows[0]) : null;
+      if (!current) throw new Error('CONVERSATION_NOT_FOUND');
+      if (current.status !== 'SUPPORT_ACTIVE' || current.assignedSupportUserId !== supportUserId) {
+        throw new Error('CONVERSATION_STATE_INVALID');
+      }
+      const result = await client.query<Record<string, unknown>>(
+        `UPDATE conversations
+         SET assigned_support_user_id = NULL, claimed_at = NULL,
+             status = 'WAITING_SUPPORT', version = version + 1, updated_at = now()
+         WHERE id = $1 AND assigned_support_user_id = $2 RETURNING *`,
+        [conversationId, supportUserId],
+      );
+      if (!result.rows[0]) throw new Error('CONVERSATION_STATE_INVALID');
+      await this.appendSystemMessageInTransaction(client, conversationId, `Support agent ${supportUserId} released this conversation back to the queue`);
+      return mapConversation(result.rows[0]);
     });
   }
 
@@ -194,6 +258,9 @@ export class AssistanceSupportRepository {
       if (conversation.status === 'CLOSED') throw new Error('CONVERSATION_CLOSED');
       if (input.senderType === 'CUSTOMER' && conversation.customerUserId !== input.actorUserId) throw new Error('CONVERSATION_ACCESS_DENIED');
       if (input.senderType === 'SUPPORT' && conversation.assignedSupportUserId !== input.actorUserId) throw new Error('CONVERSATION_ACCESS_DENIED');
+      if (input.senderType === 'CUSTOMER' && conversation.status === 'AI_ACTIVE') {
+        await this.appendSystemMessageInTransaction(client, input.conversationId, 'Customer sent a message in AI conversation — escalated to support queue');
+      }
 
       const existing = await client.query<Record<string, unknown>>(
         `SELECT * FROM messages WHERE conversation_id = $1 AND client_message_id = $2`,
@@ -234,6 +301,51 @@ export class AssistanceSupportRepository {
       );
       return mapMessage(result.rows[0]!);
     });
+  }
+
+  async appendCustomerMessage(input: { clientMessageId: string; conversationId: string; customerUserId: string; content: string }) {
+    return this.transaction(async (client) => {
+      const locked = await client.query<Record<string, unknown>>(
+        'SELECT * FROM conversations WHERE id = $1 FOR UPDATE',
+        [input.conversationId],
+      );
+      const conversation = locked.rows[0] ? mapConversation(locked.rows[0]) : null;
+      if (!conversation) throw new Error('CONVERSATION_NOT_FOUND');
+      if (conversation.customerUserId !== input.customerUserId) throw new Error('CONVERSATION_ACCESS_DENIED');
+
+      const existing = await client.query<Record<string, unknown>>(
+        `SELECT * FROM messages WHERE conversation_id = $1 AND client_message_id = $2`,
+        [input.conversationId, input.clientMessageId],
+      );
+      if (existing.rows[0]) return mapMessage(existing.rows[0]);
+
+      const sequence = await client.query<{ next_sequence: string }>(
+        `SELECT COALESCE(MAX(server_sequence), 0) + 1 AS next_sequence
+         FROM messages WHERE conversation_id = $1`,
+        [input.conversationId],
+      );
+      const inserted = await client.query<Record<string, unknown>>(
+        `INSERT INTO messages (conversation_id, sender_user_id, sender_type, client_message_id, server_sequence, content)
+         VALUES ($1, $2, 'CUSTOMER', $3, $4, $5) RETURNING *`,
+        [input.conversationId, input.customerUserId, input.clientMessageId, Number(sequence.rows[0]!.next_sequence), input.content],
+      );
+      await client.query(
+        `UPDATE conversations SET last_message_at = now(), updated_at = now(),
+          version = version + 1 WHERE id = $1`,
+        [input.conversationId],
+      );
+      return mapMessage(inserted.rows[0]!);
+    });
+  }
+
+  private async appendSystemMessageInTransaction(client: PoolClient, conversationId: string, content: string): Promise<void> {
+    const clientMessageId = stableEventUuid(`${conversationId}:${content}`);
+    await client.query(
+      `INSERT INTO messages (conversation_id, sender_type, client_message_id, server_sequence, content)
+       VALUES ($1, 'SYSTEM', $2, COALESCE((SELECT MAX(server_sequence) + 1 FROM messages WHERE conversation_id = $1), 1), $3)
+       ON CONFLICT (conversation_id, client_message_id) DO NOTHING`,
+      [conversationId, clientMessageId, content],
+    );
   }
 
   private async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {

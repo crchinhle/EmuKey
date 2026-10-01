@@ -1,7 +1,7 @@
 import { Alert, Button, Input, Spin } from 'antd';
 import { useState } from 'react';
 
-import { licenseStatusLabel, usePublicLicenseVerification } from '../../application/licenses/licenseQueries';
+import { licenseStatusLabel, publicVerificationErrorLabel, usePublicLicenseVerification } from '../../application/licenses/licenseQueries';
 import { SiteHeader } from '../components/SiteHeader';
 import { FactList, StatusChip } from '../components/WorkspacePrimitives';
 
@@ -65,8 +65,19 @@ export function PublicVerificationScreen() {
             <Alert
               showIcon
               message="Không thể xác minh lúc này."
+              description={publicVerificationErrorLabel(verification.error)}
               role="alert"
               type="error"
+              action={
+                <Button
+                  onClick={() => {
+                    verification.reset();
+                    verification.mutate(code.trim());
+                  }}
+                >
+                  Thử lại
+                </Button>
+              }
             />
           ) : null}
           {found ? (

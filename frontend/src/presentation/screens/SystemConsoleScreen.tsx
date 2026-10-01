@@ -1,8 +1,8 @@
-import { Alert, Button, Popconfirm, Table } from 'antd';
+import { Alert, Button, Input, Popconfirm, Table } from 'antd';
 import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, useAuth, type AuthUser } from '../../application/auth/authContext';
+import { describeApiError, requestJson, useAuth, type AuthUser } from '../../application/auth/authContext';
 import { useAssistanceHealth, useBlockchainReconciliation, usePlatformReadiness } from '../../application/operations/operationsQueries';
 import { usePaymentHistory } from '../../application/orders/orderQueries';
 
@@ -20,10 +20,11 @@ export function SystemConsoleScreen() {
   const payments = usePaymentHistory();
   const reconciliation = useBlockchainReconciliation();
   const view = new URLSearchParams(location.search).get('view');
-  const accounts = useQuery({ queryKey: ['identity', 'users'], queryFn: async () => { const response = await api('/auth/users'); if (!response.ok) throw new Error('USERS_REQUEST_FAILED'); return response.json() as Promise<Array<{ id: string; email: string; displayName: string; role: string; status: string }>>; }, enabled: permitted });
   const [accountId, setAccountId] = useState<string | null>(null);
-  const detail = useQuery({ queryKey: ['identity', 'user', accountId], queryFn: async () => { const response = await api(`/auth/users/${accountId}`); if (!response.ok) throw new Error('USER_DETAIL_FAILED'); return response.json() as Promise<AuthUser>; }, enabled: permitted && Boolean(accountId) });
-  const stateMutation = useMutation({ mutationFn: async ({ id, action }: { id: string; action: 'lock' | 'unlock' | 'disable' }) => { const response = await api(`/auth/users/${id}/${action}`, { method: 'POST', body: JSON.stringify({ reason: 'System console action' }) }); if (!response.ok) throw new Error('ACCOUNT_STATE_FAILED'); }, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['identity'] }); } });
+  const [userQuery, setUserQuery] = useState('');
+  const accounts = useQuery({ queryKey: ['identity', 'users', userQuery], queryFn: () => requestJson<Array<{ id: string; email: string; displayName: string; role: string; status: string }>>(`/auth/users${userQuery.trim() ? `?q=${encodeURIComponent(userQuery.trim())}` : ''}`), enabled: permitted });
+  const detail = useQuery({ queryKey: ['identity', 'user', accountId], queryFn: () => requestJson<AuthUser>(`/auth/users/${accountId}`), enabled: permitted && Boolean(accountId) });
+  const stateMutation = useMutation({ mutationFn: async ({ id, action }: { id: string; action: 'lock' | 'unlock' | 'disable' }) => requestJson(`/auth/users/${id}/${action}`, { method: 'POST', body: JSON.stringify({ reason: `System console: ${action}` }) }), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ['identity'] }); } });
   return (
     <>
       <PageHeader
@@ -51,9 +52,10 @@ export function SystemConsoleScreen() {
       <section className="workspace-card table-card spaced-card">
         {view === 'users' ? <>
           {!permitted ? <Alert message="Bạn không có quyền quản lý tài khoản." type="warning" /> : null}
-          {accounts.isError ? <Alert message="Không thể tải danh sách tài khoản." type="error" /> : null}
-          {stateMutation.isError ? <Alert message="Không thể cập nhật trạng thái tài khoản." type="error" /> : null}
-          <Table dataSource={accounts.data ?? []} loading={accounts.isLoading} rowKey="id" scroll={{ x: 900 }} onRow={(record) => ({ onClick: () => setAccountId(record.id) })} columns={[{ title: 'Tên', dataIndex: 'displayName' }, { title: 'Email', dataIndex: 'email' }, { title: 'Vai trò', dataIndex: 'role' }, { title: 'Trạng thái', dataIndex: 'status' }, { title: 'Thao tác', render: (_: unknown, record) => <span className="table-actions"><Button disabled={!permitted || stateMutation.isPending} onClick={(event) => { event.stopPropagation(); stateMutation.mutate({ id: record.id, action: record.status === 'LOCKED' ? 'unlock' : 'lock' }); }}>{record.status === 'LOCKED' ? 'Mở khóa' : 'Khóa'}</Button>{record.status !== 'DISABLED' ? <Popconfirm title="Vô hiệu hóa tài khoản?" description="Người dùng sẽ không thể tiếp tục sử dụng tài khoản." okText="Vô hiệu hóa" cancelText="Giữ lại" onConfirm={() => stateMutation.mutate({ id: record.id, action: 'disable' })}><Button danger disabled={!permitted || stateMutation.isPending} onClick={(event) => event.stopPropagation()}>Vô hiệu hóa</Button></Popconfirm> : null}</span> }]} />
+           {accounts.isError ? <Alert message={describeApiError(accounts.error, 'Không thể tải danh sách tài khoản.')} type="error" /> : null}
+           {stateMutation.isError ? <Alert message={describeApiError(stateMutation.error, 'Không thể cập nhật trạng thái tài khoản.')} type="error" /> : null}
+           <Input allowClear aria-label="Tìm người dùng" onChange={(event) => setUserQuery(event.target.value)} placeholder="Tìm theo tên hoặc email" style={{ marginBottom: 16, maxWidth: 420 }} value={userQuery} />
+          <Table dataSource={accounts.data ?? []} loading={accounts.isLoading} rowKey="id" scroll={{ x: 900 }} onRow={(record) => ({ onClick: () => setAccountId(record.id) })} columns={[{ title: 'Tên', dataIndex: 'displayName' }, { title: 'Email', dataIndex: 'email' }, { title: 'Vai trò', dataIndex: 'role' }, { title: 'Trạng thái', dataIndex: 'status' }, { title: 'Thao tác', render: (_: unknown, record) => <span className="table-actions"><Button disabled={!permitted || stateMutation.isPending || record.status === 'DISABLED'} onClick={(event) => { event.stopPropagation(); stateMutation.mutate({ id: record.id, action: record.status === 'LOCKED' ? 'unlock' : 'lock' }); }}>{record.status === 'LOCKED' ? 'Mở khóa' : record.status === 'DISABLED' ? 'Đã vô hiệu hóa' : 'Khóa'}</Button>{record.status !== 'DISABLED' ? <Popconfirm title="Vô hiệu hóa tài khoản?" description="Người dùng sẽ không thể tiếp tục sử dụng tài khoản." okText="Vô hiệu hóa" cancelText="Giữ lại" onConfirm={() => stateMutation.mutate({ id: record.id, action: 'disable' })}><Button danger disabled={!permitted || stateMutation.isPending} onClick={(event) => event.stopPropagation()}>Vô hiệu hóa</Button></Popconfirm> : null}</span> }]} />
           {accountId ? <div role="region" aria-label="Chi tiết tài khoản">{detail.isLoading ? <span>Đang tải chi tiết...</span> : detail.isError ? <Alert message="Không thể tải chi tiết tài khoản." type="error" /> : <FactList facts={[{ label: 'Họ tên', value: String(detail.data?.displayName ?? '—') }, { label: 'Email', value: String(detail.data?.email ?? '—') }, { label: 'Vai trò', value: String(detail.data?.role ?? '—') }, { label: 'Trạng thái', value: String(detail.data?.status ?? '—') }]} />}</div> : null}
         </> : view === 'payments' ? <>
           {permitted ? <PaymentReviewPanel /> : null}

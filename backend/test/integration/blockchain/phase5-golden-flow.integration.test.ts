@@ -64,6 +64,13 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
   const planId = '00000000-0000-4000-8000-000000000301';
   const webhookSecret = 'phase5-payment-secret';
 
+  async function acceptTerms(orderId: string) {
+    const terms = await commerce.getServiceTerms(customer, orderId);
+    return commerce.acceptServiceTerms(customer, orderId, {
+      accepted: true, hash: terms.hash, version: terms.version,
+    });
+  }
+
   beforeAll(async () => {
     const chain = defineChain({
       id: 31_337,
@@ -124,7 +131,7 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
       undefined,
       { planId },
     );
-    await commerce.acceptServiceTerms(customer, order.id, { accepted: true });
+    await acceptTerms(order.id);
     const checkout = await commerce.checkout(customer, order.id);
     const purchaseProviderClock = await pool.query<{ occurred_at: Date }>(
       "SELECT statement_timestamp() + interval '1 second' AS occurred_at",
@@ -384,7 +391,7 @@ describeRealRpc('customer durable chain golden flow over real JSON-RPC', () => {
     const renewalOrder = repeats[0]!;
     expect(new Set(repeats.map((item) => item.id)).size).toBe(1);
     expect((await commerce.renewalPreview(customer, licenseId)).pendingOrder?.id).toBe(renewalOrder.id);
-    await commerce.acceptServiceTerms(customer, renewalOrder.id, { accepted: true });
+    await acceptTerms(renewalOrder.id);
     const renewalCheckout = await commerce.checkout(customer, renewalOrder.id);
     const renewalProviderClock = await pool.query<{ occurred_at: Date }>(
       "SELECT statement_timestamp() + interval '1 second' AS occurred_at",

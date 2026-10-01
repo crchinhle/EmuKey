@@ -7,7 +7,7 @@ import {
   Get,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 
 import { CurrentUser, Roles } from '../identity-access/security.decorators.js';
 import { AuthGuard, RolesGuard } from '../identity-access/security.guards.js';
@@ -28,6 +28,8 @@ import {
   ActivationKeyRecoveryDto,
   RotateActivationKeyDto,
   LicensingActionVerificationDto,
+  ResolveLicensingActionDto,
+  LicensingActionResolutionDto,
 } from './licensing.dto.js';
 import { LicensingService } from './licensing.service.js';
 
@@ -57,6 +59,16 @@ export class LicensingController {
   @Roles('CUSTOMER')
   requestActionVerification(@CurrentUser() actor: AuthPrincipal, @Body() dto: LicensingActionVerificationDto) {
     return this.service.requestActionVerification(actor, dto);
+  }
+
+  @Post('licenses/action-verification/resolve')
+  @Roles('CUSTOMER')
+  @ApiOperation({ summary: 'Resolve the licensing action an email token authorizes without consuming it' })
+  @ApiOkResponse({ type: LicensingActionResolutionDto })
+  @ApiForbiddenResponse()
+  @ApiUnauthorizedResponse()
+  resolveActionVerification(@CurrentUser() actor: AuthPrincipal, @Body() dto: ResolveLicensingActionDto) {
+    return this.service.resolveActionVerification(actor, dto.actionToken);
   }
 
   @Get('commands/:commandId')

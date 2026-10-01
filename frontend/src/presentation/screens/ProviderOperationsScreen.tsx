@@ -8,6 +8,21 @@ import {
   StatusChip,
 } from '../components/WorkspacePrimitives';
 
+export const paymentClassificationLabels: Record<string, string> = {
+  MATCHED: 'Đã khớp',
+  DUPLICATE: 'Giao dịch trùng',
+  UNMATCHED: 'Chưa khớp đơn hàng',
+  AMOUNT_MISMATCH: 'Số tiền không khớp',
+  INVALID: 'Không hợp lệ',
+};
+
+export function paymentClassificationTone(classification: string): 'success' | 'warning' | 'error' | 'neutral' {
+  if (classification === 'MATCHED') return 'success';
+  if (classification === 'AMOUNT_MISMATCH' || classification === 'INVALID') return 'error';
+  if (classification === 'DUPLICATE' || classification === 'UNMATCHED') return 'warning';
+  return 'neutral';
+}
+
 export function ProviderOperationsScreen() {
   const payments = usePaymentHistory();
   const [query, setQuery] = useState('');
@@ -57,9 +72,10 @@ export function ProviderOperationsScreen() {
                           {payment.productNameSnapshot} · {payment.planNameSnapshot} · {payment.amountVnd.toLocaleString('vi-VN')} ₫
                         </small>
                       </div>
-                      <StatusChip tone={payment.classification === 'MATCHED' ? 'success' : 'warning'}>
-                        {payment.classification}
-                      </StatusChip>
+                       <StatusChip tone={paymentClassificationTone(payment.classification)}>
+                         {paymentClassificationLabels[payment.classification] ?? 'Chưa xác định'}
+                       </StatusChip>
+                       {payment.reviewStatus ? <small>Kiểm tra: {payment.reviewStatus === 'OPEN' ? 'Đang mở' : 'Đã xử lý'}</small> : null}
                     </article>
                   ))}
                 </div>

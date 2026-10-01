@@ -26,6 +26,28 @@ jobs:
         run: corepack enable
       - name: Install frozen dependencies
         run: corepack pnpm install --frozen-lockfile
+      - name: Pre-pull integration test images
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          # Testcontainers reuses local images. Retry registry failures here,
+          # before they can fail a test suite's beforeAll hook.
+          # Keep these tags aligned with test/integration and Testcontainers' Ryuk version.
+          images=(pgvector/pgvector:pg15 redis:8.2-alpine redis:7-alpine testcontainers/ryuk:0.14.0)
+          for image in "${images[@]}"; do
+            for attempt in 1 2 3 4 5; do
+              if docker pull "$image"; then
+                break
+              fi
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error::Failed to pull $image after $attempt attempts"
+                exit 1
+              fi
+              delay=$((attempt * 5))
+              echo "::warning::Failed to pull $image (attempt $attempt/5); retrying in ${delay}s"
+              sleep "$delay"
+            done
+          done
       - name: Verify backend
         run: |
           corepack pnpm baseline:check

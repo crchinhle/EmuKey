@@ -1,6 +1,18 @@
 import { Pool, type PoolClient } from 'pg';
 
 import type { NotificationCreateInput, NotificationRecord } from '../application/notification.service.js';
+import { mapNotification } from '../presentation/notification.dto.js';
+
+interface NotificationRow {
+  id: unknown;
+  title: unknown;
+  content: unknown;
+  is_read: unknown;
+  created_at: unknown;
+  read_at: unknown;
+  type: unknown;
+  data: unknown;
+}
 
 export class NotificationRepository {
   constructor(private readonly pool: Pool) {}
@@ -27,22 +39,22 @@ export class NotificationRepository {
     return result.rows[0]!;
   }
 
-  async list(userId: string): Promise<NotificationRecord[]> {
-    const result = await this.pool.query<NotificationRecord>(
-      `SELECT id, event_key, type, title, content, data, channel, delivery_status, is_read, created_at, read_at
+  async list(userId: string): Promise<ReturnType<typeof mapNotification>[]> {
+    const result = await this.pool.query<NotificationRow>(
+      `SELECT id, user_id, event_key, type, title, content, data, channel, delivery_status, is_read, created_at, read_at
        FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
       [userId],
     );
-    return result.rows;
+    return result.rows.map(mapNotification);
   }
 
-  async markRead(userId: string, notificationId: string): Promise<NotificationRecord | null> {
-    const result = await this.pool.query<NotificationRecord>(
+  async markRead(userId: string, notificationId: string): Promise<ReturnType<typeof mapNotification> | null> {
+    const result = await this.pool.query<NotificationRow>(
       `UPDATE notifications SET is_read = TRUE, read_at = COALESCE(read_at, now()), updated_at = now()
-       WHERE id = $1 AND user_id = $2 RETURNING id, is_read, read_at`,
+       WHERE id = $1 AND user_id = $2 RETURNING id, type, title, content, is_read, created_at, read_at, data`,
       [notificationId, userId],
     );
-    return result.rows[0] ?? null;
+    return result.rows[0] ? mapNotification(result.rows[0]) : null;
   }
 
   async registerPushToken(userId: string, token: string, provider: 'FCM' | 'EXPO') {

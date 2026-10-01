@@ -5,7 +5,8 @@ export class KnowledgeService {
   constructor(private readonly repository: {
      create(actor: AuthPrincipal, input: { chunks?: string[]; file?: { originalname: string; mimetype: string; size: number; buffer: Buffer }; logicalDocumentKey: string; productId: string; sourceType: string; title: string; version?: number }): Promise<unknown>;
     list(actor: AuthPrincipal): Promise<unknown[]>;
-    publish(actor: AuthPrincipal, id: string): Promise<unknown>;
+     publish(actor: AuthPrincipal, id: string, expectedCurrentVersion?: number): Promise<unknown>;
+     detail(actor: AuthPrincipal, id: string): Promise<unknown>;
     search(actor: AuthPrincipal, question: string): Promise<Array<{ content: string; id: string }>>;
   }) {}
 
@@ -14,7 +15,8 @@ export class KnowledgeService {
     return this.repository.create(actor, input);
   }
   list(actor: AuthPrincipal) { this.requireProvider(actor); return this.repository.list(actor); }
-  publish(actor: AuthPrincipal, id: string) { this.requireProvider(actor); return this.repository.publish(actor, id); }
+  publish(actor: AuthPrincipal, id: string, expectedCurrentVersion?: number) { this.requireProvider(actor); return this.repository.publish(actor, id, expectedCurrentVersion); }
+  detail(actor: AuthPrincipal, id: string) { this.requireProvider(actor); return this.repository.detail(actor, id); }
   search(actor: AuthPrincipal, question: string) {
     if (!['CUSTOMER', 'PROVIDER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role)) throw new ForbiddenException();
     return this.repository.search(actor, question);

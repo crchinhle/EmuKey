@@ -4,6 +4,7 @@ import type { AiGatewayPort, GroundingSource } from './application/ports/ai-gate
 
 export interface KnowledgeSearchPort {
   searchSources(input: { conversationId: string; customerUserId: string; question: string }): Promise<GroundingSource[]>;
+  appendCustomerMessage(input: { clientMessageId: string; conversationId: string; customerUserId: string; content: string }): Promise<unknown>;
   appendAiMessage(input: { clientMessageId: string; conversationId: string; content: string; citedSourceIds: string[]; grounded: boolean }): Promise<unknown>;
 }
 
@@ -13,9 +14,15 @@ export class AiAssistanceService {
     private readonly knowledge: KnowledgeSearchPort,
   ) {}
 
-  async answer(input: { conversationId: string; customerUserId: string; question: string; clientMessageId?: string }) {
+  async answer(input: { conversationId: string; customerUserId: string; question: string; clientMessageId: string }) {
+    await this.knowledge.appendCustomerMessage({
+      clientMessageId: input.clientMessageId,
+      conversationId: input.conversationId,
+      customerUserId: input.customerUserId,
+      content: input.question,
+    });
     const sources = await this.knowledge.searchSources(input);
-    const clientMessageId = input.clientMessageId ?? stableEventUuid(`${input.conversationId}:${input.question}`);
+    const clientMessageId = stableEventUuid(`${input.conversationId}:${input.clientMessageId}:answer`);
     if (sources.length === 0) {
       const refusal = {
         answer: 'Không đủ nguồn chính thức để trả lời câu hỏi này.',
