@@ -59,8 +59,8 @@ describe('customer commerce and payment flow', () => {
     // Exercise upgrading the pre-policy schema, not only fresh installations.
     const legacySchema = schema
       .replace(/\x20{4}service_terms_version_snapshot VARCHAR\(40\),\r?\n\x20{4}service_terms_hash_snapshot CHAR\(64\),\r?\n\x20{4}service_terms_content_snapshot TEXT,\r?\n/, '')
-      .replace(/\x20{4}CONSTRAINT ck_orders_terms_snapshot CHECK \([\s\S]*?\r?\n\x20{4}\),\r?\n\x20{4}CONSTRAINT ck_orders_payment_gate/, '\x20{4}CONSTRAINT ck_orders_payment_gate')
-      .replace(/\x20{11}NEW\.created_at,\r?\n\x20{11}NEW\.service_terms_version_snapshot, NEW\.service_terms_hash_snapshot,\r?\n\x20{11}NEW\.service_terms_content_snapshot\)\r?\n\x20{7}IS DISTINCT FROM\r?\n\x20{7}ROW\(([^]*?)\x20{11}OLD\.created_at,\r?\n\x20{11}OLD\.service_terms_version_snapshot, OLD\.service_terms_hash_snapshot,\r?\n\x20{11}OLD\.service_terms_content_snapshot\) THEN/, '\x20{11}NEW.created_at)\n\x20{7}IS DISTINCT FROM\n\x20{7}ROW($1\x20{11}OLD.created_at) THEN')
+      .replace(/\x20{4}CONSTRAINT ck_orders_terms_snapshot CHECK \([\s\S]*?\r?\n\x20{4}\),\r?\n\x20{4}CONSTRAINT ck_orders_payment_gate/, '    CONSTRAINT ck_orders_payment_gate')
+      .replace(/\x20{11}NEW\.created_at,\r?\n\x20{11}NEW\.service_terms_version_snapshot, NEW\.service_terms_hash_snapshot,\r?\n\x20{11}NEW\.service_terms_content_snapshot\)\r?\n\x20{7}IS DISTINCT FROM\r?\n\x20{7}ROW\(([^]*?)\x20{11}OLD\.created_at,\r?\n\x20{11}OLD\.service_terms_version_snapshot, OLD\.service_terms_hash_snapshot,\r?\n\x20{11}OLD\.service_terms_content_snapshot\) THEN/, '           NEW.created_at)\n       IS DISTINCT FROM\n       ROW($1           OLD.created_at) THEN')
       .replace(/\x20{4}timing_basis VARCHAR\(30\)[\s\S]*?CHECK \(timing_basis IN \('PROVIDER', 'SANDBOX_RECEIPT'\)\),\r?\n/, '')
       .replace(/-- Sandbox receipt timing[\s\S]*?(?=-- Callers supply provider_occurred_at)/, '')
       .replaceAll('payment_effective_time(pt)', 'pt.provider_occurred_at')
@@ -128,11 +128,14 @@ describe('customer commerce and payment flow', () => {
     for (const fixtureId of [overdueId, termsPendingId]) await pool.query(`INSERT INTO orders (id, order_number, idempotency_key, customer_user_id, provider_user_id,
       product_id, plan_id, order_type, provider_name_snapshot, product_name_snapshot, plan_name_snapshot,
       plan_version_snapshot, price_vnd_snapshot, billing_cycle_snapshot, duration_months_snapshot,
-      max_active_devices_snapshot, entitlements_snapshot, plan_commitment_snapshot, payment_due_at, ipn_accept_until)
+      max_active_devices_snapshot, entitlements_snapshot, plan_commitment_snapshot,
+      service_terms_version_snapshot, service_terms_hash_snapshot, service_terms_content_snapshot,
+      payment_due_at, ipn_accept_until)
       SELECT $2::uuid, 'TIMEOUT-' || $2::text, $2::uuid, customer_user_id, provider_user_id, product_id, plan_id, order_type,
       provider_name_snapshot, product_name_snapshot, plan_name_snapshot, plan_version_snapshot, price_vnd_snapshot,
       billing_cycle_snapshot, duration_months_snapshot, max_active_devices_snapshot, entitlements_snapshot,
-      plan_commitment_snapshot, statement_timestamp()+interval '2 seconds', statement_timestamp()+interval '60 seconds'
+      plan_commitment_snapshot, service_terms_version_snapshot, service_terms_hash_snapshot, service_terms_content_snapshot,
+      statement_timestamp()+interval '2 seconds', statement_timestamp()+interval '60 seconds'
       FROM orders WHERE id=$1`, [original.id, fixtureId]);
     await acceptTerms(overdueId);
     const checkout = await service.checkout(customer, overdueId);

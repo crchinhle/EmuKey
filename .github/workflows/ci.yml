@@ -126,9 +126,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Prepare Compose validation environment
-        run: cp backend/.env.example backend/.env
       - name: Validate external-database platform model
-        run: docker compose --env-file .env.example config --quiet
+        # Structural validation uses Compose defaults and does not need runtime secrets.
+        run: docker compose --env-file /dev/null config --no-env-resolution --quiet
       - name: Validate release structure without secrets
         run: RELEASE_CHECK_STRUCTURAL_ONLY=true corepack pnpm --dir backend release:check
