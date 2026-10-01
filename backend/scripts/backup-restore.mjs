@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
+import { URL } from 'node:url';
 
 const databaseUrl = process.env.DATABASE_URL;
 const output = resolve(
@@ -76,23 +77,27 @@ async function waitForPostgres() {
 }
 
 async function restoreIntoDisposable() {
+  const restorePassword = randomUUID();
+  const restoreUrl = new URL(`postgresql://restore@127.0.0.1:${hostPort}/restore_db`);
+  restoreUrl.password = restorePassword;
   await run('docker', [
     'run', '-d', '--name', containerName,
     '-e', 'POSTGRES_USER=restore',
-    '-e', 'POSTGRES_PASSWORD=restore-password',
+    '-e', 'POSTGRES_PASSWORD',
     '-e', 'POSTGRES_DB=restore_db',
-    '-p', `${hostPort}:5432`,
+    '-p', `127.0.0.1:${hostPort}:5432`,
     restoreImage,
-  ]);
+  ], { env: { ...process.env, POSTGRES_PASSWORD: restorePassword } });
   try {
     await waitForPostgres();
     const network = `container:${containerName}`;
     await run('docker', [
-      'run', '--rm', '--network', network, '-v', `${output}:/backup`, restoreImage,
+      'run', '--rm', '--network', network, '-v', `${output}:/backup`,
+      '-e', 'PGPASSWORD', restoreImage,
       'pg_restore', '--clean', '--if-exists', '--no-owner', '--no-privileges',
-      '--dbname', 'postgresql://restore:restore-password@127.0.0.1:5432/restore_db',
+      '--dbname', 'postgresql://restore@127.0.0.1:5432/restore_db',
       '/backup/postgres.dump',
-    ]);
+    ], { env: { ...process.env, PGPASSWORD: restorePassword } });
     let reconcileStatus = 'NOT_REQUESTED';
     let reconcileError;
     if (reconcile) {
@@ -104,7 +109,7 @@ async function restoreIntoDisposable() {
         await run(packageManager, packageManagerArgs, {
           env: {
             ...process.env,
-            DATABASE_URL: `postgresql://restore:restore-password@127.0.0.1:${hostPort}/restore_db`,
+            DATABASE_URL: restoreUrl.toString(),
             RECONCILE_RESTORE_MODE: 'true',
           },
         });

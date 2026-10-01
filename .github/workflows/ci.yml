@@ -128,6 +128,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validate external-database platform model
         # Structural validation uses Compose defaults and does not need runtime secrets.
-        run: docker compose --env-file /dev/null config --no-env-resolution --quiet
+        run: |
+          touch backend/.env
+          docker compose --env-file /dev/null config --quiet
       - name: Validate release structure without secrets
         run: RELEASE_CHECK_STRUCTURAL_ONLY=true corepack pnpm --dir backend release:check
