@@ -113,7 +113,7 @@ const orders = [
     productNameSnapshot: 'SecureDesk Pro',
     orderStatus: 'WAITING_PAYMENT',
     priceVndSnapshot: 2_082_500,
-    paymentDueAt: '2026-10-02T00:00:00.000Z',
+    paymentDueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     createdAt: '2026-09-30T00:00:00.000Z',
   },
 ] as const;
@@ -302,7 +302,7 @@ vi.stubGlobal(
       });
     }
     if (method === 'GET' && path.endsWith('/service-terms'))
-      return jsonResponse({ content: '# EmuKey Service Terms\n\nThese are the platform Service Terms.' });
+      return jsonResponse({ content: '# EmuKey Service Terms\n\nThese are the platform Service Terms.', version: 'v1', hash: 'a'.repeat(64) });
     if (method === 'GET' && path === '/orders') return jsonResponse(orders);
     if (method === 'GET' && path === '/payments/history') {
       return jsonResponse([
@@ -357,6 +357,7 @@ vi.stubGlobal(
     if (method === 'POST' && path.endsWith('/cancel')) {
       return jsonResponse({ ...orders[0], orderStatus: 'CANCELLED' });
     }
+    if (method === 'POST' && path === '/licenses/action-verification/resolve') return jsonResponse({ action: 'KEY_RECOVERY', licenseId: license.id, deviceId: null, expiresAt: new Date(Date.now() + 900_000).toISOString() });
     if (method === 'GET' && path === '/licenses') return jsonResponse([license]);
     if (method === 'GET' && path === `/licenses/${license.id}`) return jsonResponse(license);
     if (method === 'POST' && path.endsWith('/lifecycle')) return jsonResponse({ commandId: '00000000-0000-4000-8000-000000000902', deviceId: null, licenseId: license.id, status: 'PENDING' }, 201);

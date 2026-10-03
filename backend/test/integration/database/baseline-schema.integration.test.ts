@@ -31,8 +31,8 @@ describe('account-linked Customer PostgreSQL baseline', () => {
   });
 
   it('initializes the exact 18-table account-linked schema', async () => {
-    const report = await verifyBaselineDatabase(database);
-    expect(report).toMatchObject({
+     const report = await verifyBaselineDatabase(database);
+     expect(report).toMatchObject({
       extraTables: [],
       matchesBaseline: true,
       missingExtensions: [],

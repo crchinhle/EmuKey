@@ -184,26 +184,17 @@ describe('LicenseRegistry', async () => {
       now + 86_400n,
     ]);
 
-    await registry.write.activateDevice([
-      bytes16('00000000-0000-4000-8000-000000000503'),
-      licenseId,
-      keccak256(stringToHex('device-a')),
-      1n,
+    await registry.write.syncActiveDeviceCount([
+      bytes16('00000000-0000-0000-0000-000000000503'), licenseId, 1n, 1n,
     ]);
     await assert.rejects(
-      registry.write.activateDevice([
-        bytes16('00000000-0000-4000-8000-000000000504'),
-        licenseId,
-        keccak256(stringToHex('device-a-stale-key')),
-        2n,
+      registry.write.syncActiveDeviceCount([
+        bytes16('00000000-0000-0000-0000-000000000504'), licenseId, 1n, 1n,
       ]),
     );
     await assert.rejects(
-      registry.write.activateDevice([
-        bytes16('00000000-0000-4000-8000-000000000506'),
-        licenseId,
-        keccak256(stringToHex('device-b')),
-        1n,
+      registry.write.syncActiveDeviceCount([
+        bytes16('00000000-0000-0000-0000-000000000506'), licenseId, 2n, 2n,
       ]),
     );
     await registry.write.suspendLicense([

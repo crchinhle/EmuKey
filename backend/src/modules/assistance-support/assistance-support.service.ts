@@ -105,7 +105,11 @@ export class AssistanceSupportService {
     const conversation = await this.repository.findConversationForActor(actor, conversationId);
     if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND' });
     if (!this.ai) throw new ConflictException({ code: 'AI_ADAPTER_UNAVAILABLE' });
-    return this.ai.answer({ conversationId, customerUserId: actor.sub, question, clientMessageId });
+    try {
+      return await this.ai.answer({ conversationId, customerUserId: actor.sub, question, clientMessageId });
+    } catch (error) {
+      this.translate(error);
+    }
   }
 
   private requireCustomer(actor: AuthPrincipal) {
@@ -115,7 +119,7 @@ export class AssistanceSupportService {
   private translate(error: unknown): never {
     const code = error instanceof Error ? error.message : 'CONVERSATION_OPERATION_FAILED';
     if (code === 'CONVERSATION_NOT_FOUND') throw new NotFoundException({ code });
-    if (['CONVERSATION_ALREADY_CLAIMED', 'CONVERSATION_STATE_INVALID', 'CONVERSATION_CLOSED', 'CONVERSATION_CLOSE_NOT_ALLOWED'].includes(code)) {
+    if (['CONVERSATION_MESSAGE_CONFLICT', 'CONVERSATION_ALREADY_CLAIMED', 'CONVERSATION_STATE_INVALID', 'CONVERSATION_CLOSED', 'CONVERSATION_CLOSE_NOT_ALLOWED'].includes(code)) {
       throw new ConflictException({ code, message: 'The conversation state does not allow this operation.' });
     }
     if (code === 'CONVERSATION_ACCESS_DENIED') throw new ForbiddenException();

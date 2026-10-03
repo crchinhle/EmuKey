@@ -75,11 +75,32 @@ export class LicensingService {
     return result;
   }
 
-  async challenge(actor: AuthPrincipal, dto: ActivationChallengeDto) {
-    this.requireCustomer(actor);
+  async challenge(actor: AuthPrincipal | null, dto: ActivationChallengeDto) {
+    const { purpose } = dto;
+    let license: Awaited<ReturnType<LicensingRepository['findSecurity']>>;
+    if (purpose === 'ACTIVATE_DEVICE') {
+      if (!dto.activationKey) this.invalidActivationCredential();
+      license = await this.repository.findActivationLicense(activationCommitment(dto.activationKey));
+      if (!license) this.invalidActivationCredential();
+    } else if (purpose === 'ISSUE_ENTITLEMENT' || purpose === 'REFRESH_ENTITLEMENT') {
+      if (!dto.licenseId) this.notFound();
+      license = await this.repository.findSecurity(dto.licenseId);
+      if (!license) this.notFound();
+    } else {
+      if (!actor) throw new UnauthorizedException();
+      this.requireCustomer(actor);
+      if (!dto.licenseId) this.notFound();
+      license = await this.repository.findSecurity(dto.licenseId, actor.sub);
+      if (!license) this.notFound();
+    }
+    return this.issueChallenge(license, { ...dto, licenseId: license.id });
+  }
+
+  private async issueChallenge(
+    license: NonNullable<Awaited<ReturnType<LicensingRepository['findSecurity']>>>,
+    dto: ActivationChallengeDto & { licenseId: string },
+  ) {
     const { deviceId, deviceRef, licenseId, purpose } = dto;
-    const license = await this.repository.findSecurity(licenseId, actor.sub);
-    if (!license) this.notFound();
     this.requireActive(license.status, license.expiresAt);
     const device = deviceId ? await this.repository.findDeviceById(licenseId, deviceId) : null;
     if (deviceId && !device) this.notFound();
@@ -98,30 +119,34 @@ export class LicensingService {
     const challenge = `emukey:v1:${purpose}:${licenseId}:${opaqueDeviceRef}:${bindingGeneration}:${license.activationKeyVersion}:${expiresAtEpoch}:${randomBytes(24).toString('base64url')}`;
     const key = this.challengeKey(licenseId, opaqueDeviceRef, purpose, bindingGeneration, license.activationKeyVersion);
     await this.redis.set(key, challenge, 'EX', CHALLENGE_TTL);
-    return {
-      bindingGeneration,
-      challenge,
-      expiresAt: new Date(expiresAtEpoch * 1_000).toISOString(),
-      keyVersion: license.activationKeyVersion,
-      purpose,
-    };
+    return { bindingGeneration, challenge, expiresAt: new Date(expiresAtEpoch * 1_000).toISOString(), keyVersion: license.activationKeyVersion, licenseId, purpose };
   }
 
-  async activate(actor: AuthPrincipal, dto: ActivateDeviceDto) {
-    this.requireCustomer(actor);
-    const license = await this.repository.findSecurity(dto.licenseId, actor.sub);
-    if (!license) this.notFound();
-    this.requireActive(license.status, license.expiresAt);
+  async activate(actor: AuthPrincipal | null, dto: ActivateDeviceDto) {
+    const license = await this.repository.findActivationLicense(activationCommitment(dto.activationKey));
+    if (!license) this.invalidActivationCredential();
     this.verifyBearerKey(dto.activationKey, license.activationCommitment);
+    this.requireActive(license.status, license.expiresAt);
     const opaqueDeviceRef = this.opaqueDeviceRef(dto.deviceRef);
-    const existing = await this.repository.findDevice(dto.licenseId, opaqueDeviceRef);
+    const existing = await this.repository.findDevice(license.id, opaqueDeviceRef);
     const bindingGeneration = existing
       ? existing.bindingGeneration + (existing.status === 'REVOKED' ? 1 : 0)
       : 1;
-    await this.verifyDeviceProof(dto.licenseId, opaqueDeviceRef, 'ACTIVATE_DEVICE', bindingGeneration, license.activationKeyVersion, dto.challenge, dto.proof, dto.devicePublicKey);
+    await this.verifyDeviceProof(license.id, opaqueDeviceRef, 'ACTIVATE_DEVICE', bindingGeneration, license.activationKeyVersion, dto.challenge, dto.proof, dto.devicePublicKey);
     const deviceId = randomUUID();
     try {
-      return await this.repository.createDeviceCommand(actor.sub, dto.licenseId, opaqueDeviceRef, dto.devicePublicKey, deviceId, bindingGeneration, this.chain);
+      const result = await this.repository.createDeviceCommand(null, license.id, opaqueDeviceRef, dto.devicePublicKey, deviceId, bindingGeneration, this.chain);
+      const device = await this.repository.findDeviceById(license.id, result.deviceId ?? deviceId);
+       return {
+         activatedAt: device?.activatedAt instanceof Date ? device.activatedAt.toISOString() : new Date().toISOString(),
+         bindingGeneration: device?.bindingGeneration ?? bindingGeneration,
+         deviceRef: opaqueDeviceRef,
+         id: device?.id ?? deviceId,
+          licenseId: license.id,
+
+        revokedAt: null,
+        status: 'ACTIVE',
+      };
     } catch (error) {
       this.translate(error);
     }
@@ -134,10 +159,18 @@ export class LicensingService {
     if (!license || !device) this.notFound();
     this.verifyBearerKey(dto.activationKey, license.activationCommitment);
     await this.verifyDeviceProof(licenseId, device.deviceRef, 'SELF_REVOKE_DEVICE', device.bindingGeneration, license.activationKeyVersion, dto.challenge, dto.proof, device.devicePublicKey);
-    await this.consumeActionToken(actor, dto.actionToken, licenseId, 'REVOKE_DEVICE', deviceId);
-    const chainDeviceId = `0x${createHash('sha256').update(device.deviceRef).digest('hex')}`;
-    try {
-      return await this.repository.createDeviceRevokeCommand(actor.sub, licenseId, device.deviceRef, chainDeviceId, device.bindingGeneration, this.chain);
+     await this.consumeActionToken(actor, dto.actionToken, licenseId, 'REVOKE_DEVICE', deviceId);
+     try {
+       await this.repository.createDeviceRevokeCommand(actor.sub, licenseId, device.deviceRef, device.id, device.bindingGeneration, this.chain);
+       return {
+         activatedAt: (device as { activatedAt?: unknown }).activatedAt instanceof Date ? (device as { activatedAt: Date }).activatedAt.toISOString() : null,
+          bindingGeneration: device.bindingGeneration,
+          deviceRef: device.deviceRef,
+         id: device.id,
+         licenseId,
+         revokedAt: new Date().toISOString(),
+         status: 'REVOKED',
+       };
     } catch (error) {
       this.translate(error);
     }
@@ -148,21 +181,22 @@ export class LicensingService {
     const license = await this.repository.findSecurity(licenseId, actor.sub);
     const device = await this.repository.findDeviceById(licenseId, deviceId);
     if (!license || !device) this.notFound();
-    await this.verifyPasswordReauth(actor.sub, dto.currentPassword);
-    await this.consumeActionToken(actor, dto.actionToken, licenseId, 'REMOTE_REVOKE_DEVICE', deviceId);
-    const chainDeviceId = `0x${createHash('sha256').update(device.deviceRef).digest('hex')}`;
-    try {
-      return await this.repository.createDeviceRevokeCommand(
-        actor.sub,
-        licenseId,
-        device.deviceRef,
-        chainDeviceId,
-        device.bindingGeneration,
-        this.chain,
-      );
-    } catch (error) {
-      this.translate(error);
-    }
+     await this.verifyPasswordReauth(actor.sub, dto.currentPassword);
+     await this.consumeActionToken(actor, dto.actionToken, licenseId, 'REMOTE_REVOKE_DEVICE', deviceId);
+     try {
+       await this.repository.createDeviceRevokeCommand(actor.sub, licenseId, device.deviceRef, device.id, device.bindingGeneration, this.chain);
+       return {
+         activatedAt: (device as { activatedAt?: unknown }).activatedAt instanceof Date ? (device as { activatedAt: Date }).activatedAt.toISOString() : null,
+          bindingGeneration: device.bindingGeneration,
+          deviceRef: device.deviceRef,
+         id: device.id,
+         licenseId,
+         revokedAt: new Date().toISOString(),
+         status: 'REVOKED',
+       };
+     } catch (error) {
+       this.translate(error);
+     }
   }
 
   async rotate(actor: AuthPrincipal, licenseId: string, dto: RotateActivationKeyDto) {
@@ -234,21 +268,18 @@ export class LicensingService {
     }
   }
 
-  async issueEntitlement(actor: AuthPrincipal, dto: import('./licensing.dto.js').EntitlementRefreshDto) {
-    this.requireCustomer(actor);
-    return this.signEntitlement(actor.sub, dto, 'ISSUE_ENTITLEMENT');
+  async issueEntitlement(actor: AuthPrincipal | null, dto: import('./licensing.dto.js').EntitlementRefreshDto) {
+    return this.signEntitlement(dto, 'ISSUE_ENTITLEMENT');
   }
 
-  async refreshEntitlement(actor: AuthPrincipal, dto: import('./licensing.dto.js').EntitlementRefreshDto) {
-    this.requireCustomer(actor);
-    return this.signEntitlement(actor.sub, dto, 'REFRESH_ENTITLEMENT');
+  async refreshEntitlement(actor: AuthPrincipal | null, dto: import('./licensing.dto.js').EntitlementRefreshDto) {
+    return this.signEntitlement(dto, 'REFRESH_ENTITLEMENT');
   }
 
   async verifyEntitlement(
-    actor: AuthPrincipal,
+    actor: AuthPrincipal | null,
     dto: import('./licensing.dto.js').EntitlementVerifyDto,
   ) {
-    this.requireCustomer(actor);
     let payload: Awaited<ReturnType<typeof jwtVerify>>['payload'];
     try {
       ({ payload } = await jwtVerify(dto.token, this.jwtSecret, {
@@ -262,13 +293,14 @@ export class LicensingService {
         message: 'The entitlement token is invalid or expired.',
       });
     }
-    const { deviceId, entitlementVersion, exp, keyVersion, licenseId, rights } = payload;
+    const { bindingGeneration, deviceId, entitlementVersion, exp, keyVersion, licenseId, rights } = payload;
     if (
       typeof deviceId !== 'string' ||
       typeof entitlementVersion !== 'number' ||
       typeof exp !== 'number' ||
-      typeof keyVersion !== 'number' ||
-      typeof licenseId !== 'string' ||
+       typeof keyVersion !== 'number' ||
+       typeof bindingGeneration !== 'number' ||
+       typeof licenseId !== 'string' ||
       typeof rights !== 'object' ||
       rights === null ||
       Array.isArray(rights)
@@ -279,26 +311,26 @@ export class LicensingService {
       });
     }
     const context = await this.projection.entitlementContext(
-      actor.sub,
       licenseId,
       deviceId,
     );
     if (
       !context ||
       context.status !== 'ACTIVE' ||
-      context.deviceStatus !== 'ACTIVE' ||
-      context.finality !== 'CONFIRMED' ||
-      context.licenseFinality !== 'CONFIRMED' ||
+       context.deviceStatus !== 'ACTIVE' ||
+       context.licenseFinality !== 'CONFIRMED' ||
       context.expiresAt.getTime() <= Date.now() ||
       context.entitlementVersion !== entitlementVersion ||
-      context.keyVersion !== keyVersion
-    ) {
+       context.keyVersion !== keyVersion ||
+       context.bindingGeneration !== bindingGeneration
+     ) {
       throw new ConflictException({
         code: 'ENTITLEMENT_INVALIDATED',
         message: 'The entitlement was invalidated by the current on-chain license state.',
       });
     }
     return {
+      bindingGeneration,
       deviceId,
       entitlementVersion,
       expiresAt: new Date(exp * 1_000).toISOString(),
@@ -309,13 +341,13 @@ export class LicensingService {
     };
   }
 
-  private async signEntitlement(customerUserId: string, dto: import('./licensing.dto.js').EntitlementRefreshDto, purpose: 'ISSUE_ENTITLEMENT' | 'REFRESH_ENTITLEMENT') {
+  private async signEntitlement(dto: import('./licensing.dto.js').EntitlementRefreshDto, purpose: 'ISSUE_ENTITLEMENT' | 'REFRESH_ENTITLEMENT') {
     const { licenseId, deviceId } = dto;
-    const context = await this.projection.entitlementContext(customerUserId, licenseId, deviceId);
+    const context = await this.projection.entitlementContext(licenseId, deviceId);
     if (!context) this.notFound();
-    if (context.status !== 'ACTIVE' || context.deviceStatus !== 'ACTIVE' || context.finality !== 'CONFIRMED' || context.licenseFinality !== 'CONFIRMED' || context.expiresAt.getTime() <= Date.now()) {
-      throw new ConflictException({ code: 'ENTITLEMENT_NOT_AVAILABLE', message: 'License and device must be chain-confirmed and active.' });
-    }
+     if (context.status !== 'ACTIVE' || context.deviceStatus !== 'ACTIVE' || context.licenseFinality !== 'CONFIRMED' || context.expiresAt.getTime() <= Date.now()) {
+       throw new ConflictException({ code: 'ENTITLEMENT_NOT_AVAILABLE', message: 'License must be chain-confirmed and the device must be active in PostgreSQL.' });
+     }
     const device = await this.repository.findDeviceById(licenseId, deviceId);
     if (!device) this.notFound();
     await this.verifyDeviceProof(licenseId, device.deviceRef, purpose, device.bindingGeneration, context.keyVersion, dto.challenge, dto.proof, device.devicePublicKey);
@@ -324,9 +356,10 @@ export class LicensingService {
       deviceId,
       entitlementVersion: context.entitlementVersion,
       keyVersion: context.keyVersion,
-      licenseId,
-      rights: context.entitlements,
-    })
+       bindingGeneration: context.bindingGeneration,
+       licenseId,
+       rights: context.entitlements,
+     })
       .setProtectedHeader({ alg: 'HS256' })
       .setAudience(ENTITLEMENT_AUDIENCE)
       .setIssuer(ENTITLEMENT_ISSUER)
@@ -335,6 +368,10 @@ export class LicensingService {
       .setExpirationTime(Math.floor(expiresAt.getTime() / 1_000))
       .sign(this.jwtSecret);
     return { token, expiresAt: expiresAt.toISOString(), licenseId, deviceId, entitlementVersion: context.entitlementVersion };
+  }
+
+  private invalidActivationCredential(): never {
+    throw new UnauthorizedException({ code: 'INVALID_ACTIVATION_KEY', message: 'The activation credential is invalid or cannot be used.' });
   }
 
   private verifyBearerKey(value: string, expected: Hex) {

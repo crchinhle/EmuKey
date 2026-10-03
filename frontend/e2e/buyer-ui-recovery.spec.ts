@@ -2,6 +2,85 @@ import { expect, test } from '@playwright/test';
 
 // Isolated UI regression tests: no requests reach the real API or database.
 const activationKey = `0x${'12'.repeat(32)}`;
+test('password change sends the authenticated session', async ({ page }) => {
+  let authorization: string | undefined;
+  await page.route('**/api/v1/auth/password', async (route) => {
+    authorization = route.request().headers()['authorization'];
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto('/buyer/profile');
+  await page.getByRole('button', { name: 'Đổi mật khẩu', exact: true }).click();
+  await page.getByLabel('Mật khẩu hiện tại', { exact: true }).fill('Current123!');
+  await page.getByLabel('Mật khẩu mới', { exact: true }).fill('Changed12345!');
+  await page.getByLabel('Xác nhận mật khẩu mới', { exact: true }).fill('Changed12345!');
+  await page.locator('button[type="submit"]').filter({ hasText: 'Đổi mật khẩu' }).click();
+  await expect.poll(() => authorization).toBe('Bearer ui-test');
+});
+
+test('notification overflow stays available in the current workspace', async ({ page }) => {
+  await page.route('**/api/v1/notifications', (route) => route.fulfill({ json: Array.from({ length: 9 }, (_, i) => ({ id: `notice-${i}`, title: `Notice ${i}`, content: `Content ${i}`, isRead: false })) }));
+  await page.goto('/buyer');
+  await page.getByRole('button', { name: 'Thông báo', exact: true }).click();
+  await page.getByText(/Xem (tất cả|thêm) thông báo/).click();
+  await expect(page.getByText('Notice 8', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/buyer$/);
+});
+
+test('catalog search follows browser history changes', async ({ page }) => {
+  await page.goto('/products?q=first');
+  await expect(page.getByRole('textbox', { name: 'Tìm sản phẩm' })).toHaveValue('first');
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/products?q=second');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page.getByRole('textbox', { name: 'Tìm sản phẩm' })).toHaveValue('second');
+});
+
+test('email recovery resolves the target license before accepting the token', async ({ page }) => {
+  await page.route('**/api/v1/licenses/action-verification/resolve', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ actionToken: 'resolved-email-token' });
+    await route.fulfill({ json: { action: 'KEY_RECOVERY', licenseId: 'license-two', deviceId: null, expiresAt: '2027-01-01' } });
+  });
+  await page.goto('/buyer/licenses?actionToken=resolved-email-token');
+  await expect(page.getByRole('heading', { name: 'Other product · Business' })).toBeVisible();
+  await expect(page.getByLabel('Mã xác nhận khôi phục', { exact: true })).toHaveValue('resolved-email-token');
+  expect(page.url()).not.toContain('resolved-email-token');
+  await page.getByRole('button', { name: /SecureDesk Pro.*Tối đa/ }).click();
+  await page.getByRole('button', { name: 'Mã bản quyền', exact: true }).click();
+  await expect(page.getByLabel('Mã xác nhận khôi phục', { exact: true })).toHaveValue('');
+});
+
+test('email action lookup can retry a network failure without turning device revocation into recovery', async ({ page }) => {
+  let attempts = 0;
+  await page.route('**/api/v1/licenses/action-verification/resolve', async (route) => {
+    attempts++;
+    await route.fulfill(attempts === 1 ? { status: 503, json: {} } : { json: { action: 'REMOTE_REVOKE_DEVICE', licenseId: 'license-two', deviceId: 'device-two', expiresAt: '2027-01-01' } });
+  });
+  await page.goto('/buyer/licenses?actionToken=device-email-token');
+  await expect(page.getByText('Chưa thể kiểm tra liên kết email. Vui lòng thử lại.')).toBeVisible();
+  await page.getByRole('button', { name: 'Thử lại', exact: true }).click();
+  await expect(page.getByText('Liên kết này dành cho thao tác thiết bị hoặc đổi mã.')).toBeVisible();
+  await expect(page.getByLabel('Mã xác nhận khôi phục', { exact: true })).toHaveCount(0);
+  expect(page.url()).not.toContain('device-email-token');
+});
+
+test('order support failure remains visible and can be retried', async ({ page }) => {
+  const order = { id: 'support-order', orderNumber: 'EMU-SUPPORT', productNameSnapshot: 'Product', planNameSnapshot: 'Plan', priceVndSnapshot: 100000, orderStatus: 'PAYMENT_ACCEPTED' };
+  await page.route('**/api/v1/orders', (route) => route.fulfill({ json: [order] }));
+  await page.route('**/api/v1/orders/support-order', (route) => route.fulfill({ json: order }));
+  let attempts = 0;
+  await page.route('**/api/v1/conversations', async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [] });
+    attempts++;
+    await route.fulfill(attempts === 1 ? { status: 503, json: { message: 'Support temporarily unavailable' } } : { json: { id: 'support-created' } });
+  });
+  await page.goto('/buyer/orders');
+  await page.getByRole('button', { name: 'Xem chi tiết' }).click();
+  await page.getByRole('button', { name: 'Cần hỗ trợ về đơn này' }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Cần hỗ trợ về đơn này' }).click();
+  await expect(page).toHaveURL(/conversation=support-created/);
+});
 test('order drawer shows purchased plan details and retains explicit terms consent', async ({ page }) => {
   const order = { id: 'plan-detail', orderNumber: 'EMU-DETAIL', productNameSnapshot: 'Classroom Hub', planNameSnapshot: 'Chuyên nghiệp', providerNameSnapshot: 'Emu Software', priceVndSnapshot: 1290000, durationMonthsSnapshot: 12, maxActiveDevicesSnapshot: 5, planVersionSnapshot: 2, entitlementsSnapshot: { desktop: true }, orderStatus: 'WAITING_SERVICE_TERMS_ACCEPTANCE' };
   await page.route('**/api/v1/orders', (route) => route.fulfill({ json: [order] }));
@@ -121,20 +200,21 @@ for (const width of [320, 390, 1440]) {
   test(`keeps the one-time key scoped to its license without overflow at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/buyer/licenses');
-    await page.getByRole('button', { name: 'Khóa kích hoạt', exact: true }).click();
-    await page.getByRole('button', { name: 'Nhận activation key', exact: true }).click();
+    await page.getByRole('button', { name: 'Mã bản quyền', exact: true }).click();
+    await page.getByRole('button', { name: 'Nhận mã bản quyền', exact: true }).click();
+    await page.getByRole('button', { name: 'Nhận mã', exact: true }).click();
     await expect(page.locator('code')).toHaveText(activationKey);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.getByRole('button', { name: 'Đã thu hồi', exact: true }).click();
     await page.getByRole('button', { name: 'Tất cả', exact: true }).click();
     await expect(page.locator('code')).toHaveText(activationKey);
     await page.getByRole('button', { name: /Other product.*Tối đa/ }).click();
-    await page.getByRole('button', { name: 'Khóa kích hoạt', exact: true }).click();
-    await expect(page.getByLabel('Activation key', { exact: true })).toHaveValue('');
+    await page.getByRole('button', { name: 'Mã bản quyền', exact: true }).click();
+    await expect(page.getByLabel('Mã bản quyền', { exact: true })).toHaveValue('');
     await expect(page.locator('code')).toHaveCount(0);
     await page.getByRole('button', { name: /SecureDesk Pro.*Tối đa/ }).click();
-    await page.getByRole('button', { name: 'Khóa kích hoạt', exact: true }).click();
+    await page.getByRole('button', { name: 'Mã bản quyền', exact: true }).click();
     await expect(page.locator('code')).toHaveText(activationKey);
-    await expect(page.getByRole('button', { name: 'Nhận activation key', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Nhận mã bản quyền', exact: true })).toBeDisabled();
   });
 }

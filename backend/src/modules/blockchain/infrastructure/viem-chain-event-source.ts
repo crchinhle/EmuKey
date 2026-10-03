@@ -11,7 +11,7 @@ import { createViemRpcTransport } from '../../../platform/blockchain/viem-rpc-tr
 
 const INDEXED_EVENT_NAMES = new Set([
   'ActivationKeyRotated',
-  'DeviceStatusChanged',
+  'ActiveDeviceCountSynced',
   'LicenseIssued',
   'LicenseRenewed',
   'LicenseStatusChanged',

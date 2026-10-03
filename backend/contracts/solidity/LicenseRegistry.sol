@@ -18,19 +18,18 @@ contract LicenseRegistry is AccessControl {
         uint256 activationKeyVersion;
         uint256 maxActiveDevices;
         uint256 activeDevices;
+        uint256 deviceStateVersion;
         uint256 expiresAt;
         LicenseStatus status;
     }
 
     mapping(bytes16 licenseId => LicenseData) private licenses;
     mapping(bytes16 commandId => bool) public processedCommands;
-    mapping(bytes16 licenseId => mapping(bytes32 deviceId => bool)) public activeDevice;
-
     event LicenseIssued(bytes16 indexed commandId, bytes16 indexed licenseId, address indexed provider, bytes32 planCommitment, bytes32 activationCommitment, uint256 activationKeyVersion, uint256 expiresAt);
     event LicenseRenewed(bytes16 indexed commandId, bytes16 indexed licenseId, uint256 expiresAt);
     event LicenseStatusChanged(bytes16 indexed commandId, bytes16 indexed licenseId, LicenseStatus status);
     event ActivationKeyRotated(bytes16 indexed commandId, bytes16 indexed licenseId, bytes32 activationCommitment, uint256 activationKeyVersion);
-    event DeviceStatusChanged(bytes16 indexed commandId, bytes16 indexed licenseId, bytes32 indexed deviceId, bool active);
+    event ActiveDeviceCountSynced(bytes16 indexed commandId, bytes16 indexed licenseId, uint256 activeDeviceCount, uint256 deviceStateVersion);
 
     error CommandAlreadyProcessed();
     error InvalidInput();
@@ -93,6 +92,7 @@ contract LicenseRegistry is AccessControl {
             activationKeyVersion: activationKeyVersion,
             maxActiveDevices: maxActiveDevices,
             activeDevices: 0,
+            deviceStateVersion: 0,
             expiresAt: expiresAt,
             status: LicenseStatus.ACTIVE
         });
@@ -153,39 +153,21 @@ contract LicenseRegistry is AccessControl {
         emit ActivationKeyRotated(commandId, licenseId, newCommitment, newVersion);
     }
 
-    function activateDevice(
+    function syncActiveDeviceCount(
         bytes16 commandId,
         bytes16 licenseId,
-        bytes32 deviceId,
-        uint256 keyVersion
-    )
-        external onlyRole(RELAYER_ROLE)
-    {
-        _consume(commandId);
-        LicenseData storage license = _existing(licenseId);
-        if (
-            license.status != LicenseStatus.ACTIVE ||
-            license.expiresAt <= block.timestamp ||
-            keyVersion != license.activationKeyVersion ||
-            activeDevice[licenseId][deviceId] ||
-            license.activeDevices >= license.maxActiveDevices
-        ) revert InvalidState();
-        activeDevice[licenseId][deviceId] = true;
-        license.activeDevices += 1;
-        emit DeviceStatusChanged(commandId, licenseId, deviceId, true);
-    }
-
-    function revokeDevice(
-        bytes16 commandId,
-        bytes16 licenseId,
-        bytes32 deviceId
+        uint256 activeDeviceCount,
+        uint256 deviceStateVersion
     ) external onlyRole(RELAYER_ROLE) {
         _consume(commandId);
         LicenseData storage license = _existing(licenseId);
-        if (!activeDevice[licenseId][deviceId]) revert InvalidState();
-        activeDevice[licenseId][deviceId] = false;
-        license.activeDevices -= 1;
-        emit DeviceStatusChanged(commandId, licenseId, deviceId, false);
+        if (
+            activeDeviceCount > license.maxActiveDevices ||
+            deviceStateVersion <= license.deviceStateVersion
+        ) revert InvalidState();
+        license.activeDevices = activeDeviceCount;
+        license.deviceStateVersion = deviceStateVersion;
+        emit ActiveDeviceCountSynced(commandId, licenseId, activeDeviceCount, deviceStateVersion);
     }
 
     function getLicense(bytes16 licenseId) external view returns (LicenseData memory) {

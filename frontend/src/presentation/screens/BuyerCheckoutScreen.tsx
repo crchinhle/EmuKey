@@ -33,6 +33,7 @@ export function BuyerCheckoutScreen() {
   const createOrderMutation = orderMutations.create;
   const resumedOrder = useOrder(existingIntent?.orderId ?? '');
   const termsQuery = useOrderTerms(order?.id ?? '');
+  useEffect(() => { setAccepted(false); }, [order?.id, termsQuery.data?.version, termsQuery.data?.hash]);
 
   useEffect(() => {
     if (resumedOrder.data && existingIntent?.planId === planId) {
@@ -52,12 +53,12 @@ export function BuyerCheckoutScreen() {
   }
 
   function acceptServiceTerms() {
-    if (!accepted || !order) {
+    if (!accepted || !order || !termsQuery.data || termsQuery.isFetching || termsQuery.isError) {
       setError('Bạn cần đọc và đồng ý điều khoản trước khi tiếp tục.');
       return;
     }
     setError(null);
-    orderMutations.acceptServiceTerms.mutate(order, {
+    orderMutations.acceptServiceTerms.mutate({ order, terms: termsQuery.data }, {
       onSuccess: (acceptedOrder) => {
         clearCheckoutIntent(user?.id);
         void navigate(`/buyer/orders/${acceptedOrder.id}/payment`);
@@ -193,7 +194,7 @@ export function BuyerCheckoutScreen() {
             </Button>
               <Button
                 type="primary"
-                disabled={!order || !accepted || !termsQuery.data}
+                disabled={!order || !accepted || !termsQuery.data || termsQuery.isFetching || termsQuery.isError}
               loading={
                 createOrderMutation.isPending ||
                 orderMutations.acceptServiceTerms.isPending

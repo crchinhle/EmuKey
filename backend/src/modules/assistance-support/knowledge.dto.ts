@@ -20,7 +20,7 @@ export class KnowledgeDocumentDto {
 }
 
 export class PublishKnowledgeDocumentDto {
-  @ApiPropertyOptional({ minimum: 1 }) @IsOptional() @IsInt() @Min(1) expectedCurrentVersion?: number;
+  @ApiPropertyOptional({ minimum: 0, description: 'Observed current version; 0 means no published version.' }) @IsOptional() @IsInt() @Min(0) expectedCurrentVersion?: number;
 }
 
 export class KnowledgeDocumentDetailDto extends KnowledgeDocumentDto {

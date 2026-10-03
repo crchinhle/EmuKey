@@ -24,8 +24,10 @@ describe('mobile License screens', () => {
   it('retrieves an activation key through the authenticated customer session', async () => {
     listLicensesMock.mockResolvedValue([
       {
-        activationKeyTrustStatus: 'TRUSTED',
-        confirmationCount: 3,
+         activationKeyTrustStatus: 'TRUSTED',
+         activeDeviceCount: 0,
+         deviceStateVersion: 0,
+         confirmationCount: 3,
         createdAt: '2026-09-10T00:00:00.000Z',
         entitlementVersion: 1,
         expiresAt: '2027-09-10T00:00:00.000Z',

@@ -2,9 +2,10 @@ import { Alert, Button, Empty, Input, Modal, Spin } from 'antd';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { licenseStatusLabel as statusLabel, activationKeyErrorLabel, useLicenseDevices, useLicenses, useRetrieveActivationKey } from '../../application/licenses/licenseQueries';
+import { licenseStatusLabel as statusLabel, activationKeyErrorLabel, useLicenseDevices, useLicenses, useRetrieveActivationKey, useResolveLicensingAction } from '../../application/licenses/licenseQueries';
 
 import { LicenseRecoveryPanel } from '../components/LicenseRecoveryPanel';
+import { ApiRequestError } from '../../application/auth/authContext';
 
 type LicenseTab = 'overview' | 'key' | 'devices';
 
@@ -15,14 +16,16 @@ function dateLabel(value: string) {
 export function BuyerLicenseHubScreen() {
   const licenses = useLicenses();
   const retrieve = useRetrieveActivationKey();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const rows = licenses.data ?? [];
   const [selectedId, setSelectedId] = useState(searchParams.get('licenseId') ?? '');
   const [filter, setFilter] = useState('all');
   const [tab, setTab] = useState<LicenseTab>(searchParams.has('recover') || searchParams.has('activate') || searchParams.has('actionToken') ? 'key' : 'overview');
   const [activationKeys, setActivationKeys] = useState<Record<string, string>>({});
   const [copyStatus, setCopyStatus] = useState('');
-  const actionToken = searchParams.get('actionToken') ?? '';
+  const [actionToken] = useState(() => searchParams.get('actionToken') ?? '');
+  const resolution = useResolveLicensingAction(actionToken);
+  const invalidActionLink = resolution.error instanceof ApiRequestError && [400, 401, 403, 404].includes(resolution.error.status);
   const visibleRows = rows.filter((license) => filter === 'all' || license.status === filter);
   const selected = visibleRows.find((license) => license.id === selectedId) ?? visibleRows[0];
   const devices = useLicenseDevices(selected?.id);
@@ -35,6 +38,19 @@ export function BuyerLicenseHubScreen() {
     if (!selectedId && rows[0]) setSelectedId(rows[0].id);
   }, [rows, selectedId]);
 
+  useEffect(() => {
+    if (searchParams.has('actionToken')) {
+      setSearchParams((current) => { const next = new URLSearchParams(current); next.delete('actionToken'); return next; }, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (resolution.data) { setSelectedId(resolution.data.licenseId); setFilter('all'); setTab('key'); }
+  }, [resolution.data]);
+
+  if (actionToken && resolution.isPending) return <Spin aria-label="Đang kiểm tra liên kết email" />;
+  if (actionToken && resolution.isError) return <Alert type="error" message={invalidActionLink ? 'Liên kết email không hợp lệ hoặc đã hết hạn.' : 'Chưa thể kiểm tra liên kết email. Vui lòng thử lại.'} description={invalidActionLink ? 'Mở lại bản quyền để yêu cầu email mới.' : 'Kiểm tra kết nối rồi tải lại trạng thái liên kết.'} action={invalidActionLink ? <Button href="/buyer/licenses">Danh sách bản quyền</Button> : <Button onClick={() => void resolution.refetch()}>Thử lại</Button>} />;
+  if (resolution.data && resolution.data.action !== 'KEY_RECOVERY') return <Alert type="info" message="Liên kết này dành cho thao tác thiết bị hoặc đổi mã." description="Quay lại ứng dụng đã gửi yêu cầu để tiếp tục đúng thao tác." action={<Button href="/buyer/licenses">Danh sách bản quyền</Button>} />;
   if (licenses.isPending) return <Spin aria-label="Đang tải bản quyền" />;
   if (licenses.isError) return <Alert type="error" message="Không thể tải danh sách bản quyền." />;
   if (!rows.length) return <Empty description="Chưa có bản quyền"><Button href="/buyer/products">Khám phá sản phẩm</Button></Empty>;
@@ -46,7 +62,7 @@ export function BuyerLicenseHubScreen() {
     <div className="buyer-licenses-screen">
       <main className="buyer-licenses-main">
         <header className="buyer-licenses-title"><h1>Bản quyền &amp; thiết bị</h1><p>Quản lý quyền sử dụng, mã bản quyền và thiết bị.</p></header>
-        <div className="buyer-licenses-tabs">{[['all', 'Tất cả'], ['ACTIVE', 'Đang hoạt động'], ['PENDING_ONCHAIN', 'Đang chờ xác nhận'], ['EXPIRED', 'Đã hết hạn'], ['SUSPENDED', 'Tạm ngưng'], ['REVOKED', 'Đã thu hồi']].map(([value, label]) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} disabled={retrieve.isPending} onClick={() => { setFilter(value!); setCopyStatus(''); retrieve.reset(); }} type="button">{label}</button>)}</div>
+        <div className="buyer-licenses-tabs">{[['all', 'Tất cả'], ['ACTIVE', 'Đang hoạt động'], ['EXPIRED', 'Đã hết hạn'], ['SUSPENDED', 'Tạm ngưng'], ['REVOKED', 'Đã thu hồi']].map(([value, label]) => <button key={value} className={filter === value ? 'active' : ''} aria-pressed={filter === value} disabled={retrieve.isPending} onClick={() => { setFilter(value!); setCopyStatus(''); retrieve.reset(); }} type="button">{label}</button>)}</div>
         {!selected ? <Empty description="Không có bản quyền phù hợp bộ lọc." /> :
         <div className="buyer-licenses-layout">
           <aside aria-label="Danh sách bản quyền" className="buyer-licenses-list">
@@ -75,7 +91,7 @@ export function BuyerLicenseHubScreen() {
              </section> : null}
             {tab === 'devices' ? <section className="buyer-license-action-panel"><h3>Thiết bị đã đăng ký</h3>{devices.isPending ? <Spin /> : null}{devices.data?.length ? devices.data.map((device) => <div className="buyer-license-device-row" key={device.id}><span>{device.deviceRef} · {statusLabel(device.status)}</span></div>) : !devices.isPending && !devices.isError ? <Empty description="Chưa có thiết bị." /> : null}</section> : null}
             {tab === 'key' ? <p>Để kích hoạt, mở phần mềm trên thiết bị cần sử dụng và nhập mã đã lưu. Nếu mất mã, <a href="/buyer/support">liên hệ hỗ trợ</a> để được hướng dẫn khôi phục.</p> : null}
-            {tab === 'key' && selected.status === 'ACTIVE' ? <LicenseRecoveryPanel key={selected.id} licenseId={selected.id} initialToken={actionToken} onKey={(id, key) => { setActivationKeys((current) => ({ ...current, [id]: key })); setCopyStatus(''); void licenses.refetch(); }} /> : null}
+            {tab === 'key' && selected.status === 'ACTIVE' ? <LicenseRecoveryPanel key={selected.id} licenseId={selected.id} initialToken={resolution.data?.licenseId === selected.id ? actionToken : ''} onKey={(id, key) => { setActivationKeys((current) => ({ ...current, [id]: key })); setCopyStatus(''); void licenses.refetch(); }} /> : null}
           </section>
         </div>}
       </main>

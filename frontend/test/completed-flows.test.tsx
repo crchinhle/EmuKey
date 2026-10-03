@@ -23,10 +23,11 @@ describe('completed API-backed flows', () => {
   it('uses isCurrent for published knowledge and sends publish for a ready document', async () => {
     const original = vi.mocked(fetch).getMockImplementation()!;
     let published = false;
+    let publishBody: unknown;
     vi.mocked(fetch).mockImplementation((input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith('/knowledge/documents')) return Promise.resolve(Response.json([{ id: 'doc', title: 'Hướng dẫn', logicalDocumentKey: 'guide', version: 1, status: 'READY', isCurrent: published }]));
-      if (url.endsWith('/knowledge/documents/doc/publish')) { published = true; return Promise.resolve(Response.json({ id: 'doc' })); }
+      if (url.endsWith('/knowledge/documents/doc/publish')) { publishBody = JSON.parse(typeof init?.body === 'string' ? init.body : '{}'); published = true; return Promise.resolve(Response.json({ id: 'doc' })); }
       return original(input, init);
     });
     try {
@@ -34,6 +35,37 @@ describe('completed API-backed flows', () => {
       fireEvent.click(await screen.findByRole('button', { name: 'Công bố' }));
       expect(await screen.findByText('Đã công bố')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Công bố' })).toBeNull();
+      expect(publishBody).toEqual({ expectedCurrentVersion: 0 });
+    } finally { vi.mocked(fetch).mockImplementation(original); }
+  });
+
+  it('sends the observed current version and exposes conflict recovery', async () => {
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    let observed: unknown;
+    let reads = 0;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/knowledge/documents')) {
+        reads++;
+        return Promise.resolve(Response.json([
+          { id: 'old', title: 'Bản cũ', logicalDocumentKey: 'guide', version: 3, status: 'READY', isCurrent: true },
+          { id: 'doc', title: 'Bản mới', logicalDocumentKey: 'guide', version: 4, status: 'READY', isCurrent: false },
+        ]));
+      }
+      if (url.endsWith('/knowledge/documents/doc/publish')) {
+        observed = JSON.parse(typeof init?.body === 'string' ? init.body : '{}');
+        return Promise.resolve(Response.json({ error: { code: 'KNOWLEDGE_VERSION_CONFLICT', message: 'Phiên bản đã thay đổi.' } }, { status: 409 }));
+      }
+      return original(input, init);
+    });
+    try {
+      render(<App initialEntries={['/provider/knowledge']} />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Công bố' }));
+      expect(await screen.findByText(/Phiên bản đã thay đổi/)).toBeTruthy();
+      expect(observed).toEqual({ expectedCurrentVersion: 3 });
+      const previousReads = reads;
+      fireEvent.click(screen.getByRole('button', { name: 'Tải lại danh sách' }));
+      await waitFor(() => expect(reads).toBeGreaterThan(previousReads));
     } finally { vi.mocked(fetch).mockImplementation(original); }
   });
 

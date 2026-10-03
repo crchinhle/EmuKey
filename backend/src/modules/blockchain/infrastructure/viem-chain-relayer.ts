@@ -154,25 +154,15 @@ export function encodeChainCommand(input: ChainCommandInput): Hex {
           requiredInteger(payload, 'keyVersion'),
         ],
       });
-    case 'ACTIVATE_DEVICE':
+    case 'SYNC_DEVICE_COUNT':
       return encodeFunctionData({
         abi: licenseRegistryAbi,
-        functionName: 'activateDevice',
+        functionName: 'syncActiveDeviceCount',
         args: [
           commandId,
           licenseId,
-          bytes32(requiredString(payload, 'deviceId'), 'deviceId'),
-          requiredInteger(payload, 'keyVersion'),
-        ],
-      });
-    case 'REVOKE_DEVICE':
-      return encodeFunctionData({
-        abi: licenseRegistryAbi,
-        functionName: 'revokeDevice',
-        args: [
-          commandId,
-          licenseId,
-          bytes32(requiredString(payload, 'deviceId'), 'deviceId'),
+          requiredInteger(payload, 'activeDeviceCount'),
+          requiredInteger(payload, 'deviceStateVersion'),
         ],
       });
     default:

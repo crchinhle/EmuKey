@@ -1110,9 +1110,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/NotificationDto"
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationDto"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    }
                   }
                 }
               }
@@ -2672,6 +2681,7 @@
             "bearer": []
           }
         ],
+        "summary": "Create a device challenge; activation challenges resolve the license from the bearer activation key and require no purchaser login",
         "tags": [
           "licensing"
         ]
@@ -2697,7 +2707,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Phase6CommandDto"
+                  "$ref": "#/components/schemas/LicenseDeviceDto"
                 }
               }
             }
@@ -2708,7 +2718,7 @@
             "bearer": []
           }
         ],
-        "summary": "Request a device activation command after off-chain proof verification",
+        "summary": "Activate a device with a bearer activation key and device proof; no purchaser session is required",
         "tags": [
           "licensing"
         ]
@@ -2858,7 +2868,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Phase6CommandDto"
+                  "$ref": "#/components/schemas/LicenseDeviceDto"
                 }
               }
             }
@@ -2911,7 +2921,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Phase6CommandDto"
+                  "$ref": "#/components/schemas/LicenseDeviceDto"
                 }
               }
             }
@@ -3591,7 +3601,8 @@
         "properties": {
           "expectedCurrentVersion": {
             "type": "number",
-            "minimum": 1
+            "minimum": 0,
+            "description": "Observed current version; 0 means no published version."
           }
         }
       },
@@ -4477,6 +4488,12 @@
           "confirmationCount": {
             "type": "number"
           },
+          "activeDeviceCount": {
+            "type": "number"
+          },
+          "deviceStateVersion": {
+            "type": "number"
+          },
           "createdAt": {
             "type": "string"
           },
@@ -4545,6 +4562,8 @@
         },
         "required": [
           "confirmationCount",
+          "activeDeviceCount",
+          "deviceStateVersion",
           "createdAt",
           "entitlementVersion",
           "expiresAt",
@@ -4576,7 +4595,6 @@
           "status": {
             "type": "string",
             "enum": [
-              "PENDING_ONCHAIN",
               "ACTIVE",
               "REVOKED"
             ]
@@ -4589,10 +4607,6 @@
             "nullable": true
           },
           "revokedAt": {
-            "type": "object",
-            "nullable": true
-          },
-          "finality": {
             "type": "object",
             "nullable": true
           }
@@ -5259,7 +5273,13 @@
         "properties": {
           "licenseId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "License id for device-bound entitlement or revoke challenges; not required for activation."
+          },
+          "activationKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "description": "Required for activation challenges; used to resolve the license without customer ownership."
           },
           "purpose": {
             "type": "string",
@@ -5282,7 +5302,6 @@
           }
         },
         "required": [
-          "licenseId",
           "purpose",
           "deviceRef"
         ]
@@ -5290,6 +5309,11 @@
       "DeviceChallengeDto": {
         "type": "object",
         "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Resolved license id; returned only after the activation credential has been accepted."
+          },
           "challenge": {
             "type": "string"
           },
@@ -5314,6 +5338,7 @@
           }
         },
         "required": [
+          "licenseId",
           "challenge",
           "expiresAt",
           "bindingGeneration",
@@ -5324,13 +5349,10 @@
       "ActivateDeviceDto": {
         "type": "object",
         "properties": {
-          "licenseId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "activationKey": {
             "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$"
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "description": "Bearer activation credential supplied by the enterprise administrator"
           },
           "challenge": {
             "type": "string"
@@ -5350,48 +5372,11 @@
           }
         },
         "required": [
-          "licenseId",
           "activationKey",
           "challenge",
           "deviceRef",
           "devicePublicKey",
           "proof"
-        ]
-      },
-      "Phase6CommandDto": {
-        "type": "object",
-        "properties": {
-          "commandId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "PENDING",
-              "SUBMITTED",
-              "SUBMITTED_UNKNOWN",
-              "CONFIRMED",
-              "RETRYABLE_FAILED",
-              "DEAD_LETTER",
-              "ABANDONED",
-              "SUPERSEDED"
-            ]
-          },
-          "licenseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "deviceId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          }
-        },
-        "required": [
-          "commandId",
-          "status",
-          "licenseId"
         ]
       },
       "LicensingActionVerificationDto": {
@@ -5503,8 +5488,7 @@
               "RESUME_LICENSE",
               "REVOKE_LICENSE",
               "ROTATE_KEY",
-              "ACTIVATE_DEVICE",
-              "REVOKE_DEVICE"
+              "SYNC_DEVICE_COUNT"
             ]
           },
           "confirmedAt": {
@@ -5583,6 +5567,42 @@
         "required": [
           "actionToken",
           "currentKey"
+        ]
+      },
+      "Phase6CommandDto": {
+        "type": "object",
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUBMITTED",
+              "SUBMITTED_UNKNOWN",
+              "CONFIRMED",
+              "RETRYABLE_FAILED",
+              "DEAD_LETTER",
+              "ABANDONED",
+              "SUPERSEDED"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "commandId",
+          "status",
+          "licenseId"
         ]
       },
       "ActivationKeyRecoveryDto": {
@@ -5693,6 +5713,9 @@
       "EntitlementValidationDto": {
         "type": "object",
         "properties": {
+          "bindingGeneration": {
+            "type": "number"
+          },
           "valid": {
             "type": "boolean",
             "enum": [
@@ -5723,6 +5746,7 @@
           }
         },
         "required": [
+          "bindingGeneration",
           "valid",
           "expiresAt",
           "licenseId",

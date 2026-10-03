@@ -57,11 +57,12 @@ describe('notification public contract', () => {
     }]);
     const repository = new NotificationRepository(pool as never);
 
-    const records = await repository.list('user-1');
-    const record = records[0];
+    const page = await repository.list('user-1', { limit: 20 });
+    const record = page.items[0];
 
     expect(record).toMatchObject({ id: 'n1', isRead: false, readAt: null, createdAt: '2026-09-30T10:00:00.000Z' });
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('FROM notifications'), ['user-1']);
+    expect(page.nextCursor).toBeNull();
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('FROM notifications'), ['user-1', 21]);
     expect(JSON.stringify(record)).not.toContain('is_read');
   });
 

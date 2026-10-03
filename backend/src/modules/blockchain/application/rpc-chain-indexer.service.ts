@@ -39,8 +39,8 @@ function eventType(log: RpcContractEvent): ChainEventType {
       return 'LICENSE_RENEWED';
     case 'ActivationKeyRotated':
       return 'KEY_ROTATED';
-    case 'DeviceStatusChanged':
-      return log.args.active === true ? 'DEVICE_ACTIVATED' : 'DEVICE_REVOKED';
+    case 'ActiveDeviceCountSynced':
+      return 'ACTIVE_DEVICE_COUNT_SYNCED';
     case 'LicenseStatusChanged': {
       const status = Number(log.args.status);
       if (status === 1) return 'LICENSE_RESUMED';
@@ -74,8 +74,11 @@ function eventPayload(log: RpcContractEvent): Record<string, unknown> {
       keyVersion: Number(log.args.activationKeyVersion),
     };
   }
-  if (log.eventName === 'DeviceStatusChanged') {
-    return { active: log.args.active, deviceId: log.args.deviceId };
+  if (log.eventName === 'ActiveDeviceCountSynced') {
+    return {
+      activeDeviceCount: Number(log.args.activeDeviceCount),
+      deviceStateVersion: Number(log.args.deviceStateVersion),
+    };
   }
   return {};
 }
@@ -234,9 +237,7 @@ export class RpcChainIndexerService implements ChainRpcIndexerPort {
       confirmationCount: latestBlock - Number(log.blockNumber) + 1,
       contractAddress: this.options.contractAddress.toLowerCase(),
       eventType: eventType(log),
-      ...(context.licenseDeviceId
-        ? { licenseDeviceId: context.licenseDeviceId }
-        : {}),
+      ...(context.licenseDeviceId ? { licenseDeviceId: context.licenseDeviceId } : {}),
       licenseId,
       logIndex: log.logIndex,
       network: this.options.network.toLowerCase(),

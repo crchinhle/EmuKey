@@ -1,5 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex } from '@noble/hashes/utils';
 import type {
   ActivationChallengeDto,
   ActivationKeyDto,
@@ -13,6 +15,7 @@ import type {
   OrderTermsDto,
   Phase6CommandDto,
   Phase6CommandStatusDto,
+  LicenseDeviceDto,
   ProfileDto,
   PublicCatalogProductDto,
   RevokeDeviceDto,
@@ -24,8 +27,8 @@ import type {
 } from './generated';
 
 const SESSION_KEY = 'emukey_mobile_session_v1';
-const ACTIVATION_KEY_PREFIX = 'emukey_activation_key_v1:';
-const IDEMPOTENCY_PREFIX = 'emukey_order_intent_v1:';
+const ACTIVATION_KEY_PREFIX = 'emukey_activation_key_v1_';
+const IDEMPOTENCY_PREFIX = 'emukey_order_intent_v1_';
 const API_URL =
   (globalThis as typeof globalThis & {
     process?: { env?: { EXPO_PUBLIC_API_URL?: string } };
@@ -44,11 +47,10 @@ export type MobileLicenseVerification = PublicLicenseVerificationDto;
 export type MobileDevice = {
   id: string;
   deviceRef: string;
-  status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'REVOKED';
+  status: 'ACTIVE' | 'REVOKED';
   bindingGeneration: number;
   activatedAt: string | null;
   revokedAt: string | null;
-  finality: string | null;
 };
 export interface MobileUser {
   id: string;
@@ -91,6 +93,14 @@ export interface MobileNotification {
   title: string;
   content: string;
   isRead: boolean;
+  createdAt?: string;
+  readAt?: string | null;
+  target?: { kind: 'LICENSE' | 'ORDER' | 'CONVERSATION' | 'PAYMENT' | 'SYSTEM'; id: string | null } | null;
+}
+
+export interface MobileNotificationPage {
+  items: MobileNotification[];
+  nextCursor: string | null;
 }
 
 let activeSession: MobileSession | null = null;
@@ -222,7 +232,7 @@ export async function comparePlans(ids: readonly string[]): Promise<MobilePlanCo
 
 async function idempotencyKeyFor(input: CreateOrderDto): Promise<{ storageKey: string; key: string }> {
   const intent = `${activeSession?.user.id ?? 'anonymous'}:${JSON.stringify(input)}`;
-  const storageKey = `${IDEMPOTENCY_PREFIX}${encodeURIComponent(intent)}`;
+  const storageKey = `${IDEMPOTENCY_PREFIX}${bytesToHex(sha256(intent))}`;
   const existing = await SecureStore.getItemAsync(storageKey);
   if (existing) return { storageKey, key: existing };
   const key = Crypto.randomUUID();
@@ -257,12 +267,14 @@ export async function getRenewalPreview(licenseId: string): Promise<MobileRenewa
   return json(await request(`/orders/renewal-preview/${encodeURIComponent(licenseId)}`));
 }
 
-export async function acceptServiceTerms(order: MobileOrderDetail): Promise<MobileOrderDetail> {
+export async function acceptServiceTerms(order: MobileOrderDetail, terms: Pick<MobileOrderTerms, 'version' | 'hash'>): Promise<MobileOrderDetail> {
   return json(
       await request(`/orders/${encodeURIComponent(order.id)}/accept-service-terms`, {
       method: 'POST',
       body: JSON.stringify({
         accepted: true,
+        version: terms.version,
+        hash: terms.hash,
       }),
     }),
   );
@@ -308,24 +320,24 @@ export async function listDevices(licenseId: string): Promise<MobileDevice[]> {
   return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices`));
 }
 
-export async function createActivationChallenge(input: ActivationChallengeDto): Promise<DeviceChallengeDto> {
-  return json(await request('/activations/challenge', { method: 'POST', body: JSON.stringify(input) }));
+export async function createActivationChallenge(input: ActivationChallengeDto, authenticated = true): Promise<DeviceChallengeDto> {
+  return json(await request('/activations/challenge', { method: 'POST', body: JSON.stringify(input) }, authenticated));
 }
 
-export async function activateDevice(input: ActivateDeviceDto): Promise<Phase6CommandDto> {
-  return json(await request('/activations', { method: 'POST', body: JSON.stringify(input) }));
+export async function activateDevice(input: ActivateDeviceDto): Promise<LicenseDeviceDto> {
+  return json(await request('/activations', { method: 'POST', body: JSON.stringify(input) }, false));
 }
 
-export async function revokeDevice(licenseId: string, deviceId: string, input: RevokeDeviceDto): Promise<Phase6CommandDto> {
+export async function revokeDevice(licenseId: string, deviceId: string, input: RevokeDeviceDto): Promise<LicenseDeviceDto> {
   return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/revoke`, { method: 'POST', body: JSON.stringify(input) }));
 }
 
-export async function remoteRevokeDevice(licenseId: string, deviceId: string, input: { actionToken: string; currentPassword: string }): Promise<Phase6CommandDto> {
+export async function remoteRevokeDevice(licenseId: string, deviceId: string, input: { actionToken: string; currentPassword: string }): Promise<LicenseDeviceDto> {
   return json(await request(`/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/remote-revoke`, { method: 'POST', body: JSON.stringify(input) }));
 }
 
 export async function issueEntitlement(licenseId: string, deviceId: string, challenge: string, proof: string): Promise<EntitlementDto> {
-  return json(await request('/entitlements/issue', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }));
+  return json(await request('/entitlements/issue', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }, false));
 }
 
 export async function rotateActivationKey(licenseId: string, input: RotateActivationKeyDto): Promise<Phase6CommandDto> {
@@ -337,14 +349,14 @@ export async function recoverActivationKey(licenseId: string, input: { actionTok
 }
 
 export async function refreshEntitlement(licenseId: string, deviceId: string, challenge: string, proof: string): Promise<EntitlementDto> {
-  return json(await request('/entitlements/refresh', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }));
+  return json(await request('/entitlements/refresh', { method: 'POST', body: JSON.stringify({ challenge, deviceId, licenseId, proof }) }, false));
 }
 
 export async function verifyEntitlement(token: string): Promise<EntitlementValidationDto> {
   return json(await request('/entitlements/verify', {
     method: 'POST',
     body: JSON.stringify({ token }),
-  }));
+  }, false));
 }
 
 export async function verifyPublicLicense(
@@ -386,18 +398,20 @@ export async function askConversationAi(conversationId: string, question: string
   return json(await request(`/conversations/${encodeURIComponent(conversationId)}/ai-ask`, { method: 'POST', body: JSON.stringify({ question, ...(clientMessageId ? { clientMessageId } : {}) }) }));
 }
 
-export async function listNotifications(): Promise<MobileNotification[]> {
-  return json(await request('/notifications'));
+export async function listNotifications(cursor?: string, limit = 20): Promise<MobileNotificationPage | MobileNotification[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set('cursor', cursor);
+  return json(await request(`/notifications?${params.toString()}`));
 }
 
-export async function markNotificationRead(notificationId: string): Promise<void> {
-  await request(`/notifications/${encodeURIComponent(notificationId)}/read`, { method: 'POST' });
+export async function markNotificationRead(notificationId: string): Promise<MobileNotification> {
+  return json(await request(`/notifications/${encodeURIComponent(notificationId)}/read`, { method: 'POST' }));
 }
 
 export async function registerPushToken(token: string, provider: 'FCM' | 'EXPO'): Promise<void> {
-  await request('/notifications/push-tokens', { method: 'POST', body: JSON.stringify({ provider, token }) });
+  await json<void>(await request('/notifications/push-tokens', { method: 'POST', body: JSON.stringify({ provider, token }) }));
 }
 
 export async function removePushToken(token: string): Promise<void> {
-  await request('/notifications/push-tokens/remove', { method: 'POST', body: JSON.stringify({ token }) });
+  await json<void>(await request('/notifications/push-tokens/remove', { method: 'POST', body: JSON.stringify({ token }) }));
 }

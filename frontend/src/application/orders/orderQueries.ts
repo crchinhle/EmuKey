@@ -109,13 +109,15 @@ export function useOrderMutations() {
       onSuccess: refresh,
     }),
     acceptServiceTerms: useMutation({
-      mutationFn: (order: OrderDetail) =>
+      mutationFn: ({ order, terms }: { order: OrderDetail; terms: Pick<OrderTermsDto, 'version' | 'hash'> }) =>
         requestJson<OrderDetail>(
           `/orders/${encodeURIComponent(order.id)}/accept-service-terms`,
           {
             method: 'POST',
             body: JSON.stringify({
               accepted: true,
+              version: terms.version,
+              hash: terms.hash,
             }),
           },
         ),

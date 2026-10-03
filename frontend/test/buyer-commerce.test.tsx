@@ -3,10 +3,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../src/presentation/app/App';
 import { orderStatusLabel } from '../src/application/orders/orderQueries';
+import { OrderSummary } from '../src/presentation/components/OrderSummary';
 
 afterEach(cleanup);
 
 describe('Customer commerce', () => {
+  it('keeps disabled, zero and structured entitlements in the purchase snapshot', () => {
+    render(<OrderSummary order={{ total: 100000, entitlements: { desktop: false, quota: 0, limits: { seats: 2 } } }} />);
+    expect(screen.getByText(/Ứng dụng máy tính: Không/)).toBeTruthy();
+    expect(screen.getByText(/quota: 0/)).toBeTruthy();
+    expect(screen.getByText(/limits: \{"seats":2\}/)).toBeTruthy();
+  });
   it('reuses the order idempotency key when retrying a lost response', async () => {
     const original = vi.mocked(fetch).getMockImplementation()!;
     const keys: (string | null)[] = [];
@@ -67,6 +74,7 @@ try {
   });
 
   it('creates an order after explicit intent and Terms acceptance and opens payment', async () => {
+    vi.mocked(fetch).mockClear();
     render(<App initialEntries={['/buyer/checkout']} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Tạo đơn hàng' }));
@@ -82,6 +90,8 @@ try {
     expect(
       await screen.findByRole('heading', { name: 'Thanh toán đơn hàng' }),
     ).toBeTruthy();
+    const acceptance = vi.mocked(fetch).mock.calls.find(([input]) => (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).endsWith('/accept-service-terms'));
+    expect(JSON.parse(typeof acceptance?.[1]?.body === 'string' ? acceptance[1].body : '{}')).toEqual({ accepted: true, version: 'v1', hash: 'a'.repeat(64) });
   });
 
   it('renders the signed SePay checkout as a POST form', async () => {

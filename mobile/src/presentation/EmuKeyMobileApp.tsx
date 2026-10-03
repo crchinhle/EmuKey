@@ -94,9 +94,11 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export function LoginScreen({
   onAuthenticated,
   onVerify,
+  onActivate,
 }: {
   readonly onAuthenticated: (session: MobileSession) => void;
   readonly onVerify: () => void;
+  readonly onActivate: () => void;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -135,6 +137,7 @@ export function LoginScreen({
       <Button disabled={!email.trim() || password.length < 8} onPress={() => void submit()} title="Đăng nhập" />
       <Button onPress={() => { setForgotMode(true); setError(null); }} title="Quên mật khẩu" />
       <Button onPress={onVerify} title="Xác minh License công khai" />
+      <Button onPress={onActivate} title="Kích hoạt bằng mã doanh nghiệp" />
     </ScrollView>
   );
 }
@@ -146,7 +149,8 @@ function CustomerNavigation({ navigation }: { readonly navigation: Pick<NativeSt
     const load = () => {
       void listNotifications()
         .then((items) => {
-          if (active) setUnread(items.filter((item) => !item.isRead).length);
+          const page = Array.isArray(items) ? { items, nextCursor: null } : items;
+          if (active) setUnread(page.items.filter((item) => !item.isRead).length);
         })
         .catch(() => undefined);
     };
@@ -270,20 +274,50 @@ export function AssistanceScreen() {
 
 export function NotificationsScreen() {
   const [notifications, setNotifications] = useState<MobileNotification[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const load = async (refresh = false) => { if (refresh) setRefreshing(true); else setLoading(true); setError(null); try { setNotifications(await listNotifications()); } catch { setError('Không thể tải thông báo.'); } finally { setLoading(false); setRefreshing(false); } };
+  const load = async (refresh = false) => {
+    if (refresh) setRefreshing(true); else setLoading(true);
+    setError(null);
+    try {
+      const result = await listNotifications();
+      const page = Array.isArray(result) ? { items: result, nextCursor: null } : result;
+      setNotifications(page.items);
+      setNextCursor(page.nextCursor);
+    } catch { setError('Không thể tải thông báo.'); }
+    finally { setLoading(false); setRefreshing(false); }
+  };
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true); setError(null);
+    try {
+      const result = await listNotifications(nextCursor);
+      const page = Array.isArray(result) ? { items: result, nextCursor: null } : result;
+      setNotifications((items) => [...items, ...page.items]);
+      setNextCursor(page.nextCursor);
+    } catch { setError('Không thể tải thêm thông báo. Vui lòng thử lại.'); }
+    finally { setLoadingMore(false); }
+  };
   useEffect(() => { void load(); }, []);
   return <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} />} contentContainerStyle={styles.content}>
     <Text accessibilityRole="header" style={styles.heading}>Thông báo</Text>
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {!loading && notifications.length === 0 && !error ? <Text>Chưa có thông báo.</Text> : null}
-    {notifications.map((notification) => <Pressable accessibilityRole="button" key={notification.id} onPress={() => { if (!notification.isRead) void markNotificationRead(notification.id).then(() => setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, isRead: true } : item))); }} style={styles.card}>
-      <Text style={styles.cardTitle}>{notification.title}</Text>
-      <Text>{notification.content}</Text>
-      {!notification.isRead ? <Text style={styles.muted}>Chưa đọc</Text> : null}
-    </Pressable>)}
+     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+     {readError ? <Text accessibilityRole="alert" style={styles.error}>{readError}</Text> : null}
+     {!loading && notifications.length === 0 && !error ? <Text>Chưa có thông báo.</Text> : null}
+     {notifications.map((notification) => <Pressable accessibilityRole="button" key={notification.id} onPress={() => {
+       if (!notification.isRead) void markNotificationRead(notification.id)
+         .then((updated) => { setReadError(null); setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, ...updated, isRead: true } : item)); })
+         .catch(() => setReadError('Không thể đánh dấu thông báo đã đọc. Vui lòng thử lại.'));
+     }} style={styles.card}>
+       <Text style={styles.cardTitle}>{notification.title}</Text>
+       <Text>{notification.content}</Text>
+       {!notification.isRead ? <Text style={styles.muted}>Chưa đọc</Text> : null}
+     </Pressable>)}
+     {nextCursor ? <Button disabled={loadingMore} onPress={() => void loadMore()} title={loadingMore ? 'Đang tải...' : 'Tải thêm thông báo'} /> : null}
   </ScrollView>;
 }
 
@@ -397,7 +431,6 @@ function comparisonPrice(comparison: MobilePlanComparison, planId: string): numb
 
 function licenseStatusLabel(status: MobileLicense['status']): string {
   switch (status) {
-    case 'PENDING_ONCHAIN': return 'Đang chờ blockchain';
     case 'ACTIVE': return 'Đang hoạt động';
     case 'SUSPENDED': return 'Tạm ngưng';
     case 'EXPIRED': return 'Đã hết hạn';
@@ -500,7 +533,7 @@ function OrdersScreen({ navigation }: NativeStackScreenProps<RootStackParamList,
 
 export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Checkout'>) {
   const [order, setOrder] = useState<MobileOrderDetail | null>(null);
-  const [terms, setTerms] = useState<string | null>(null);
+  const [terms, setTerms] = useState<import('../infrastructure/api/client').MobileOrderTerms | null>(null);
   const [termsState, setTermsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -508,7 +541,7 @@ export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<Roo
     setTermsState('loading');
     try {
       const loaded = await getOrderTerms(orderId);
-      setTerms(loaded.content);
+      setTerms(loaded);
       setAccepted(false);
       setTermsState('ready');
     } catch {
@@ -527,10 +560,10 @@ export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<Roo
     }
   };
   const continueToPayment = async () => {
-    if (!order || !accepted) return;
+    if (!order || !accepted || !terms || termsState !== 'ready') return;
     setError(null);
     try {
-      const updated = await acceptServiceTerms(order);
+      const updated = await acceptServiceTerms(order, terms);
       navigation.replace('Payment', { orderId: updated.id });
     } catch {
       setError('Không thể xác nhận điều khoản của đơn hàng.');
@@ -558,7 +591,7 @@ export function CheckoutScreen({ navigation, route }: NativeStackScreenProps<Roo
             </>
           ) : (
             <>
-              <Text style={styles.terms}>{terms ?? 'Đang tải điều khoản...'}</Text>
+              <Text style={styles.terms}>{terms?.content ?? 'Đang tải điều khoản...'}</Text>
               {termsState === 'ready' ? (
                 <Pressable
                   accessibilityRole="checkbox"
@@ -686,6 +719,33 @@ export function PaymentScreen({ navigation, route }: NativeStackScreenProps<Root
   );
 }
 
+export function ActivationScreen({ onComplete }: { readonly onComplete: () => void }) {
+  const [key, setKey] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const submit = async () => {
+    setError(null);
+    setMessage(null);
+    try {
+      const identity = await createOrLoadDeviceIdentity('activation-session');
+      const challenge = await createActivationChallenge({ activationKey: key.trim(), deviceRef: identity.deviceRef, purpose: 'ACTIVATE_DEVICE' }, false);
+      const device = await activateDevice({ activationKey: key.trim(), challenge: challenge.challenge, devicePublicKey: identity.address, deviceRef: identity.deviceRef, proof: identity.signMessage(challenge.challenge) });
+      setMessage(`Thiết bị đã kích hoạt (${device.status}).`);
+      onComplete();
+    } catch (cause) {
+      setError(cause instanceof MobileApiError && cause.status === 429 ? 'Có quá nhiều yêu cầu. Vui lòng thử lại sau.' : 'Mã bản quyền không hợp lệ hoặc không thể sử dụng.');
+    }
+  };
+  return <ScrollView contentContainerStyle={styles.content}>
+    <Text accessibilityRole="header" style={styles.heading}>Kích hoạt phần mềm</Text>
+    <Text>Nhập mã bản quyền do quản trị viên doanh nghiệp cung cấp. Không cần đăng nhập tài khoản người mua.</Text>
+    <TextInput accessibilityLabel="Mã bản quyền" autoCapitalize="none" onChangeText={setKey} placeholder="0x…" style={styles.input} value={key} />
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {message ? <Text accessibilityRole="alert" style={styles.success}>{message}</Text> : null}
+    <Button disabled={key.trim().length === 0} onPress={() => void submit()} title="Kích hoạt" />
+  </ScrollView>;
+}
+
 export function LicensesScreen({
   navigation,
 }: {
@@ -731,23 +791,22 @@ export function LicensesScreen({
   }, [licenses]);
   const activate = async (license: MobileLicense) => {
     const key = activationKey?.licenseId === license.id ? activationKey.key : null;
-    if (!key) { setError('Hãy nhận activation key trước khi kích hoạt thiết bị.'); return; }
+    if (!key) {        setError('Hãy nhập mã bản quyền do quản trị viên doanh nghiệp cung cấp trước khi kích hoạt thiết bị.'); return; }
     setMessage(null);
     setError(null);
     try {
       const identity = await createOrLoadDeviceIdentity(license.id);
-      const challenge = await createActivationChallenge({ deviceRef: identity.deviceRef, licenseId: license.id, purpose: 'ACTIVATE_DEVICE' });
+      const challenge = await createActivationChallenge({ activationKey: key, deviceRef: identity.deviceRef, licenseId: license.id, purpose: 'ACTIVATE_DEVICE' }, false);
       const proof = identity.signMessage(challenge.challenge);
-      const command = await activateDevice({
-        activationKey: key,
-        challenge: challenge.challenge,
-        devicePublicKey: identity.address,
-        deviceRef: identity.deviceRef,
-        licenseId: license.id,
+       const device = await activateDevice({
+         activationKey: key,
+         challenge: challenge.challenge,
+         devicePublicKey: identity.address,
+         deviceRef: identity.deviceRef,
         proof,
       });
-      setMessage(`Activation ${command.status}: ${command.commandId}`);
-      setCommandId(command.commandId);
+       setMessage(`Thiết bị ${device.status}, binding generation ${device.bindingGeneration}.`);
+       await loadDevices(license.id);
     } catch (cause) {
       if (cause instanceof MobileApiError && [409, 422].includes(cause.status)) {
         setError('Thiết bị đã vượt giới hạn số lượng hoặc trùng thiết bị. Kiểm tra lại danh sách thiết bị.');
@@ -766,9 +825,8 @@ export function LicensesScreen({
       const identity = await createOrLoadDeviceIdentity(licenseId);
       const challenge = await createActivationChallenge({ deviceId: device.id, deviceRef: identity.deviceRef, licenseId, purpose: 'SELF_REVOKE_DEVICE' });
       const proof = identity.signMessage(challenge.challenge);
-      const command = await revokeDevice(licenseId, device.id, { actionToken, activationKey: key, challenge: challenge.challenge, proof });
-      setMessage(`Revoke ${command.status}: ${command.commandId}`);
-      setCommandId(command.commandId);
+       const revoked = await revokeDevice(licenseId, device.id, { actionToken, activationKey: key, challenge: challenge.challenge, proof });
+       setMessage(`Thiết bị ${revoked.status} ngay trong PostgreSQL.`);
       await loadDevices(licenseId);
     } catch {
       setError('Không thể thu hồi thiết bị. Xác nhận email trước và nhập action token.');
@@ -849,7 +907,7 @@ export function LicensesScreen({
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadLicenses(true)} />}
     >
-      <Text accessibilityRole="header" style={styles.heading}>License của tôi</Text>
+      <Text accessibilityRole="header" style={styles.heading}>License doanh nghiệp</Text>
       {navigation ? <CustomerNavigation navigation={navigation} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {message ? <Text accessibilityRole="alert" style={styles.success}>{message}</Text> : null}
@@ -858,7 +916,7 @@ export function LicensesScreen({
         <View key={license.id} style={styles.card}>
           <Text style={styles.cardTitle}>{license.productName}</Text>
           <Text>{license.publicLicenseId}</Text>
-          <Text>{licenseStatusLabel(license.status)} · {finalityLabel(license.finality)} ({license.confirmationCount})</Text>
+          <Text>{licenseStatusLabel(license.status)} · {finalityLabel(license.finality)} ({license.confirmationCount}) · {license.activeDeviceCount}/{license.maxActiveDevices} thiết bị</Text>
            {activationKey?.licenseId === license.id ? (
             <Text selectable style={styles.activationKey}>{activationKey.key}</Text>
           ) : (
@@ -881,12 +939,12 @@ export function LicensesScreen({
             ) : null}
             {(devices[license.id] ?? []).map((device) => (
               <View key={device.id} style={styles.card}>
-                <Text>{device.deviceRef} · {device.status} · {device.finality ?? 'PENDING'}</Text>
+                <Text>{device.deviceRef} · {device.status}</Text>
                 {device.status === 'ACTIVE' ? <Button onPress={() => void requestLicensingActionVerification(license.id, 'REVOKE_DEVICE', device.id).then(() => setMessage('Đã gửi email xác nhận thu hồi.')).catch(() => setError('Không thể gửi email xác nhận.'))} title="Gửi email xác nhận thu hồi" /> : null}
                 {device.status === 'ACTIVE' ? <Button disabled={!actionToken} onPress={() => void revoke(license.id, device)} title="Thu hồi thiết bị" /> : null}
-                {device.status === 'ACTIVE' && device.finality === 'CONFIRMED' ? <Button onPress={() => void sendEntitlement(license.id, device, false)} title="Cấp entitlement" /> : null}
-                {device.status === 'ACTIVE' && device.finality === 'CONFIRMED' ? <Button onPress={() => void sendEntitlement(license.id, device, true)} title="Làm mới entitlement" /> : null}
-                {device.status === 'ACTIVE' && device.finality === 'CONFIRMED' && entitlementToken ? <Button onPress={() => void verifyEntitlement(entitlementToken).then((result) => setMessage(`Entitlement v${result.entitlementVersion} còn hiệu lực đến ${result.expiresAt}`)).catch(() => setError('Entitlement đã hết hạn hoặc bị vô hiệu.'))} title="Kiểm tra entitlement" /> : null}
+                {device.status === 'ACTIVE' ? <Button onPress={() => void sendEntitlement(license.id, device, false)} title="Cấp entitlement" /> : null}
+                {device.status === 'ACTIVE' ? <Button onPress={() => void sendEntitlement(license.id, device, true)} title="Làm mới entitlement" /> : null}
+                {device.status === 'ACTIVE' && entitlementToken ? <Button onPress={() => void verifyEntitlement(entitlementToken).then((result) => setMessage(`Entitlement v${result.entitlementVersion} còn hiệu lực đến ${result.expiresAt}`)).catch(() => setError('Entitlement đã hết hạn hoặc bị vô hiệu.'))} title="Kiểm tra entitlement" /> : null}
               </View>
             ))}
         </View>
@@ -899,7 +957,9 @@ export function RenewalScreen({ navigation, route }: NativeStackScreenProps<Root
   const [sourceOrder, setSourceOrder] = useState<MobileOrderDetail | null>(null);
   const [renewalOrder, setRenewalOrder] = useState<MobileOrderDetail | null>(null);
   const [preview, setPreview] = useState<import('../infrastructure/api/client').MobileRenewalPreview | null>(null);
-  const [terms, setTerms] = useState<string | null>(null);
+  const [terms, setTerms] = useState<import('../infrastructure/api/client').MobileOrderTerms | null>(null);
+  const [termsState, setTermsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [pending, setPending] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -907,24 +967,44 @@ export function RenewalScreen({ navigation, route }: NativeStackScreenProps<Root
       .then(([orderValue, previewValue]) => { setSourceOrder(orderValue); setPreview(previewValue); })
       .catch(() => setError('Không thể tải thông tin gia hạn.'));
   }, [route.params.originOrderId, route.params.licenseId]);
-  const startRenewal = async () => {
-    if (!preview?.canRenew || !sourceOrder) return;
+  const loadTerms = async (orderId: string) => {
+    setTermsState('loading');
+    setTerms(null);
+    setAccepted(false);
     setError(null);
+    try {
+      setTerms(await getOrderTerms(orderId));
+      setTermsState('ready');
+    } catch {
+      setTermsState('error');
+      setError('Không thể tải điều khoản gia hạn. Vui lòng thử lại.');
+    }
+  };
+  const startRenewal = async () => {
+    if (!preview?.canRenew || !sourceOrder || pending) return;
+    setError(null);
+    setPending(true);
     try {
       const created = preview.pendingOrder ?? await createOrder({ planId: preview.planId, targetLicenseId: route.params.licenseId });
       setRenewalOrder(created);
-      setTerms((await getOrderTerms(created.id)).content);
+      if (created.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE') await loadTerms(created.id);
     } catch {
       setError('Không thể tạo hoặc tiếp tục đơn gia hạn.');
+    } finally {
+      setPending(false);
     }
   };
   const continueToPayment = async () => {
-    if (!renewalOrder || !accepted) return;
+    if (!renewalOrder || !accepted || !terms || termsState !== 'ready' || pending) return;
+    setPending(true);
+    setError(null);
     try {
-      const updated = await acceptServiceTerms(renewalOrder);
+      const updated = await acceptServiceTerms(renewalOrder, terms);
       navigation.replace('Payment', { orderId: updated.id });
     } catch {
       setError('Không thể xác nhận điều khoản gia hạn.');
+    } finally {
+      setPending(false);
     }
   };
   return (
@@ -933,28 +1013,35 @@ export function RenewalScreen({ navigation, route }: NativeStackScreenProps<Root
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{route.params.productName}</Text>
         <Text>{preview?.planName ?? sourceOrder?.planNameSnapshot ?? 'Đang tải gói hiện tại...'}</Text>
-        {preview ? <Text style={styles.price}>{preview.priceVnd.toLocaleString('vi-VN')} ₫</Text> : null}
+        {preview ? <Text style={styles.price}>{(renewalOrder?.priceVndSnapshot ?? preview.priceVnd).toLocaleString('vi-VN')} ₫</Text> : null}
+        {renewalOrder && preview && renewalOrder.priceVndSnapshot !== preview.priceVnd ? <Text>Giá đơn gia hạn đã thay đổi so với dự kiến. Vui lòng xem lại trước khi đồng ý.</Text> : null}
         {preview ? <Text>Hạn hiện tại: {new Date(preview.currentExpiresAt).toLocaleDateString('vi-VN')} · dự kiến: {new Date(preview.estimatedExpiresAt).toLocaleDateString('vi-VN')}</Text> : null}
         {preview && !preview.canRenew ? <Text style={styles.error}>Gói này hiện chưa thể gia hạn.</Text> : null}
       </View>
       {!renewalOrder ? (
-        <Button disabled={!preview?.canRenew} onPress={() => void startRenewal()} title={preview?.pendingOrder ? 'Tiếp tục đơn gia hạn' : 'Tạo đơn gia hạn'} />
+        <Button disabled={!preview?.canRenew || !sourceOrder || pending} onPress={() => void startRenewal()} title={preview?.pendingOrder ? 'Tiếp tục đơn gia hạn' : 'Tạo đơn gia hạn'} />
+      ) : renewalOrder.orderStatus !== 'WAITING_SERVICE_TERMS_ACCEPTANCE' ? (
+        ['WAITING_PAYMENT', 'PAYMENT_ACCEPTED'].includes(renewalOrder.orderStatus)
+          ? <Button onPress={() => navigation.replace('Payment', { orderId: renewalOrder.id })} title="Tiếp tục thanh toán" />
+          : <Text>Đơn gia hạn đã kết thúc. Vui lòng tải lại thông tin bản quyền.</Text>
       ) : (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Điều khoản gia hạn</Text>
-          <Text style={styles.terms}>{terms}</Text>
-          <Pressable
+          <Text style={styles.terms}>{terms?.content ?? (termsState === 'error' ? 'Chưa tải được điều khoản gia hạn.' : 'Đang tải điều khoản...')}</Text>
+          {termsState === 'error' ? <Button onPress={() => void loadTerms(renewalOrder.id)} title="Tải lại điều khoản" /> : null}
+          {termsState === 'ready' && terms ? <Pressable
             accessibilityRole="checkbox"
             accessibilityState={{ checked: accepted }}
+            disabled={pending}
             onPress={() => setAccepted((value) => !value)}
             style={[styles.acceptance, accepted ? styles.acceptanceSelected : null]}
           >
             <Text>{accepted ? '✓ ' : ''}Tôi đồng ý với điều khoản gia hạn</Text>
-          </Pressable>
-          <Button disabled={!accepted} onPress={() => void continueToPayment()} title="Tiếp tục thanh toán" />
+          </Pressable> : null}
+          <Button disabled={!accepted || !terms || termsState !== 'ready' || pending} onPress={() => void continueToPayment()} title="Tiếp tục thanh toán" />
         </View>
       )}
-      <Text style={styles.muted}>Thời hạn chỉ được cập nhật sau khi transaction blockchain đạt finality.</Text>
+      <Text style={styles.muted}>Trạng thái thiết bị được lưu ngay trong PostgreSQL; blockchain chỉ đồng bộ số lượng tổng hợp bất đồng bộ.</Text>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     </ScrollView>
   );
@@ -995,11 +1082,13 @@ export function EmuKeyMobileApp() {
   const [session, setSession] = useState<MobileSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [publicVerify, setPublicVerify] = useState(false);
+  const [activationMode, setActivationMode] = useState(false);
   useEffect(() => { void restoreSession().then(setSession).finally(() => setLoading(false)); }, []);
   if ((!fontsLoaded && !fontError) || loading) return <View style={styles.container}><Text>Đang khôi phục phiên đăng nhập...</Text></View>;
   if (!session) {
     if (publicVerify) return <View style={styles.publicContainer}><VerifyLicenseScreen /><Button onPress={() => setPublicVerify(false)} title="Quay lại đăng nhập" /></View>;
-    return <LoginScreen onAuthenticated={setSession} onVerify={() => setPublicVerify(true)} />;
+    if (activationMode) return <View style={styles.publicContainer}><ActivationScreen onComplete={() => setActivationMode(false)} /><Button onPress={() => setActivationMode(false)} title="Quay lại đăng nhập" /></View>;
+    return <LoginScreen onAuthenticated={setSession} onVerify={() => setPublicVerify(true)} onActivate={() => setActivationMode(true)} />;
   }
   return (
     <NavigationContainer>

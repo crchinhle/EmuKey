@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useAdminProducts } from '../../application/catalog/catalogQueries';
 import { useCreateKnowledgeDocument, useKnowledgeDocuments, usePublishKnowledgeDocument } from '../../application/assistance/knowledgeQueries';
 import { PageHeader } from '../components/WorkspacePrimitives';
+import { describeApiError } from '../../application/auth/authContext';
 
 export function AiKnowledgeScreen() {
   const [query, setQuery] = useState('');
@@ -58,7 +59,7 @@ export function AiKnowledgeScreen() {
         </div>
       </section>
       {products.isError ? <Alert type="error" title="Không thể tải danh sách sản phẩm" action={<Button onClick={() => void products.refetch()}>Thử lại</Button>} /> : null}
-      {create.isError || publish.isError ? <Alert type="error" title="Không thể lưu hoặc công bố tài liệu. Vui lòng thử lại." /> : null}
+      {create.isError || publish.isError ? <Alert type="error" title={describeApiError(publish.error ?? create.error, 'Không thể lưu hoặc công bố tài liệu. Vui lòng thử lại.')} action={<Button onClick={() => { void documents.refetch(); publish.reset(); }}>Tải lại danh sách</Button>} /> : null}
       <section className="workspace-card document-list">
         <div className="card-heading">
           <h2>Tài liệu đã nạp</h2>
@@ -75,7 +76,7 @@ export function AiKnowledgeScreen() {
         {visibleDocuments.map((document) => (
           <div className="data-row" key={document.id}>
             <span><strong>{document.title}</strong><small>{document.logicalDocumentKey} · v{document.version}</small></span>
-            <span className="table-actions"><span className="status-chip status-chip--neutral">{document.isCurrent ? 'Đã công bố' : document.status === 'READY' ? 'Sẵn sàng' : document.status}</span>{document.status === 'READY' && !document.isCurrent ? <Button loading={publish.isPending} onClick={() => publish.mutate(document.id)}>Công bố</Button> : null}</span>
+            <span className="table-actions"><span className="status-chip status-chip--neutral">{document.isCurrent ? 'Đã công bố' : document.status === 'READY' ? 'Sẵn sàng' : document.status}</span>{document.status === 'READY' && !document.isCurrent ? <Button disabled={documents.isFetching || documents.isError} loading={publish.isPending} onClick={() => publish.mutate({ id: document.id, expectedCurrentVersion: documents.data?.find((current) => current.logicalDocumentKey === document.logicalDocumentKey && current.isCurrent)?.version ?? 0 })}>Công bố</Button> : null}</span>
           </div>
         ))}
       </section>

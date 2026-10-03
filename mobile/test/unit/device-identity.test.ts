@@ -22,7 +22,10 @@ describe('mobile device identity', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('stores a random per-device reference together with the private key in SecureStore', async () => {
-    getItem.mockResolvedValue(null);
+    getItem.mockImplementation((key) => {
+      if (!/^[\w.-]+$/.test(key)) throw new Error('Invalid SecureStore key');
+      return Promise.resolve(null);
+    });
     getRandomBytes.mockResolvedValue(Uint8Array.from({ length: 32 }, (_, index) => index + 1));
     randomUUID.mockReturnValue('11111111-2222-4333-8444-555555555555');
 
@@ -31,7 +34,7 @@ describe('mobile device identity', () => {
     expect(identity.deviceRef).toBe('mobile-11111111-2222-4333-8444-555555555555');
     expect(identity.deviceRef).not.toBe('mobile-license-1');
     expect(setItem).toHaveBeenCalledWith(
-      'emukey_device_key_v1:license-1',
+      'emukey_device_key_v1_license-1',
       expect.stringContaining('"deviceRef":"mobile-11111111-2222-4333-8444-555555555555"'),
       { keychainAccessible: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY' },
     );

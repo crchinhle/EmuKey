@@ -6,6 +6,7 @@ import {
   ComparePlansScreen,
   PaymentScreen,
   ProfileScreen,
+  RenewalScreen,
 } from '../../src/presentation/EmuKeyMobileApp';
 import {
   acceptServiceTerms,
@@ -14,6 +15,7 @@ import {
   createCheckout,
 getOrder,
   getOrderTerms,
+  getRenewalPreview,
   getProfile,
   listNotifications,
   listProducts,
@@ -29,6 +31,7 @@ jest.mock('../../src/infrastructure/api/client', () => ({
   createOrder: jest.fn(),
   getOrder: jest.fn(),
   getOrderTerms: jest.fn(),
+  getRenewalPreview: jest.fn(),
   getProfile: jest.fn(),
   listNotifications: jest.fn(),
   listProducts: jest.fn(),
@@ -117,7 +120,7 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
 
   it('creates a server order before showing the Terms acceptance step', async () => {
     createOrderMock.mockResolvedValue(order);
-    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản dịch vụ' });
+    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản dịch vụ', version: 'v1', hash: 'a'.repeat(64) });
     acceptServiceTermsMock.mockResolvedValue({ ...order, orderStatus: 'WAITING_PAYMENT' });
     const navigation = { replace: jest.fn() };
     const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
@@ -130,7 +133,7 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
 
   it('blocks accepting terms when loading fails and retries the same order', async () => {
     createOrderMock.mockResolvedValue(order);
-    getOrderTermsMock.mockRejectedValueOnce(new Error('terms unavailable')).mockResolvedValueOnce({ content: 'Điều khoản dịch vụ' });
+    getOrderTermsMock.mockRejectedValueOnce(new Error('terms unavailable')).mockResolvedValueOnce({ content: 'Điều khoản dịch vụ', version: 'v1', hash: 'a'.repeat(64) });
     const navigation = { replace: jest.fn() };
     const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
     await render(<CheckoutScreen navigation={navigation as never} route={route as never} />);
@@ -143,9 +146,30 @@ describe('mobile Phase 3 and Phase 4 screens', () => {
     expect(createOrderMock).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks renewal consent after terms failure and retries the existing order', async () => {
+    getOrderMock.mockResolvedValue(order);
+    jest.mocked(getRenewalPreview).mockResolvedValue({ licenseId: 'license-1', planId: 'plan-1', planName: 'Pro', productName: 'Desktop', durationMonths: 12, priceVnd: 990_000, currentExpiresAt: '2027-01-01', estimatedExpiresAt: '2028-01-01', canRenew: true, pendingOrder: null });
+    createOrderMock.mockResolvedValue({ ...order, priceVndSnapshot: 1_200_000 });
+    const terms = { content: 'Điều khoản gia hạn đã tải', version: 'v2', hash: 'b'.repeat(64) };
+    getOrderTermsMock.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValueOnce(terms);
+    acceptServiceTermsMock.mockResolvedValue({ ...order, orderStatus: 'WAITING_PAYMENT' });
+    await render(<RenewalScreen navigation={{ replace: jest.fn() } as never} route={{ params: { originOrderId: order.id, licenseId: 'license-1', productName: 'Desktop' } } as never} />);
+    await waitFor(() => expect(screen.getByText('Tạo đơn gia hạn')).not.toBeDisabled());
+    await act(async () => fireEvent.press(screen.getByText('Tạo đơn gia hạn')));
+    expect(screen.getByText('Tiếp tục thanh toán')).toBeDisabled();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    await act(async () => fireEvent.press(screen.getByText('Tải lại điều khoản')));
+    expect(await screen.findByText(terms.content)).toBeOnTheScreen();
+    expect(screen.getByText('1.200.000 ₫')).toBeOnTheScreen();
+    await act(async () => fireEvent.press(screen.getByRole('checkbox')));
+    await act(async () => fireEvent.press(screen.getByText('Tiếp tục thanh toán')));
+    expect(acceptServiceTermsMock).toHaveBeenCalledWith(expect.objectContaining({ id: order.id }), terms);
+    expect(createOrderMock).toHaveBeenCalledTimes(1);
+  });
+
   it('uses the server order snapshot price instead of the route quote', async () => {
     createOrderMock.mockResolvedValue({ ...order, priceVndSnapshot: 1_200_000 });
-    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản dịch vụ' });
+    getOrderTermsMock.mockResolvedValue({ content: 'Điều khoản dịch vụ', version: 'v1', hash: 'a'.repeat(64) });
     const navigation = { replace: jest.fn() };
     const route = { params: { planId: 'plan-1', planName: 'Pro', priceVnd: 990_000, productName: 'Emukey Desktop' } };
     await render(<CheckoutScreen navigation={navigation as never} route={route as never} />);

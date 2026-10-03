@@ -34,6 +34,16 @@ function fixture() {
     }),
     createDeviceRevokeCommand: vi.fn(),
     createRotationCommand: vi.fn(),
+    findActivationLicense: vi.fn().mockResolvedValue({
+      activationCommitment: activationCommitment(secret),
+      activationKeyVersion: 1,
+      customerUserId: customer.sub,
+      expiresAt: new Date(Date.now() + 86_400_000),
+      id: licenseId,
+      maxActiveDevices: 2,
+      providerUserId: '00000000-0000-4000-8000-000000000002',
+      status: 'ACTIVE',
+    }),
     findSecurity: vi.fn().mockResolvedValue({
       activationCommitment: activationCommitment(secret),
       activationKeyVersion: 1,
@@ -74,7 +84,7 @@ describe('LicensingService Phase 6 boundaries', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('verifies the bearer key and device signature before creating a pending command', async () => {
+  it('verifies the bearer key and device signature before activating a PostgreSQL device row', async () => {
     const { challenge, deviceAddress, repository, service } = fixture();
     const proof = await privateKeyToAccount(devicePrivateKey).signMessage({ message: challenge });
 
@@ -87,9 +97,9 @@ describe('LicensingService Phase 6 boundaries', () => {
         licenseId,
         proof,
       }),
-    ).resolves.toMatchObject({ status: 'PENDING', licenseId });
+    ).resolves.toMatchObject({ status: 'ACTIVE', licenseId });
     expect(repository.createDeviceCommand).toHaveBeenCalledWith(
-      customer.sub,
+      null,
       licenseId,
       createHmac('sha256', new TextEncoder().encode('test-secret')).update('device-ref:opaque-device-1').digest('hex'),
       deviceAddress,
@@ -97,7 +107,7 @@ describe('LicensingService Phase 6 boundaries', () => {
       1,
       expect.objectContaining({ chainId: 31_337 }),
     );
-    expect(repository.findSecurity).toHaveBeenCalledWith(licenseId, customer.sub);
+    expect(repository.findActivationLicense).toHaveBeenCalledWith(activationCommitment(secret));
   });
 
   it('does not reveal or mutate a license outside the authenticated customer scope', async () => {
@@ -108,19 +118,21 @@ describe('LicensingService Phase 6 boundaries', () => {
       service.challenge(customer, {
         deviceRef: 'device-owned-by-another-customer',
         licenseId,
-        purpose: 'ACTIVATE_DEVICE',
+        purpose: 'ISSUE_ENTITLEMENT',
+        deviceId: '00000000-0000-4000-8000-000000000902',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(repository.findSecurity).toHaveBeenCalledWith(licenseId, customer.sub);
+    expect(repository.findSecurity).toHaveBeenCalledWith(licenseId);
   });
 
   it('binds a one-time challenge to purpose, key version and binding generation', async () => {
     const { redis, service } = fixture();
 
     const result = await service.challenge(customer, {
-      deviceRef: 'new-device',
-      licenseId,
-      purpose: 'ACTIVATE_DEVICE',
+        activationKey: secret,
+        deviceRef: 'new-device',
+        licenseId,
+        purpose: 'ACTIVATE_DEVICE',
     });
 
     expect(result).toMatchObject({ bindingGeneration: 1, keyVersion: 1, purpose: 'ACTIVATE_DEVICE' });
@@ -135,10 +147,10 @@ describe('LicensingService Phase 6 boundaries', () => {
     );
   });
 
-  it('does not issue entitlement while the device is not chain-confirmed', async () => {
+  it('does not issue entitlement while the device is not active in PostgreSQL', async () => {
     const projection = {
       entitlementContext: vi.fn().mockResolvedValue({
-        deviceStatus: 'PENDING_ONCHAIN',
+        deviceStatus: 'REVOKED',
         entitlementVersion: 1,
         entitlements: { desktop: true },
         expiresAt: new Date(Date.now() + 86_400_000),
@@ -185,8 +197,9 @@ describe('LicensingService Phase 6 boundaries', () => {
     const staleToken = await new SignJWT({
       deviceId: '00000000-0000-4000-8000-000000000902',
       entitlementVersion: 2,
-      keyVersion: 1,
-      licenseId,
+       bindingGeneration: 1,
+       keyVersion: 1,
+       licenseId,
       rights: { desktop: true },
     })
       .setProtectedHeader({ alg: 'HS256' })
@@ -232,16 +245,16 @@ describe('LicensingService Phase 6 boundaries', () => {
     await expect(remote.remoteRevokeDevice(customer, licenseId, '00000000-0000-4000-8000-000000000902', {
       actionToken: 'remote-action-token',
       currentPassword: 'CurrentPassword1!',
-    })).resolves.toMatchObject({ status: 'PENDING', licenseId });
+    })).resolves.toMatchObject({ status: 'REVOKED', licenseId });
     expect(identity.consumeLicensingActionVerification).toHaveBeenCalledWith(
       'remote-action-token', customer.sub, licenseId, 'REMOTE_REVOKE_DEVICE', '00000000-0000-4000-8000-000000000902',
     );
     expect(repository.createDeviceRevokeCommand).toHaveBeenCalledWith(
       customer.sub,
       licenseId,
-      'lost-device',
-      expect.stringMatching(/^0x[0-9a-f]{64}$/),
-      4,
+       'lost-device',
+       '00000000-0000-4000-8000-000000000902',
+       4,
       expect.objectContaining({ chainId: 31_337 }),
     );
   });

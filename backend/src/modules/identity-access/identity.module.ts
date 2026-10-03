@@ -5,7 +5,7 @@ import { Redis } from 'ioredis';
 import { IdentityController } from './identity.controller.js';
 import { IdentityRepository } from './identity.repository.js';
 import { IdentityService } from './identity.service.js';
-import { AuthGuard, RolesGuard } from './security.guards.js';
+import { AuthGuard, OptionalAuthGuard, RolesGuard } from './security.guards.js';
 import { Reflector } from '@nestjs/core';
 import { AuditWriter } from '../../platform/audit/audit-writer.js';
 import {
@@ -43,9 +43,10 @@ import { IdentityEmailDelivery } from './infrastructure/identity-email-delivery.
       },
     },
     AuthGuard,
+    OptionalAuthGuard,
     RolesGuard,
     Reflector,
   ],
-  exports: [AuthGuard, RolesGuard, IdentityService],
+  exports: [AuthGuard, OptionalAuthGuard, RolesGuard, IdentityService],
 })
 export class IdentityModule {}

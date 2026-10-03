@@ -39,6 +39,11 @@ function fixture() {
 }
 
 describe('AssistanceSupportService', () => {
+  it.each(['CONVERSATION_CLOSED', 'CONVERSATION_STATE_INVALID', 'CONVERSATION_MESSAGE_CONFLICT'])('maps AI state failure %s to a conflict', async (code) => {
+    const { repository } = fixture();
+    const service = new AssistanceSupportService(repository as never, { answer: vi.fn().mockRejectedValue(new Error(code)) } as never);
+    await expect(service.askAi(customer, conversation.id, 'Question', '00000000-0000-4000-8000-000000000702')).rejects.toBeInstanceOf(ConflictException);
+  });
   it('allows an owned customer to create and append an idempotent message', async () => {
     const { repository, service } = fixture();
 

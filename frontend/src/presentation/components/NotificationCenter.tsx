@@ -1,24 +1,24 @@
 import { BellOutlined } from '@ant-design/icons';
-import { Badge, Button, Empty, List, Popover, Spin } from 'antd';
-import { Link } from 'react-router-dom';
-
+import { Alert, Badge, Button, Empty, List, Popover, Spin } from 'antd';
 import { useMarkNotificationRead, useNotifications } from '../../application/notifications/notificationQueries';
 
 export function NotificationCenter() {
   const notifications = useNotifications();
   const markRead = useMarkNotificationRead();
-  const unread = (notifications.data ?? []).filter((item) => !item.isRead).length;
+  const pages = notifications.data?.pages ?? [];
+  const items = pages.flatMap((page) => page.items);
+  const unread = items.filter((item) => !item.isRead).length;
 
   const content = notifications.isLoading ? <Spin size="small" /> : notifications.isError ? (
     <div className="notification-popover-error">
       <p>Không thể tải thông báo.</p>
       <Button size="small" onClick={() => void notifications.refetch()}>Thử lại</Button>
     </div>
-  ) : notifications.data?.length ? (
+  ) : items.length ? (
     <>
       <List
         className="notification-list"
-        dataSource={notifications.data.slice(0, 8)}
+        dataSource={items}
         locale={{ emptyText: <Empty description="Chưa có thông báo" /> }}
         renderItem={(item) => (
           <List.Item
@@ -28,7 +28,8 @@ export function NotificationCenter() {
           </List.Item>
         )}
       />
-      {notifications.data.length > 8 ? <Link to="/buyer/notifications">Xem tất cả thông báo</Link> : null}
+      {markRead.isError ? <Alert role="alert" type="error" message="Không thể đánh dấu đã đọc. Vui lòng thử lại." /> : null}
+      {notifications.hasNextPage ? <Button loading={notifications.isFetchingNextPage} type="link" onClick={() => void notifications.fetchNextPage()}>Xem thêm thông báo</Button> : null}
     </>
   ) : <Empty description="Chưa có thông báo" />;
 

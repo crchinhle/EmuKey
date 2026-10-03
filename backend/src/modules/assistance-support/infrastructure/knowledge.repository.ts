@@ -47,8 +47,12 @@ export class KnowledgeRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      const target = await client.query<{ logical_document_key: string }>('SELECT logical_document_key FROM knowledge_documents WHERE id = $1 AND provider_user_id = $2', [id, actor.sub]);
+      if (!target.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND');
+      // Serialize all versions, including the first publish where no current row exists.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))', [`knowledge:${actor.sub}:${target.rows[0].logical_document_key}`]);
       const current = await client.query<{ version: number }>('SELECT version FROM knowledge_documents WHERE provider_user_id = $1 AND logical_document_key = (SELECT logical_document_key FROM knowledge_documents WHERE id = $2 AND provider_user_id = $1) AND is_current FOR UPDATE', [actor.sub, id]);
-      if (expectedCurrentVersion !== undefined && current.rows[0] && current.rows[0].version !== expectedCurrentVersion) throw new Error('KNOWLEDGE_VERSION_CONFLICT');
+      if (expectedCurrentVersion !== undefined && (current.rows[0]?.version ?? 0) !== expectedCurrentVersion) throw new Error('KNOWLEDGE_VERSION_CONFLICT');
       await client.query(`UPDATE knowledge_documents SET is_current = FALSE, updated_at = now() WHERE provider_user_id = $1 AND logical_document_key = (SELECT logical_document_key FROM knowledge_documents WHERE id = $2 AND provider_user_id = $1)`, [actor.sub, id]);
       const result = await client.query<Record<string, unknown>>(`UPDATE knowledge_documents SET is_current = TRUE, updated_at = now() WHERE id = $1 AND provider_user_id = $2 AND status = 'READY' RETURNING *`, [id, actor.sub]);
       if (!result.rows[0]) throw new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND');
@@ -89,6 +93,14 @@ export class KnowledgeRepository {
           )
           AND (c.context_type = 'GENERAL' OR
                (c.context_type = 'PRODUCT' AND c.context_id = kd.product_id) OR
+               (c.context_type = 'ORDER' AND EXISTS (
+                 SELECT 1 FROM orders o WHERE o.id = c.context_id AND o.customer_user_id = $2 AND o.product_id = kd.product_id
+               )) OR
+               (c.context_type = 'PLAN' AND EXISTS (
+                 SELECT 1 FROM plans p JOIN products product ON product.id = p.product_id
+                 WHERE p.id = c.context_id AND p.product_id = kd.product_id
+                   AND p.status = 'PUBLISHED' AND product.status = 'PUBLISHED'
+               )) OR
                (c.context_type = 'LICENSE' AND EXISTS (
                  SELECT 1 FROM licenses l WHERE l.id = c.context_id AND l.customer_user_id = $2 AND l.product_id = kd.product_id
                )))

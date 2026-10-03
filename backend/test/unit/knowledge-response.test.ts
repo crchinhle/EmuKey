@@ -1,8 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { KnowledgeRepository } from '../../src/modules/assistance-support/infrastructure/knowledge.repository.js';
+import { KnowledgeService } from '../../src/modules/assistance-support/knowledge.service.js';
 
 describe('knowledge public response', () => {
+  it('returns a public 404 for an inaccessible document without leaking ownership', async () => {
+    const repository = new KnowledgeRepository({} as Pool);
+    vi.spyOn(repository, 'detail').mockRejectedValue(new Error('KNOWLEDGE_DOCUMENT_NOT_FOUND'));
+    await expect(new KnowledgeService(repository).detail({ sub: 'other-provider', role: 'PROVIDER_ADMIN', sessionVersion: 1 }, 'document')).rejects.toMatchObject({ status: 404, response: { code: 'KNOWLEDGE_DOCUMENT_NOT_FOUND' } });
+  });
+  it('maps publish conflicts to a public 409 error', async () => {
+    const repository = new KnowledgeRepository({} as Pool);
+    vi.spyOn(repository, 'publish').mockRejectedValue(new Error('KNOWLEDGE_VERSION_CONFLICT'));
+    const service = new KnowledgeService(repository);
+    await expect(service.publish({ sub: 'provider', role: 'PROVIDER_ADMIN', sessionVersion: 1 }, 'document', 1)).rejects.toMatchObject({ status: 409, response: { code: 'KNOWLEDGE_VERSION_CONFLICT' } });
+  });
   it('creates a new version and returns a ready DTO', async () => {
     const query = vi.fn().mockImplementation((sql: string) => {
       if (sql.startsWith('SELECT id FROM products')) return Promise.resolve({ rows: [{ id: 'product' }] });
@@ -25,6 +37,8 @@ describe('knowledge public response', () => {
 
   it('rejects publishing when the current version changed', async () => {
     const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ logical_document_key: 'guide' }] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ version: 3 }] });
     const client = { query, release: vi.fn() };

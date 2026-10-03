@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { NotificationDto } from './notification.dto.js';
 
@@ -8,6 +8,19 @@ import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import { NotificationService } from '../application/notification.service.js';
 import { Body } from '@nestjs/common';
 import { RegisterPushTokenDto } from './push-token.dto.js';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+
+class NotificationListQueryDto {
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit = 20;
+}
 
 @ApiTags('notifications')
 @Controller('notifications')
@@ -18,8 +31,10 @@ export class NotificationController {
   constructor(private readonly service: NotificationService) {}
 
   @Get()
-  @ApiOkResponse({ type: NotificationDto, isArray: true })
-  list(@CurrentUser() actor: AuthPrincipal) { return this.service.list(actor); }
+  @ApiOkResponse({ schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/NotificationDto' } }, nextCursor: { type: 'string', nullable: true } } } })
+  list(@CurrentUser() actor: AuthPrincipal, @Query() query: NotificationListQueryDto) {
+    return this.service.list(actor, query.cursor, query.limit);
+  }
 
   @Post(':notificationId/read')
   @ApiOkResponse({ type: NotificationDto })

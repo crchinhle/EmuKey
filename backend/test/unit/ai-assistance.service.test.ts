@@ -27,7 +27,7 @@ function knowledgePort(sources: Array<{ content: string; id: string }>) {
     port: {
       appendAiMessage: vi.fn((input: RecordedMessage) => {
         aiMessages.push(input);
-        return Promise.resolve(input);
+        return Promise.resolve({ ...input, sources: input.citedSourceIds });
       }),
       appendCustomerMessage: vi.fn((input: RecordedQuestion) => {
         questions.push(input);
@@ -39,6 +39,12 @@ function knowledgePort(sources: Array<{ content: string; id: string }>) {
 }
 
 describe('AiAssistanceService', () => {
+  it('returns the stored answer when a retry generated a different response', async () => {
+    const knowledge = knowledgePort([{ content: 'source', id: 'source-1' }]);
+    knowledge.port.appendAiMessage.mockImplementation((input) => Promise.resolve({ ...input, content: 'Original answer', grounded: true, sources: ['source-1'] }));
+    const service = new AiAssistanceService({ answerGrounded: vi.fn().mockResolvedValue({ answer: 'Different retry answer', grounded: true, citedSourceIds: ['source-1'] }) }, knowledge.port);
+    await expect(service.answer({ conversationId, customerUserId: 'u1', question: 'Q', clientMessageId: questionId })).resolves.toMatchObject({ answer: 'Original answer', grounded: true, citedSourceIds: ['source-1'] });
+  });
   it('refuses when no provider-scoped source is available', async () => {
     const knowledge = knowledgePort([]);
     const service = new AiAssistanceService({ answerGrounded: vi.fn() }, knowledge.port);
@@ -117,10 +123,10 @@ describe('AiAssistanceService', () => {
     expect(knowledge.aiMessages).toHaveLength(1);
   });
 
-  it('refuses an AI gateway citation that was not retrieved', async () => {
+  it.each([{ citedSourceIds: [] }, { citedSourceIds: ['other'] }])('refuses missing or unknown AI citations: $citedSourceIds', async ({ citedSourceIds }) => {
     const knowledge = knowledgePort([{ content: 'source', id: 'source-1' }]);
     const service = new AiAssistanceService(
-      { answerGrounded: vi.fn().mockResolvedValue({ answer: 'unsafe', citedSourceIds: ['other'], grounded: true }) },
+      { answerGrounded: vi.fn().mockResolvedValue({ answer: 'unsafe', citedSourceIds, grounded: true }) },
       knowledge.port,
     );
 

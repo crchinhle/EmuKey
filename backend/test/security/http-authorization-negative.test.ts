@@ -53,7 +53,6 @@ describe('Phase 8 HTTP authorization negative matrix', () => {
     ['GET', '/api/v1/payments/history'],
     ['GET', '/api/v1/payments/review'],
     ['POST', '/api/v1/operations/blockchain/reconcile'],
-    ['POST', '/api/v1/activations/challenge'],
   ])('rejects unauthenticated %s %s', async (method, path) => {
     const response = await request(app.getHttpServer() as Server)[method.toLowerCase() as 'get' | 'post'](path);
     expect(response.status).toBe(401);

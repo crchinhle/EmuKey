@@ -265,6 +265,13 @@ export class IdentityService {
         message: 'Reset token is invalid or expired.',
       });
     }
+    const user = await this.repo.findById(id);
+    if (!user || user.role !== 'CUSTOMER' || user.status === 'DISABLED') {
+      throw new BadRequestException({
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+        message: 'Reset token is invalid or expired.',
+      });
+    }
     await this.repo.updatePassword(id, await argon2.hash(password));
   }
 

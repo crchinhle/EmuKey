@@ -11,8 +11,7 @@ export type ChainEventType =
   | 'LICENSE_RESUMED'
   | 'LICENSE_REVOKED'
   | 'KEY_ROTATED'
-  | 'DEVICE_ACTIVATED'
-  | 'DEVICE_REVOKED';
+  | 'ACTIVE_DEVICE_COUNT_SYNCED';
 
 export interface ObservedChainEvent {
   blockHash: string;
@@ -80,15 +79,16 @@ export class ChainEventRepository {
            AND lower(command.transaction_hash)=lower($10)
            AND command.status IN ('SUBMITTED','SUBMITTED_UNKNOWN','CONFIRMED')
            AND (command.command_type, $3::varchar) IN (
-             ('ISSUE_LICENSE','LICENSE_ISSUED'),
-             ('RENEW_LICENSE','LICENSE_RENEWED'),
-             ('SUSPEND_LICENSE','LICENSE_SUSPENDED'),
-             ('RESUME_LICENSE','LICENSE_RESUMED'),
-             ('REVOKE_LICENSE','LICENSE_REVOKED'),
-             ('ROTATE_KEY','KEY_ROTATED'),
-             ('ACTIVATE_DEVICE','DEVICE_ACTIVATED'),
-             ('REVOKE_DEVICE','DEVICE_REVOKED')
-           )
+              ('ISSUE_LICENSE','LICENSE_ISSUED'),
+              ('RENEW_LICENSE','LICENSE_RENEWED'),
+              ('SUSPEND_LICENSE','LICENSE_SUSPENDED'),
+              ('RESUME_LICENSE','LICENSE_RESUMED'),
+              ('REVOKE_LICENSE','LICENSE_REVOKED'),
+              ('ROTATE_KEY','KEY_ROTATED'),
+              ('ACTIVATE_DEVICE','DEVICE_ACTIVATED'),
+              ('REVOKE_DEVICE','DEVICE_REVOKED'),
+              ('SYNC_DEVICE_COUNT','ACTIVE_DEVICE_COUNT_SYNCED')
+            )
          ON CONFLICT (network, chain_id, contract_address, transaction_hash, log_index)
          DO UPDATE SET block_number=EXCLUDED.block_number,
            block_hash=EXCLUDED.block_hash,
@@ -221,11 +221,7 @@ export class ChainEventRepository {
       if (['LICENSE_ISSUED', 'KEY_ROTATED'].includes(String(row.event_type))) {
         await this.rebuildProjection(client, String(row.license_id));
       } else {
-        await this.rebuildProjectionWithoutKeyReset(
-          client,
-          String(row.license_id),
-          typeof row.license_device_id === 'string' ? row.license_device_id : null,
-        );
+         await this.rebuildProjectionWithoutKeyReset(client, String(row.license_id));
       }
       await this.audit.write(client, {
         action: 'CHAIN_EVENT_REORGED',
@@ -405,26 +401,21 @@ export class ChainEventRepository {
           ],
         );
         break;
-      case 'DEVICE_ACTIVATED':
-      case 'DEVICE_REVOKED': {
-        const active = event.event_type === 'DEVICE_ACTIVATED';
-        await client.query(
-          `UPDATE license_devices SET status=$2::varchar,
-             activated_at=CASE WHEN $2::varchar='ACTIVE' THEN $4 ELSE activated_at END,
-             revoked_at=CASE WHEN $2::varchar='REVOKED' THEN $4 ELSE NULL END,
-             last_applied_chain_event_id=$3, updated_at=now()
-           WHERE id=$1 AND EXISTS (
-             SELECT 1 FROM licenses l
-             WHERE l.id=license_devices.license_id
-               AND l.status <> 'PENDING_ONCHAIN'
-           )`,
-          [
-            event.license_device_id,
-            active ? 'ACTIVE' : 'REVOKED',
-            id,
-            event.finalized_at ?? event.observed_at,
-          ],
+      case 'ACTIVE_DEVICE_COUNT_SYNCED': {
+        const applied = await client.query(
+          `UPDATE licenses SET latest_confirmed_device_count=$2,
+             latest_confirmed_device_sync_version=$3,
+             device_sync_status='CONFIRMED', updated_at=now()
+           WHERE id=$1
+             AND device_state_version >= $3
+             AND (latest_confirmed_device_sync_version IS NULL OR latest_confirmed_device_sync_version < $3)
+             AND (latest_requested_device_sync_version IS NULL OR $3 <= latest_requested_device_sync_version)
+           RETURNING id`,
+          [licenseId, payload.activeDeviceCount, payload.deviceStateVersion],
         );
+        if (applied.rowCount !== 1) {
+          throw new Error('STALE_DEVICE_COUNT_SYNC');
+        }
         break;
       }
     }
@@ -444,7 +435,8 @@ export class ChainEventRepository {
           revoked_at=NULL, last_applied_chain_event_id=NULL,
           pending_activation_commitment=NULL, pending_activation_key_version=NULL,
           pending_activation_command_id=NULL,
-          activation_key_trust_status='PENDING_FINALITY', entitlement_version=1,
+           activation_key_trust_status='PENDING_FINALITY', entitlement_version=GREATEST(entitlement_version, 1),
+
          expires_at=(issue.payload->>'expiresAt')::timestamptz,
          activation_commitment=decode(
            replace(issue.payload->>'activationCommitment','0x',''), 'hex'
@@ -456,13 +448,7 @@ export class ChainEventRepository {
          AND issue.command_type='ISSUE_LICENSE'`,
       [licenseId],
     );
-    await client.query(
-      `UPDATE license_devices
-       SET status='PENDING_ONCHAIN', last_applied_chain_event_id=NULL,
-           activated_at=NULL, revoked_at=NULL, updated_at=now()
-       WHERE license_id=$1`,
-      [licenseId],
-    );
+
     for (const event of events.rows) await this.applyEvent(client, event);
     await client.query(
       `UPDATE licenses
@@ -476,7 +462,6 @@ export class ChainEventRepository {
   private async rebuildProjectionWithoutKeyReset(
     client: PoolClient,
     licenseId: string,
-    licenseDeviceId: string | null,
   ): Promise<void> {
     await client.query(
       `WITH status_event AS (
@@ -493,7 +478,7 @@ export class ChainEventRepository {
        ), last_event AS (
          SELECT id FROM chain_events
          WHERE license_id=$1 AND finality_status='CONFIRMED'
-           AND event_type NOT IN ('DEVICE_ACTIVATED','DEVICE_REVOKED')
+            AND event_type <> 'ACTIVE_DEVICE_COUNT_SYNCED'
          ORDER BY block_number DESC, log_index DESC, id DESC LIMIT 1
        )
        UPDATE licenses license SET
@@ -512,37 +497,13 @@ export class ChainEventRepository {
          last_applied_chain_event_id=last_event.id,
          entitlement_version=license.entitlement_version + 1,
          updated_at=now()
-       FROM status_event, last_event
-       LEFT JOIN renewal_event ON TRUE
-       WHERE license.id=$1`,
+        FROM status_event, last_event
+        LEFT JOIN renewal_event ON TRUE
+        WHERE license.id=$1
+          AND last_event.id IS NOT NULL`,
       [licenseId],
     );
-    if (!licenseDeviceId) return;
-    await client.query(
-      `WITH device_event AS (
-         SELECT id, event_type, finalized_at, observed_at
-         FROM chain_events
-         WHERE license_id=$1 AND license_device_id=$2
-           AND finality_status='CONFIRMED'
-           AND event_type IN ('DEVICE_ACTIVATED','DEVICE_REVOKED')
-         ORDER BY block_number DESC, log_index DESC, id DESC LIMIT 1
-       )
-       UPDATE license_devices device SET
-         status=CASE device_event.event_type
-           WHEN 'DEVICE_ACTIVATED' THEN 'ACTIVE'
-           WHEN 'DEVICE_REVOKED' THEN 'REVOKED'
-           ELSE 'PENDING_ONCHAIN'
-         END,
-         activated_at=CASE WHEN device_event.event_type='DEVICE_ACTIVATED'
-           THEN COALESCE(device_event.finalized_at, device_event.observed_at) ELSE NULL END,
-         revoked_at=CASE WHEN device_event.event_type='DEVICE_REVOKED'
-           THEN COALESCE(device_event.finalized_at, device_event.observed_at) ELSE NULL END,
-         last_applied_chain_event_id=device_event.id,
-         updated_at=now()
-       FROM device_event
-       WHERE device.id=$2 AND device.license_id=$1`,
-      [licenseId, licenseDeviceId],
-    );
+
   }
 
   private async projectionMismatches(
@@ -592,9 +553,9 @@ export class ChainEventRepository {
        LEFT JOIN LATERAL (
          SELECT event.id
          FROM chain_events event
-         WHERE event.license_id=license.id
-           AND event.finality_status='CONFIRMED'
-           AND event.event_type NOT IN ('DEVICE_ACTIVATED','DEVICE_REVOKED')
+          WHERE event.license_id=license.id
+            AND event.finality_status='CONFIRMED'
+            AND event.event_type <> 'ACTIVE_DEVICE_COUNT_SYNCED'
          ORDER BY event.block_number DESC, event.log_index DESC, event.id DESC
          LIMIT 1
        ) last_event ON TRUE
@@ -636,28 +597,7 @@ export class ChainEventRepository {
              THEN COALESCE(status_event.finalized_at, status_event.observed_at)
            ELSE NULL
          END
-         OR EXISTS (
-           SELECT 1
-           FROM license_devices device
-           LEFT JOIN LATERAL (
-             SELECT event.id, event.event_type
-             FROM chain_events event
-             WHERE event.license_device_id=device.id
-               AND event.finality_status='CONFIRMED'
-               AND event.event_type IN ('DEVICE_ACTIVATED','DEVICE_REVOKED')
-             ORDER BY event.block_number DESC, event.log_index DESC, event.id DESC
-             LIMIT 1
-           ) device_event ON TRUE
-           WHERE device.license_id=license.id
-             AND (
-               device.status IS DISTINCT FROM CASE device_event.event_type
-                 WHEN 'DEVICE_ACTIVATED' THEN 'ACTIVE'
-                 WHEN 'DEVICE_REVOKED' THEN 'REVOKED'
-                 ELSE 'PENDING_ONCHAIN'
-               END
-               OR device.last_applied_chain_event_id IS DISTINCT FROM device_event.id
-             )
-         )
+
        ORDER BY license.updated_at, license.id
        LIMIT $1
        FOR UPDATE OF license SKIP LOCKED`,
