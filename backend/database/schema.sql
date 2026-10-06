@@ -784,6 +784,12 @@ CREATE TABLE licenses (
     activation_key_last4 VARCHAR(4),
     activation_key_trust_status VARCHAR(30) NOT NULL DEFAULT 'PENDING_FINALITY',
     entitlement_version INT NOT NULL DEFAULT 1,
+    active_device_count INT NOT NULL DEFAULT 0,
+    device_state_version BIGINT NOT NULL DEFAULT 0,
+    latest_requested_device_sync_version BIGINT,
+    latest_confirmed_device_sync_version BIGINT,
+    latest_confirmed_device_count INT,
+    device_sync_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
     last_applied_chain_event_id UUID,
     suspended_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,
@@ -819,7 +825,9 @@ CREATE TABLE licenses (
     ),
     CONSTRAINT ck_licenses_values CHECK (
         expires_at > period_start AND max_active_devices > 0 AND
-        activation_key_version > 0 AND entitlement_version > 0 AND
+        active_device_count >= 0 AND active_device_count <= max_active_devices AND
+        device_state_version >= 0 AND entitlement_version > 0 AND
+        activation_key_version > 0 AND
         octet_length(plan_commitment) = 32 AND octet_length(activation_commitment) = 32
     ),
     CONSTRAINT ck_licenses_pending_activation CHECK (
@@ -839,10 +847,6 @@ CREATE TABLE licenses (
             activation_key_trust_status IN ('PENDING_FINALITY', 'UNTRUSTED_REORG')) OR
          (status <> 'PENDING_ONCHAIN' AND
             activation_key_trust_status IN ('TRUSTED', 'UNTRUSTED_REORG')))
-    ),
-    CONSTRAINT ck_licenses_projection_evidence CHECK (
-        (status = 'PENDING_ONCHAIN' AND last_applied_chain_event_id IS NULL) OR
-        (status <> 'PENDING_ONCHAIN' AND last_applied_chain_event_id IS NOT NULL)
     ),
     CONSTRAINT ck_licenses_suspend_stamp CHECK (
         (status = 'SUSPENDED' AND suspended_at IS NOT NULL) OR status <> 'SUSPENDED'
@@ -866,9 +870,8 @@ CREATE TABLE license_devices (
     license_id UUID NOT NULL,
     device_ref VARCHAR(128) NOT NULL,
     device_signer_address VARCHAR(42) NOT NULL,
-    status VARCHAR(30) NOT NULL DEFAULT 'PENDING_ONCHAIN',
+    status VARCHAR(30) NOT NULL DEFAULT 'ACTIVE',
     binding_generation INT NOT NULL DEFAULT 1,
-    last_applied_chain_event_id UUID,
     activated_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -879,9 +882,9 @@ CREATE TABLE license_devices (
     CONSTRAINT uq_license_devices_signer UNIQUE (license_id, device_signer_address),
     CONSTRAINT uq_license_devices_id_license UNIQUE (id, license_id),
     CONSTRAINT ck_license_devices_status CHECK (
-        status IN ('PENDING_ONCHAIN', 'ACTIVE', 'REVOKED')
+        status IN ('ACTIVE', 'REVOKED')
     ),
-    CONSTRAINT ck_license_devices_ref CHECK (device_ref ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_license_devices_ref CHECK (octet_length(device_ref) BETWEEN 1 AND 128),
     CONSTRAINT ck_license_devices_signer_address CHECK (
         device_signer_address ~ '^0x[0-9a-f]{40}$'
     ),
@@ -891,10 +894,6 @@ CREATE TABLE license_devices (
     ),
     CONSTRAINT ck_license_devices_revoke_stamp CHECK (
         (status = 'REVOKED' AND revoked_at IS NOT NULL) OR status <> 'REVOKED'
-    ),
-    CONSTRAINT ck_license_devices_projection_evidence CHECK (
-        (status = 'PENDING_ONCHAIN' AND last_applied_chain_event_id IS NULL) OR
-        (status <> 'PENDING_ONCHAIN' AND last_applied_chain_event_id IS NOT NULL)
     )
 );
 
@@ -942,6 +941,7 @@ CREATE TABLE chain_commands (
             WHEN 'ROTATE_KEY' THEN 'KEY_ROTATED'
             WHEN 'ACTIVATE_DEVICE' THEN 'DEVICE_ACTIVATED'
             WHEN 'REVOKE_DEVICE' THEN 'DEVICE_REVOKED'
+            WHEN 'SYNC_DEVICE_COUNT' THEN 'ACTIVE_DEVICE_COUNT_SYNCED'
         END
     ) STORED,
     provider_user_id UUID NOT NULL,
@@ -1039,7 +1039,7 @@ CREATE TABLE chain_commands (
                 network, chain_id, contract_address, transaction_hash),
     CONSTRAINT ck_chain_commands_type CHECK (
         command_type IN ('ISSUE_LICENSE', 'RENEW_LICENSE', 'SUSPEND_LICENSE', 'RESUME_LICENSE',
-                         'REVOKE_LICENSE', 'ROTATE_KEY', 'ACTIVATE_DEVICE', 'REVOKE_DEVICE')
+                         'REVOKE_LICENSE', 'ROTATE_KEY', 'ACTIVATE_DEVICE', 'REVOKE_DEVICE', 'SYNC_DEVICE_COUNT')
     ),
     CONSTRAINT ck_chain_commands_status CHECK (
         status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN', 'CONFIRMED',
@@ -1074,7 +1074,7 @@ CREATE TABLE chain_commands (
     CONSTRAINT ck_chain_commands_subject CHECK (
         (command_type = 'ISSUE_LICENSE' AND order_id IS NOT NULL AND license_id IS NOT NULL AND license_device_id IS NULL) OR
         (command_type = 'RENEW_LICENSE' AND order_id IS NOT NULL AND license_device_id IS NULL) OR
-        (command_type IN ('SUSPEND_LICENSE', 'RESUME_LICENSE', 'REVOKE_LICENSE', 'ROTATE_KEY')
+        (command_type IN ('SUSPEND_LICENSE', 'RESUME_LICENSE', 'REVOKE_LICENSE', 'ROTATE_KEY', 'SYNC_DEVICE_COUNT')
             AND order_id IS NULL AND license_device_id IS NULL) OR
         (command_type IN ('ACTIVATE_DEVICE', 'REVOKE_DEVICE')
             AND order_id IS NULL AND license_device_id IS NOT NULL)
@@ -1266,8 +1266,9 @@ BEGIN
             SELECT 1 FROM chain_commands
             WHERE license_id = v_license_id
               AND command_type = 'ROTATE_KEY'
-              AND status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN',
-                             'RETRYABLE_FAILED', 'DEAD_LETTER')
+           AND status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN',
+                          'RETRYABLE_FAILED', 'DEAD_LETTER')
+           AND command_type <> 'SYNC_DEVICE_COUNT'
         ) THEN
             RAISE EXCEPTION 'Unresolved ROTATE_KEY requires a License pending key projection';
         END IF;
@@ -1366,7 +1367,7 @@ CREATE TABLE chain_events (
     confirmed_license_event_id UUID GENERATED ALWAYS AS (
         CASE
             WHEN finality_status = 'CONFIRMED' AND
-                 event_type NOT IN ('DEVICE_ACTIVATED', 'DEVICE_REVOKED') THEN id
+                 event_type NOT IN ('ACTIVE_DEVICE_COUNT_SYNCED') THEN id
             ELSE NULL
         END
     ) STORED,
@@ -1423,7 +1424,7 @@ CREATE TABLE chain_events (
         UNIQUE (confirmed_device_event_id, license_device_id, license_id),
     CONSTRAINT ck_chain_events_type CHECK (
         event_type IN ('LICENSE_ISSUED', 'LICENSE_RENEWED', 'LICENSE_SUSPENDED', 'LICENSE_RESUMED',
-                       'LICENSE_REVOKED', 'KEY_ROTATED', 'DEVICE_ACTIVATED', 'DEVICE_REVOKED')
+                        'LICENSE_REVOKED', 'KEY_ROTATED', 'DEVICE_ACTIVATED', 'DEVICE_REVOKED', 'ACTIVE_DEVICE_COUNT_SYNCED')
     ),
     CONSTRAINT ck_chain_events_finality CHECK (
         finality_status IN ('PENDING', 'CONFIRMED', 'REORGED')
@@ -1605,11 +1606,13 @@ BEGIN
     IF EXISTS (
         SELECT 1 FROM chain_commands
         WHERE license_id = v_license_id
-          AND status IN ('PENDING', 'SUBMITTED', 'RETRYABLE_FAILED')
+           AND status IN ('PENDING', 'SUBMITTED', 'RETRYABLE_FAILED')
+           AND command_type <> 'SYNC_DEVICE_COUNT'
     ) AND EXISTS (
         SELECT 1 FROM chain_commands
         WHERE license_id = v_license_id
-          AND status IN ('SUBMITTED_UNKNOWN', 'DEAD_LETTER')
+           AND status IN ('SUBMITTED_UNKNOWN', 'DEAD_LETTER')
+           AND command_type <> 'SYNC_DEVICE_COUNT'
     ) THEN
         RAISE EXCEPTION 'Forward ChainCommand cannot coexist with an unresolved recovery suffix';
     END IF;
@@ -1653,12 +1656,6 @@ ALTER TABLE licenses
     REFERENCES chain_events(confirmed_license_event_id, license_id) ON DELETE RESTRICT
     DEFERRABLE INITIALLY DEFERRED;
 
-ALTER TABLE license_devices
-    ADD CONSTRAINT fk_license_devices_last_chain_event
-    FOREIGN KEY (last_applied_chain_event_id, id, license_id)
-    REFERENCES chain_events(confirmed_device_event_id, license_device_id, license_id)
-    ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
-
 ALTER TABLE chain_commands
     ADD CONSTRAINT fk_chain_commands_basis_event
     FOREIGN KEY (basis_chain_event_id, license_id)
@@ -1680,27 +1677,16 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     v_license_id UUID;
-    v_device_id UUID;
     v_license_status VARCHAR(30);
     v_license_event_id UUID;
     v_license_event_type VARCHAR(40);
     v_latest_license_event_id UUID;
     v_latest_license_event_type VARCHAR(40);
-    v_device_status VARCHAR(30);
-    v_device_event_id UUID;
-    v_device_event_type VARCHAR(40);
-    v_latest_device_event_id UUID;
-    v_latest_device_event_type VARCHAR(40);
 BEGIN
     IF TG_TABLE_NAME = 'licenses' THEN
         v_license_id := NEW.id;
-        v_device_id := NULL;
-    ELSIF TG_TABLE_NAME = 'license_devices' THEN
-        v_license_id := NEW.license_id;
-        v_device_id := NEW.id;
     ELSE
         v_license_id := NEW.license_id;
-        v_device_id := NEW.license_device_id;
     END IF;
 
     SELECT status, last_applied_chain_event_id
@@ -1715,6 +1701,7 @@ BEGIN
         JOIN chain_commands c ON c.id = e.chain_command_id
         WHERE e.license_id = v_license_id
           AND e.license_device_id IS NULL
+          AND e.event_type <> 'ACTIVE_DEVICE_COUNT_SYNCED'
           AND e.finality_status = 'CONFIRMED'
           AND c.status = 'CONFIRMED'
           AND c.confirmation_chain_event_id = e.id
@@ -1750,41 +1737,6 @@ BEGIN
         END IF;
     END IF;
 
-    IF v_device_id IS NOT NULL THEN
-        SELECT status, last_applied_chain_event_id
-        INTO v_device_status, v_device_event_id
-        FROM license_devices
-        WHERE id = v_device_id AND license_id = v_license_id;
-
-        IF FOUND THEN
-            SELECT e.id, e.event_type
-            INTO v_latest_device_event_id, v_latest_device_event_type
-            FROM chain_events e
-            JOIN chain_commands c ON c.id = e.chain_command_id
-            WHERE e.license_id = v_license_id
-              AND e.license_device_id = v_device_id
-              AND e.finality_status = 'CONFIRMED'
-              AND c.status = 'CONFIRMED'
-              AND c.confirmation_chain_event_id = e.id
-            ORDER BY c.license_command_sequence DESC
-            LIMIT 1;
-
-            IF v_device_status = 'PENDING_ONCHAIN' THEN
-                IF v_device_event_id IS NOT NULL OR v_latest_device_event_id IS NOT NULL THEN
-                    RAISE EXCEPTION 'PENDING_ONCHAIN Device cannot retain a canonical event or applied pointer';
-                END IF;
-            ELSE
-                IF v_latest_device_event_id IS NULL OR
-                   v_device_event_id IS DISTINCT FROM v_latest_device_event_id OR
-                   (v_device_status = 'ACTIVE' AND
-                       v_latest_device_event_type <> 'DEVICE_ACTIVATED') OR
-                   (v_device_status = 'REVOKED' AND
-                       v_latest_device_event_type <> 'DEVICE_REVOKED') THEN
-                    RAISE EXCEPTION 'Device projection must match its latest confirmed canonical event';
-                END IF;
-            END IF;
-        END IF;
-    END IF;
 
     RETURN NEW;
 END;
@@ -1792,11 +1744,6 @@ $$;
 
 CREATE CONSTRAINT TRIGGER trg_licenses_latest_canonical_projection
 AFTER INSERT OR UPDATE ON licenses
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW EXECUTE FUNCTION enforce_latest_canonical_projection();
-
-CREATE CONSTRAINT TRIGGER trg_license_devices_latest_canonical_projection
-AFTER INSERT OR UPDATE ON license_devices
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION enforce_latest_canonical_projection();
 
@@ -1893,10 +1840,11 @@ BEGIN
         SELECT 1
         FROM chain_commands
         WHERE license_id = NEW.license_id
-          AND status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN',
-                         'RETRYABLE_FAILED', 'DEAD_LETTER')
-    ) THEN
-        RAISE EXCEPTION 'License % already has an unresolved chain command', NEW.license_id;
+           AND status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN',
+                          'RETRYABLE_FAILED', 'DEAD_LETTER')
+           AND command_type <> 'SYNC_DEVICE_COUNT'
+     ) THEN
+         RAISE EXCEPTION 'License % already has an unresolved chain command', NEW.license_id;
     END IF;
 
     IF NEW.command_type <> 'ISSUE_LICENSE' THEN
@@ -2287,8 +2235,9 @@ BEGIN
             SELECT 1 FROM chain_commands
             WHERE id = OLD.pending_activation_command_id
               AND license_id = OLD.id
-              AND status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN',
-                             'RETRYABLE_FAILED', 'DEAD_LETTER')
+           AND status IN ('PENDING', 'SUBMITTED', 'SUBMITTED_UNKNOWN',
+                          'RETRYABLE_FAILED', 'DEAD_LETTER')
+           AND command_type <> 'SYNC_DEVICE_COUNT'
               AND (nonce IS NOT NULL OR signed_transaction IS NOT NULL OR transaction_hash IS NOT NULL)
         ) AND NOT v_exact_reorg_rollback AND NOT v_exact_issue_reorg_rollback THEN
             RAISE EXCEPTION 'Pending ROTATE proposal is immutable after submission evidence exists';
@@ -3279,8 +3228,9 @@ CREATE INDEX ix_chain_commands_basis_event
 -- recovery set. The application-level per-License admission lock must block all new
 -- mutations while any UNKNOWN or unresolved DEAD_LETTER row exists.
 CREATE UNIQUE INDEX uq_chain_commands_one_forward_mutation
-    ON chain_commands (license_id)
-    WHERE status IN ('PENDING', 'SUBMITTED', 'RETRYABLE_FAILED');
+     ON chain_commands (license_id)
+     WHERE status IN ('PENDING', 'SUBMITTED', 'RETRYABLE_FAILED')
+       AND command_type <> 'SYNC_DEVICE_COUNT';
 CREATE UNIQUE INDEX uq_chain_commands_current_issue_order
     ON chain_commands (issue_order_id)
     WHERE issue_order_id IS NOT NULL AND status NOT IN ('ABANDONED', 'SUPERSEDED');

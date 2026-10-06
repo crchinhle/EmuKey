@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import type { AuthPrincipal } from '../../identity-access/identity.types.js';
 import type { NotificationDto } from '../presentation/notification.dto.js';
@@ -23,7 +23,7 @@ export interface NotificationRecord {
 export class NotificationService {
   constructor(private readonly repository: {
     create(input: NotificationCreateInput): Promise<NotificationRecord>;
-    list(userId: string): Promise<NotificationDto[]>;
+    list(userId: string, options: { cursor?: string; limit: number }): Promise<{ items: NotificationDto[]; nextCursor: string | null }>;
     markRead(userId: string, notificationId: string): Promise<NotificationDto | null>;
     registerPushToken(userId: string, token: string, provider: 'FCM' | 'EXPO'): Promise<NotificationRecord>;
     unregisterPushToken(userId: string, token: string): Promise<NotificationRecord | null>;
@@ -33,9 +33,18 @@ export class NotificationService {
     return this.repository.create(input);
   }
 
-  list(actor: AuthPrincipal) {
+  async list(actor: AuthPrincipal, cursor?: string, requestedLimit?: number) {
     if (!['CUSTOMER', 'SUPPORT_STAFF', 'PROVIDER_ADMIN', 'SYSTEM_ADMIN'].includes(actor.role)) throw new ForbiddenException();
-    return this.repository.list(actor.sub);
+    const limit = requestedLimit ?? 20;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new BadRequestException({ code: 'INVALID_NOTIFICATION_LIMIT' });
+    try {
+      return await this.repository.list(actor.sub, cursor ? { cursor, limit } : { limit });
+    } catch (error) {
+      if (error instanceof Error && error.message === 'INVALID_NOTIFICATION_CURSOR') {
+        throw new BadRequestException({ code: 'INVALID_NOTIFICATION_CURSOR' });
+      }
+      throw error;
+    }
   }
 
   async markRead(actor: AuthPrincipal, notificationId: string) {

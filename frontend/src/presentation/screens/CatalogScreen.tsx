@@ -17,7 +17,7 @@ const sortOptions = [
 
 export function CatalogScreen({ authenticated = false }: { readonly authenticated?: boolean }) {
   const [params, setParams] = useSearchParams();
-  const [search, setSearch] = useState(() => params.get('q') ?? '');
+  const search = params.get('q') ?? '';
   const [page, setPage] = useState(1);
   const [sort, setSort] =
     useState<(typeof sortOptions)[number]['value']>('popular');
@@ -58,7 +58,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
               aria-label="Tìm sản phẩm"
               placeholder="Tìm theo tên hoặc mô tả"
               value={search}
-              onChange={(event) => { const value = event.target.value; setSearch(value); setPage(1); const next = new URLSearchParams(params); if (value.trim()) next.set('q', value); else next.delete('q'); setParams(next, { replace: true }); }}
+              onChange={(event) => { const value = event.target.value; setPage(1); const next = new URLSearchParams(params); if (value) next.set('q', value); else next.delete('q'); setParams(next, { replace: true }); }}
             />
           </label>
           <div className="catalog-compare-action">

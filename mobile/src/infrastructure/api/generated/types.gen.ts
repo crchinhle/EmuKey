@@ -69,7 +69,7 @@ export type MessageDto = {
 };
 
 export type AiAskDto = {
-  clientMessageId?: string;
+  clientMessageId: string;
   question: string;
 };
 
@@ -77,6 +77,10 @@ export type AiAnswerDto = {
   answer: string;
   citedSourceIds: Array<string>;
   grounded: boolean;
+};
+
+export type RequestSupportDto = {
+  reason: string;
 };
 
 export type KnowledgeDocumentDto = {
@@ -95,6 +99,23 @@ export type CreateKnowledgeDocumentDto = {
   title: string;
   chunks?: Array<string>;
   version?: number;
+};
+
+export type KnowledgeDocumentDetailDto = {
+  id: string;
+  title: string;
+  logicalDocumentKey: string;
+  version: number;
+  status: string;
+  isCurrent: boolean;
+  chunks: Array<string>;
+};
+
+export type PublishKnowledgeDocumentDto = {
+  /**
+   * Observed current version; 0 means no published version.
+   */
+  expectedCurrentVersion?: number;
 };
 
 export type KnowledgeQueryDto = {
@@ -145,6 +166,18 @@ export type ProfileDto = {
 
 export type StateDto = {
   reason: string;
+};
+
+export type NotificationDto = {
+  id: string;
+  title: string;
+  content: string;
+  isRead: boolean;
+  createdAt: string;
+  readAt?: string | null;
+  target?: {
+    [key: string]: unknown;
+  } | null;
 };
 
 export type RegisterPushTokenDto = {
@@ -340,6 +373,8 @@ export type LicenseProjectionDto = {
   activationKeyAvailable?: boolean;
   blockNumber?: number | null;
   confirmationCount: number;
+  activeDeviceCount: number;
+  deviceStateVersion: number;
   createdAt: string;
   entitlementVersion: number;
   expiresAt: string;
@@ -362,15 +397,12 @@ export type LicenseProjectionDto = {
 export type LicenseDeviceDto = {
   id: string;
   deviceRef: string;
-  status: 'PENDING_ONCHAIN' | 'ACTIVE' | 'REVOKED';
+  status: 'ACTIVE' | 'REVOKED';
   bindingGeneration: number;
   activatedAt?: {
     [key: string]: unknown;
   } | null;
   revokedAt?: {
-    [key: string]: unknown;
-  } | null;
-  finality?: {
     [key: string]: unknown;
   } | null;
 };
@@ -445,6 +477,8 @@ export type OrderDto = {
   publicLicenseId?: string | null;
   targetLicenseId?: string | null;
   serviceTermsAcceptedAt?: string | null;
+  serviceTermsVersionSnapshot?: string | null;
+  serviceTermsHashSnapshot?: string | null;
 };
 
 export type RenewalPreviewDto = {
@@ -465,10 +499,14 @@ export type RenewalPreviewDto = {
 
 export type OrderTermsDto = {
   content: string;
+  version: string;
+  hash: string;
 };
 
 export type AcceptServiceTermsDto = {
   accepted: true;
+  version: string;
+  hash: string;
 };
 
 export type CheckoutSessionDto = {
@@ -497,28 +535,32 @@ export type PaymentHistoryDto = {
   amountVnd: number;
   classification:
     'MATCHED' | 'DUPLICATE' | 'UNMATCHED' | 'AMOUNT_MISMATCH' | 'INVALID';
-  orderId: string;
-  orderNumber: string;
-  orderType: 'NEW_PURCHASE' | 'RENEWAL';
-  planNameSnapshot: string;
-  productNameSnapshot: string;
+  orderId?: string | null;
+  orderNumber?: string | null;
+  orderType?: 'NEW_PURCHASE' | 'RENEWAL';
+  planNameSnapshot?: string | null;
+  productNameSnapshot?: string | null;
   providerEventId: string;
   providerTransactionReference?: string | null;
+  providerOccurredAt: string;
   receivedAt: string;
   reviewStatus?: string | null;
   transactionId: string;
 };
 
 export type PaymentReviewDto = {
-  id: string;
+  amountVnd: number;
   classification:
     'MATCHED' | 'DUPLICATE' | 'UNMATCHED' | 'AMOUNT_MISMATCH' | 'INVALID';
-  amountVnd: number;
+  id: string;
+  orderId?: string | null;
+  orderNumber?: string | null;
   providerEventId: string;
   providerTransactionReference?: string | null;
   reviewReason?: string | null;
   reviewStatus?: string | null;
   receivedAt: string;
+  providerOccurredAt: string;
   reviewedAt?: string | null;
 };
 
@@ -534,6 +576,12 @@ export type PaymentReceiptDto = {
   orderNumber: string;
   orderType: 'NEW_PURCHASE' | 'RENEWAL';
   paidAt: string;
+  /**
+   * Timestamp reported by the payment provider.
+   */
+  providerOccurredAt: string;
+  receivedAt: string;
+  timingBasis: 'PROVIDER' | 'SANDBOX_RECEIPT';
   planNameSnapshot: string;
   productNameSnapshot: string;
   providerNameSnapshot: string;
@@ -542,7 +590,14 @@ export type PaymentReceiptDto = {
 };
 
 export type ActivationChallengeDto = {
-  licenseId: string;
+  /**
+   * License id for device-bound entitlement or revoke challenges; not required for activation.
+   */
+  licenseId?: string;
+  /**
+   * Required for activation challenges; used to resolve the license without customer ownership.
+   */
+  activationKey?: string;
   purpose:
     | 'ACTIVATE_DEVICE'
     | 'SELF_REVOKE_DEVICE'
@@ -556,6 +611,10 @@ export type ActivationChallengeDto = {
 };
 
 export type DeviceChallengeDto = {
+  /**
+   * Resolved license id; returned only after the activation credential has been accepted.
+   */
+  licenseId: string;
   challenge: string;
   expiresAt: string;
   bindingGeneration: number;
@@ -568,7 +627,13 @@ export type DeviceChallengeDto = {
 };
 
 export type ActivateDeviceDto = {
-  licenseId: string;
+  /**
+   * @deprecated
+   */
+  licenseId?: string;
+  /**
+   * Bearer activation credential supplied by the enterprise administrator
+   */
   activationKey: string;
   challenge: string;
   deviceRef: string;
@@ -582,21 +647,6 @@ export type ActivateDeviceDto = {
   proof: string;
 };
 
-export type Phase6CommandDto = {
-  commandId: string;
-  status:
-    | 'PENDING'
-    | 'SUBMITTED'
-    | 'SUBMITTED_UNKNOWN'
-    | 'CONFIRMED'
-    | 'RETRYABLE_FAILED'
-    | 'DEAD_LETTER'
-    | 'ABANDONED'
-    | 'SUPERSEDED';
-  licenseId: string;
-  deviceId?: string | null;
-};
-
 export type LicensingActionVerificationDto = {
   action:
     'ROTATE_KEY' | 'REVOKE_DEVICE' | 'REMOTE_REVOKE_DEVICE' | 'KEY_RECOVERY';
@@ -605,6 +655,18 @@ export type LicensingActionVerificationDto = {
    * Required for device-scoped revoke actions
    */
   deviceId?: string;
+};
+
+export type ResolveLicensingActionDto = {
+  actionToken: string;
+};
+
+export type LicensingActionResolutionDto = {
+  action:
+    'ROTATE_KEY' | 'REVOKE_DEVICE' | 'REMOTE_REVOKE_DEVICE' | 'KEY_RECOVERY';
+  licenseId: string;
+  deviceId?: string | null;
+  expiresAt: string;
 };
 
 export type Phase6CommandStatusDto = {
@@ -627,8 +689,7 @@ export type Phase6CommandStatusDto = {
     | 'RESUME_LICENSE'
     | 'REVOKE_LICENSE'
     | 'ROTATE_KEY'
-    | 'ACTIVATE_DEVICE'
-    | 'REVOKE_DEVICE';
+    | 'SYNC_DEVICE_COUNT';
   confirmedAt?: string | null;
   transactionHash?: string | null;
 };
@@ -651,6 +712,21 @@ export type RemoteRevokeDeviceDto = {
 export type RotateActivationKeyDto = {
   actionToken: string;
   currentKey: string;
+};
+
+export type Phase6CommandDto = {
+  commandId: string;
+  status:
+    | 'PENDING'
+    | 'SUBMITTED'
+    | 'SUBMITTED_UNKNOWN'
+    | 'CONFIRMED'
+    | 'RETRYABLE_FAILED'
+    | 'DEAD_LETTER'
+    | 'ABANDONED'
+    | 'SUPERSEDED';
+  licenseId: string;
+  deviceId?: string | null;
 };
 
 export type ActivationKeyRecoveryDto = {
@@ -689,6 +765,7 @@ export type EntitlementVerifyDto = {
 };
 
 export type EntitlementValidationDto = {
+  bindingGeneration: number;
   valid: true;
   expiresAt: string;
   licenseId: string;
@@ -842,7 +919,7 @@ export type AssistanceSupportControllerAskAiResponse =
   AssistanceSupportControllerAskAiResponses[keyof AssistanceSupportControllerAskAiResponses];
 
 export type AssistanceSupportControllerRequestSupportData = {
-  body?: never;
+  body: RequestSupportDto;
   path: {
     conversationId: string;
   };
@@ -856,6 +933,22 @@ export type AssistanceSupportControllerRequestSupportResponses = {
 
 export type AssistanceSupportControllerRequestSupportResponse =
   AssistanceSupportControllerRequestSupportResponses[keyof AssistanceSupportControllerRequestSupportResponses];
+
+export type AssistanceSupportControllerQueuePreviewMessagesData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/messages/queue-preview';
+};
+
+export type AssistanceSupportControllerQueuePreviewMessagesResponses = {
+  200: Array<MessageDto>;
+};
+
+export type AssistanceSupportControllerQueuePreviewMessagesResponse =
+  AssistanceSupportControllerQueuePreviewMessagesResponses[keyof AssistanceSupportControllerQueuePreviewMessagesResponses];
 
 export type AssistanceSupportControllerClaimData = {
   body?: never;
@@ -872,6 +965,22 @@ export type AssistanceSupportControllerClaimResponses = {
 
 export type AssistanceSupportControllerClaimResponse =
   AssistanceSupportControllerClaimResponses[keyof AssistanceSupportControllerClaimResponses];
+
+export type AssistanceSupportControllerReleaseData = {
+  body?: never;
+  path: {
+    conversationId: string;
+  };
+  query?: never;
+  url: '/api/v1/conversations/{conversationId}/release';
+};
+
+export type AssistanceSupportControllerReleaseResponses = {
+  200: ConversationDto;
+};
+
+export type AssistanceSupportControllerReleaseResponse =
+  AssistanceSupportControllerReleaseResponses[keyof AssistanceSupportControllerReleaseResponses];
 
 export type AssistanceSupportControllerCloseData = {
   body?: never;
@@ -917,8 +1026,24 @@ export type KnowledgeControllerCreateResponses = {
 export type KnowledgeControllerCreateResponse =
   KnowledgeControllerCreateResponses[keyof KnowledgeControllerCreateResponses];
 
-export type KnowledgeControllerPublishData = {
+export type KnowledgeControllerDetailData = {
   body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: '/api/v1/knowledge/documents/{id}';
+};
+
+export type KnowledgeControllerDetailResponses = {
+  200: KnowledgeDocumentDetailDto;
+};
+
+export type KnowledgeControllerDetailResponse =
+  KnowledgeControllerDetailResponses[keyof KnowledgeControllerDetailResponses];
+
+export type KnowledgeControllerPublishData = {
+  body: PublishKnowledgeDocumentDto;
   path: {
     id: string;
   };
@@ -1150,8 +1275,14 @@ export type NotificationControllerListData = {
 };
 
 export type NotificationControllerListResponses = {
-  200: unknown;
+  200: {
+    items?: Array<NotificationDto>;
+    nextCursor?: string | null;
+  };
 };
+
+export type NotificationControllerListResponse =
+  NotificationControllerListResponses[keyof NotificationControllerListResponses];
 
 export type NotificationControllerMarkReadData = {
   body?: never;
@@ -1163,8 +1294,11 @@ export type NotificationControllerMarkReadData = {
 };
 
 export type NotificationControllerMarkReadResponses = {
-  200: unknown;
+  200: NotificationDto;
 };
+
+export type NotificationControllerMarkReadResponse =
+  NotificationControllerMarkReadResponses[keyof NotificationControllerMarkReadResponses];
 
 export type NotificationControllerRegisterPushTokenData = {
   body: RegisterPushTokenDto;
@@ -1895,7 +2029,7 @@ export type LicensingControllerActivateData = {
 };
 
 export type LicensingControllerActivateResponses = {
-  201: Phase6CommandDto;
+  201: LicenseDeviceDto;
 };
 
 export type LicensingControllerActivateResponse =
@@ -1911,6 +2045,25 @@ export type LicensingControllerRequestActionVerificationData = {
 export type LicensingControllerRequestActionVerificationResponses = {
   201: unknown;
 };
+
+export type LicensingControllerResolveActionVerificationData = {
+  body: ResolveLicensingActionDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/licenses/action-verification/resolve';
+};
+
+export type LicensingControllerResolveActionVerificationErrors = {
+  401: unknown;
+  403: unknown;
+};
+
+export type LicensingControllerResolveActionVerificationResponses = {
+  200: LicensingActionResolutionDto;
+};
+
+export type LicensingControllerResolveActionVerificationResponse =
+  LicensingControllerResolveActionVerificationResponses[keyof LicensingControllerResolveActionVerificationResponses];
 
 export type LicensingControllerCommandStatusData = {
   body?: never;
@@ -1939,7 +2092,7 @@ export type LicensingControllerRevokeDeviceData = {
 };
 
 export type LicensingControllerRevokeDeviceResponses = {
-  201: Phase6CommandDto;
+  201: LicenseDeviceDto;
 };
 
 export type LicensingControllerRevokeDeviceResponse =
@@ -1956,7 +2109,7 @@ export type LicensingControllerRemoteRevokeDeviceData = {
 };
 
 export type LicensingControllerRemoteRevokeDeviceResponses = {
-  201: Phase6CommandDto;
+  201: LicenseDeviceDto;
 };
 
 export type LicensingControllerRemoteRevokeDeviceResponse =

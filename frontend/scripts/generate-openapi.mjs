@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { createClient } from '@hey-api/openapi-ts';
@@ -35,6 +36,14 @@ function run(command, args) {
 }
 
 try {
+  const backendSpecificationPath = resolve(root, '..', 'backend', 'openapi', 'openapi.json');
+  if (existsSync(backendSpecificationPath)) {
+    const backendSpecification = await readFile(backendSpecificationPath, 'utf8');
+    if (await readFile(input, 'utf8') !== backendSpecification) {
+      throw new Error('Client OpenAPI input differs from backend/openapi/openapi.json; synchronize it before generating clients');
+    }
+  }
+
   await createClient({
     input,
     output: { path: output },

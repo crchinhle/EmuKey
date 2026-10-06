@@ -6,3 +6,4 @@ export const CurrentUser = createParamDecorator((_: unknown, context: ExecutionC
   return request.user;
 });
 export const Roles = (...roles: Role[]) => SetMetadata('roles', roles);
+export const AllowActivationWithoutSession = () => SetMetadata('allowActivationWithoutSession', true);

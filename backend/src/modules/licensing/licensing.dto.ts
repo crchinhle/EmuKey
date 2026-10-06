@@ -11,19 +11,20 @@ import {
 } from 'class-validator';
 
 export class ActivateDeviceDto {
-  @ApiProperty({ format: 'uuid' })
+  /** Deprecated client hint retained for one compatibility window; authorization always resolves from activationKey. */
+  @ApiPropertyOptional({ format: 'uuid', deprecated: true })
+  @IsOptional()
   @IsUUID()
-  licenseId!: string;
-
-  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$' })
+  licenseId?: string;
+  @ApiProperty({ pattern: '^0x[0-9a-fA-F]{64}$', description: 'Bearer activation credential supplied by the enterprise administrator' })
   @IsString()
   @Matches(/^0x[0-9a-fA-F]{64}$/)
   activationKey!: `0x${string}`;
 
-  @ApiProperty()
+  @ApiProperty({ minLength: 16, maxLength: 512 })
   @IsString()
   @MinLength(16)
-  @MaxLength(128)
+  @MaxLength(512)
   challenge!: string;
 
   @ApiProperty({ minLength: 1, maxLength: 128 })
@@ -136,9 +137,16 @@ export class LicensingActionVerificationDto {
 }
 
 export class ActivationChallengeDto {
-  @ApiProperty({ format: 'uuid' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'License id for device-bound entitlement or revoke challenges; not required for activation.' })
+  @IsOptional()
   @IsUUID()
-  licenseId!: string;
+  licenseId?: string;
+
+  @ApiPropertyOptional({ pattern: '^0x[0-9a-fA-F]{64}$', description: 'Required for activation challenges; used to resolve the license without customer ownership.' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^0x[0-9a-fA-F]{64}$/)
+  activationKey?: `0x${string}`;
 
   @ApiProperty({ enum: ['ACTIVATE_DEVICE', 'SELF_REVOKE_DEVICE', 'ISSUE_ENTITLEMENT', 'REFRESH_ENTITLEMENT'] })
   @IsIn(['ACTIVATE_DEVICE', 'SELF_REVOKE_DEVICE', 'ISSUE_ENTITLEMENT', 'REFRESH_ENTITLEMENT'])
@@ -193,6 +201,9 @@ export class EntitlementVerifyDto {
 }
 
 export class EntitlementValidationDto {
+  @ApiProperty()
+  bindingGeneration!: number;
+
   @ApiProperty({ enum: [true] })
   valid!: true;
 
@@ -236,6 +247,9 @@ export class EntitlementRefreshDto {
 }
 
 export class DeviceChallengeDto {
+  @ApiProperty({ format: 'uuid', description: 'Resolved license id; returned only after the activation credential has been accepted.' })
+  licenseId!: string;
+
   @ApiProperty()
   challenge!: string;
 
@@ -267,7 +281,7 @@ export class Phase6CommandDto {
 }
 
 export class Phase6CommandStatusDto extends Phase6CommandDto {
-  @ApiProperty({ enum: ['ISSUE_LICENSE', 'RENEW_LICENSE', 'SUSPEND_LICENSE', 'RESUME_LICENSE', 'REVOKE_LICENSE', 'ROTATE_KEY', 'ACTIVATE_DEVICE', 'REVOKE_DEVICE'] })
+  @ApiProperty({ enum: ['ISSUE_LICENSE', 'RENEW_LICENSE', 'SUSPEND_LICENSE', 'RESUME_LICENSE', 'REVOKE_LICENSE', 'ROTATE_KEY', 'SYNC_DEVICE_COUNT'] })
   commandType!: string;
 
   @ApiPropertyOptional({ format: 'date-time', nullable: true, type: String })

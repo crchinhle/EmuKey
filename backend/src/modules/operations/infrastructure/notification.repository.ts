@@ -39,13 +39,34 @@ export class NotificationRepository {
     return result.rows[0]!;
   }
 
-  async list(userId: string): Promise<ReturnType<typeof mapNotification>[]> {
+  async list(userId: string, options: { cursor?: string; limit: number }): Promise<{ items: ReturnType<typeof mapNotification>[]; nextCursor: string | null }> {
+    const values: unknown[] = [userId];
+    let cursorClause = '';
+    if (options.cursor) {
+      let decoded: { createdAt?: unknown; id?: unknown };
+      try {
+        decoded = JSON.parse(Buffer.from(options.cursor, 'base64url').toString('utf8')) as { createdAt?: unknown; id?: unknown };
+      } catch {
+        throw new Error('INVALID_NOTIFICATION_CURSOR');
+      }
+      if (typeof decoded.createdAt !== 'string' || typeof decoded.id !== 'string') throw new Error('INVALID_NOTIFICATION_CURSOR');
+      values.push(decoded.createdAt, decoded.id);
+      cursorClause = ' AND (created_at, id) < ($2::timestamptz, $3::uuid)';
+    }
+    values.push(options.limit + 1);
     const result = await this.pool.query<NotificationRow>(
       `SELECT id, user_id, event_key, type, title, content, data, channel, delivery_status, is_read, created_at, read_at
-       FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100`,
-      [userId],
+       FROM notifications WHERE user_id = $1${cursorClause}
+       ORDER BY created_at DESC, id DESC LIMIT $${values.length}`,
+      values,
     );
-    return result.rows.map(mapNotification);
+    const hasMore = result.rows.length > options.limit;
+    const rows = hasMore ? result.rows.slice(0, options.limit) : result.rows;
+    const last = rows.at(-1);
+    const nextCursor = hasMore && last
+      ? Buffer.from(JSON.stringify({ createdAt: last.created_at instanceof Date ? last.created_at.toISOString() : String(last.created_at), id: String(last.id) })).toString('base64url')
+      : null;
+    return { items: rows.map(mapNotification), nextCursor };
   }
 
   async markRead(userId: string, notificationId: string): Promise<ReturnType<typeof mapNotification> | null> {

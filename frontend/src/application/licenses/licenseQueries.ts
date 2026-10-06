@@ -9,6 +9,7 @@ import type {
   EntitlementDto,
   EntitlementValidationDto,
   LicenseProjectionDto,
+  LicensingActionResolutionDto,
   Phase6CommandDto,
   Phase6CommandStatusDto,
   PublicLicenseVerificationDto,
@@ -16,6 +17,19 @@ import type {
   RotateActivationKeyDto,
 } from '../../infrastructure/api/generated';
 import { requestJson, type ApiRequestError } from '../auth/authContext';
+
+export function useResolveLicensingAction(token: string) {
+  return useQuery({
+    queryKey: ['licenses', 'action-resolution', token],
+    enabled: Boolean(token),
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 0,
+    queryFn: () => requestJson<LicensingActionResolutionDto>('/licenses/action-verification/resolve', {
+      method: 'POST', body: JSON.stringify({ actionToken: token }),
+    }),
+  });
+}
 
 export function publicVerificationError(error: unknown): { message: string; retryable: boolean } {
   if (error && typeof error === 'object' && 'status' in error) {
@@ -47,7 +61,7 @@ export function activationKeyErrorLabel(error: unknown): string {
 export function licenseStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     ACTIVE: 'Hoạt động',
-    PENDING_ONCHAIN: 'Đang chờ xác nhận',
+
     PENDING: 'Đang chờ xác nhận',
     SUSPENDED: 'Tạm ngưng',
     EXPIRED: 'Đã hết hạn',
@@ -63,7 +77,6 @@ export function finalityLabel(finality: string | null | undefined): string {
     case 'UNTRUSTED_REORG': return 'Chưa tin cậy — blockchain có reorg';
     case 'PROJECTION_STALE': return 'Dữ liệu đang đồng bộ lại';
     case 'REORGED': return 'Đang xác minh lại sau reorg';
-    case 'PENDING_ONCHAIN': return 'Đang chờ xác nhận trên blockchain';
     default: return finality ?? 'Chưa rõ trạng thái';
   }
 }
@@ -199,7 +212,7 @@ export function useAllLicenseDevices(licenseIds: readonly string[]) {
 export function useActivateDevice() {
   return useMutation({
     mutationFn: (input: ActivateDeviceDto) =>
-      requestJson<Phase6CommandDto>('/activations', {
+      requestJson<LicenseDeviceDto>('/activations', {
         body: JSON.stringify(input),
         method: 'POST',
       }),
@@ -210,8 +223,8 @@ export function useRevokeDevice() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ licenseId, deviceId, input }: { licenseId: string; deviceId: string; input: RevokeDeviceDto }) =>
-      requestJson<Phase6CommandDto>(
-        `/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/revoke`,
+       requestJson<LicenseDeviceDto>(
+         `/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/revoke`,
         { body: JSON.stringify(input), method: 'POST' },
       ),
     onSuccess: (_value, variables) => {
@@ -224,8 +237,8 @@ export function useRemoteRevokeDevice() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ licenseId, deviceId, input }: { licenseId: string; deviceId: string; input: { actionToken: string; currentPassword: string } }) =>
-      requestJson<Phase6CommandDto>(
-        `/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/remote-revoke`,
+       requestJson<LicenseDeviceDto>(
+         `/licenses/${encodeURIComponent(licenseId)}/devices/${encodeURIComponent(deviceId)}/remote-revoke`,
         { body: JSON.stringify(input), method: 'POST' },
       ),
     onSuccess: (_value, variables) => {

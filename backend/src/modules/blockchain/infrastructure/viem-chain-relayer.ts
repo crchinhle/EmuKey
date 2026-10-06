@@ -69,9 +69,10 @@ function requiredString(
 function requiredInteger(
   payload: Record<string, unknown>,
   name: string,
+  minimum = 1,
 ): bigint {
   const value = payload[name];
-  if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+  if (!Number.isSafeInteger(value) || Number(value) < minimum) {
     throw new Error(`CHAIN_PAYLOAD_${name.toUpperCase()}_INVALID`);
   }
   return BigInt(Number(value));
@@ -154,25 +155,15 @@ export function encodeChainCommand(input: ChainCommandInput): Hex {
           requiredInteger(payload, 'keyVersion'),
         ],
       });
-    case 'ACTIVATE_DEVICE':
+    case 'SYNC_DEVICE_COUNT':
       return encodeFunctionData({
         abi: licenseRegistryAbi,
-        functionName: 'activateDevice',
+        functionName: 'syncActiveDeviceCount',
         args: [
           commandId,
           licenseId,
-          bytes32(requiredString(payload, 'deviceId'), 'deviceId'),
-          requiredInteger(payload, 'keyVersion'),
-        ],
-      });
-    case 'REVOKE_DEVICE':
-      return encodeFunctionData({
-        abi: licenseRegistryAbi,
-        functionName: 'revokeDevice',
-        args: [
-          commandId,
-          licenseId,
-          bytes32(requiredString(payload, 'deviceId'), 'deviceId'),
+          requiredInteger(payload, 'activeDeviceCount', 0),
+          requiredInteger(payload, 'deviceStateVersion'),
         ],
       });
     default:

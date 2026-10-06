@@ -4,7 +4,7 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-const KEY_PREFIX = 'emukey_device_key_v1:';
+const KEY_PREFIX = 'emukey_device_key_v1_';
 
 interface StoredDeviceIdentity {
   deviceRef: string;

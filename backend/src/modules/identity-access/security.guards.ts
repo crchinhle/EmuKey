@@ -8,6 +8,19 @@ export class AuthGuard implements CanActivate {
   constructor(private readonly service: IdentityService) {}
   async canActivate(context: ExecutionContext) { const request = context.switchToHttp().getRequest<{ headers: { authorization?: string }; user?: unknown }>(); const header = request.headers.authorization; if (!header?.startsWith('Bearer ')) throw new UnauthorizedException(); try { request.user = await this.service.authenticate(header.slice(7)); return true; } catch { throw new UnauthorizedException(); } }
 }
+
+@Injectable()
+export class OptionalAuthGuard implements CanActivate {
+  constructor(private readonly service: IdentityService) {}
+  async canActivate(context: ExecutionContext) {
+    const request = context.switchToHttp().getRequest<{ headers: { authorization?: string }; user?: unknown }>();
+    const header = request.headers.authorization;
+    if (!header) return true;
+    if (!header.startsWith('Bearer ')) throw new UnauthorizedException();
+    try { request.user = await this.service.authenticate(header.slice(7)); return true; } catch { throw new UnauthorizedException(); }
+  }
+}
+
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}

@@ -23,16 +23,17 @@ const billingCycleLabels: Record<string, string> = {
   YEARLY: 'Theo năm',
 };
 
-function entitlementLabel(key: string, value: unknown): string {
+export function entitlementLabel(key: string, value: unknown): string {
   const label: Record<string, string> = {
     desktop: 'Ứng dụng máy tính',
   };
-  return value === true ? label[key] ?? key : `${label[key] ?? key}: ${String(value)}`;
+  if (value === true) return label[key] ?? key;
+  const formatted = value === false ? 'Không' : typeof value === 'string' || typeof value === 'number' ? String(value) : JSON.stringify(value) ?? '—';
+  return `${label[key] ?? key}: ${formatted}`;
 }
 
 export function OrderSummary({ order }: { readonly order: OrderSummarySnapshot }) {
   const entitlements = Object.entries(order.entitlements ?? {})
-    .filter(([, enabled]) => Boolean(enabled))
     .map(([key, value]) => entitlementLabel(key, value));
   const facts = [
     { label: 'Tổng thanh toán', value: formatMoney(order.total) },

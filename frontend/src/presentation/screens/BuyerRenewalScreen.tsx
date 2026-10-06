@@ -1,5 +1,5 @@
 import { Alert, Button, Checkbox, Result, Spin, Steps } from 'antd';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { describeApiError } from '../../application/auth/authContext';
@@ -18,6 +18,7 @@ export function BuyerRenewalScreen() {
   const waitingTerms = order?.orderStatus === 'WAITING_SERVICE_TERMS_ACCEPTANCE';
   const terms = useOrderTerms(waitingTerms ? order.id : '');
   const [accepted, setAccepted] = useState(false);
+  useEffect(() => { setAccepted(false); }, [order?.id, terms.data?.version, terms.data?.hash]);
 
   if (preview.isPending) return <Spin aria-label="Đang tải thông tin gia hạn" />;
   if (preview.isError || !preview.data) return <Result status="error" title="Không thể tải thông tin gia hạn" subTitle="Bản quyền có thể không thuộc tài khoản này hoặc kết nối đang gián đoạn." extra={<Button onClick={() => void preview.refetch()}>Thử lại</Button>} />;
@@ -29,7 +30,8 @@ export function BuyerRenewalScreen() {
     if (continuing) {
       void navigate(`/buyer/orders/${order.id}/payment`);
     } else if (waitingTerms && accepted) {
-      mutations.acceptServiceTerms.mutate(order, { onSuccess: (value) => void navigate(`/buyer/orders/${value.id}/payment`) });
+      if (!terms.data || terms.isFetching || terms.isError) return;
+      mutations.acceptServiceTerms.mutate({ order, terms: terms.data }, { onSuccess: (value) => void navigate(`/buyer/orders/${value.id}/payment`) });
     } else if (!order && offer.canRenew) {
       mutations.create.mutate({ planId: offer.planId, targetLicenseId: licenseId }, {
         onSuccess: (value) => { setCreatedOrderId(value.id); setAccepted(false); },
@@ -73,7 +75,7 @@ export function BuyerRenewalScreen() {
         <div className="workspace-actions">
           <Button onClick={() => void navigate('/buyer/licenses')}>Quay lại</Button>
           <Button type="primary" loading={mutations.create.isPending || mutations.acceptServiceTerms.isPending || (Boolean(createdOrderId) && liveOrder.isPending)}
-            disabled={Boolean(terminal) || liveOrder.isError || (waitingTerms ? !accepted || !terms.data : !order && !offer.canRenew)} onClick={proceed}>
+            disabled={Boolean(terminal) || liveOrder.isError || (waitingTerms ? !accepted || !terms.data || terms.isFetching || terms.isError : !order && !offer.canRenew)} onClick={proceed}>
             {order?.orderStatus === 'PAYMENT_ACCEPTED' ? 'Theo dõi gia hạn' : continuing ? 'Tiếp tục thanh toán' : waitingTerms ? 'Đồng ý và thanh toán' : 'Tạo đơn gia hạn'}
           </Button>
         </div>

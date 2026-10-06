@@ -62,7 +62,7 @@ export class AssistanceSupportRepository {
       const owned = await this.pool.query('SELECT 1 FROM licenses WHERE id = $1 AND customer_user_id = $2', [input.contextId, customerUserId]);
       if (!owned.rows[0]) throw new Error('CONVERSATION_CONTEXT_NOT_FOUND');
     } else if (contextType === 'PLAN') {
-      const visible = await this.pool.query("SELECT 1 FROM plans p JOIN products pr ON pr.id = p.product_id WHERE p.id = $1 AND p.status = 'PUBLISHED'", [input.contextId]);
+      const visible = await this.pool.query("SELECT 1 FROM plans p JOIN products pr ON pr.id = p.product_id WHERE p.id = $1 AND p.status = 'PUBLISHED' AND pr.status = 'PUBLISHED'", [input.contextId]);
       if (!visible.rows[0]) throw new Error('CONVERSATION_CONTEXT_NOT_FOUND');
     } else if (contextType === 'PRODUCT') {
       const visible = await this.pool.query("SELECT 1 FROM products WHERE id = $1 AND status = 'PUBLISHED'", [input.contextId]);
@@ -266,7 +266,13 @@ export class AssistanceSupportRepository {
         `SELECT * FROM messages WHERE conversation_id = $1 AND client_message_id = $2`,
         [input.conversationId, input.clientMessageId],
       );
-      if (existing.rows[0]) return mapMessage(existing.rows[0]);
+      if (existing.rows[0]) {
+        const previous = existing.rows[0];
+        if (previous.content !== input.content || previous.sender_type !== input.senderType || previous.sender_user_id !== input.actorUserId) {
+          throw new Error('CONVERSATION_MESSAGE_CONFLICT');
+        }
+        return mapMessage(previous);
+      }
 
       const sequence = await client.query<{ next_sequence: string }>(
         `SELECT COALESCE(MAX(server_sequence), 0) + 1 AS next_sequence
@@ -290,7 +296,10 @@ export class AssistanceSupportRepository {
 
   async appendAiMessage(input: { clientMessageId: string; conversationId: string; content: string; citedSourceIds: string[]; grounded: boolean }) {
     return this.transaction(async (client) => {
-      await client.query('SELECT id FROM conversations WHERE id = $1 FOR UPDATE', [input.conversationId]);
+      const locked = await client.query<{ status: string }>('SELECT status FROM conversations WHERE id = $1 FOR UPDATE', [input.conversationId]);
+      if (!locked.rows[0]) throw new Error('CONVERSATION_NOT_FOUND');
+      if (locked.rows[0].status === 'CLOSED') throw new Error('CONVERSATION_CLOSED');
+      if (locked.rows[0].status !== 'AI_ACTIVE') throw new Error('CONVERSATION_STATE_INVALID');
       const result = await client.query<Record<string, unknown>>(
         `INSERT INTO messages (conversation_id, sender_type, client_message_id, server_sequence, content, grounded, sources)
          SELECT $1, 'AI', $2, COALESCE(MAX(server_sequence), 0) + 1, $3, $4, $5::jsonb
@@ -312,12 +321,20 @@ export class AssistanceSupportRepository {
       const conversation = locked.rows[0] ? mapConversation(locked.rows[0]) : null;
       if (!conversation) throw new Error('CONVERSATION_NOT_FOUND');
       if (conversation.customerUserId !== input.customerUserId) throw new Error('CONVERSATION_ACCESS_DENIED');
+      if (conversation.status === 'CLOSED') throw new Error('CONVERSATION_CLOSED');
+      if (conversation.status !== 'AI_ACTIVE') throw new Error('CONVERSATION_STATE_INVALID');
 
       const existing = await client.query<Record<string, unknown>>(
         `SELECT * FROM messages WHERE conversation_id = $1 AND client_message_id = $2`,
         [input.conversationId, input.clientMessageId],
       );
-      if (existing.rows[0]) return mapMessage(existing.rows[0]);
+      if (existing.rows[0]) {
+        const previous = existing.rows[0];
+        if (previous.content !== input.content || previous.sender_type !== 'CUSTOMER' || previous.sender_user_id !== input.customerUserId) {
+          throw new Error('CONVERSATION_MESSAGE_CONFLICT');
+        }
+        return mapMessage(previous);
+      }
 
       const sequence = await client.query<{ next_sequence: string }>(
         `SELECT COALESCE(MAX(server_sequence), 0) + 1 AS next_sequence

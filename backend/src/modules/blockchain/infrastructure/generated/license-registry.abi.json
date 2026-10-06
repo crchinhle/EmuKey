@@ -98,19 +98,19 @@
         "type": "bytes16"
       },
       {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "deviceId",
-        "type": "bytes32"
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "activeDeviceCount",
+        "type": "uint256"
       },
       {
         "indexed": false,
-        "internalType": "bool",
-        "name": "active",
-        "type": "bool"
+        "internalType": "uint256",
+        "name": "deviceStateVersion",
+        "type": "uint256"
       }
     ],
-    "name": "DeviceStatusChanged",
+    "name": "ActiveDeviceCountSynced",
     "type": "event"
   },
   {
@@ -329,58 +329,6 @@
   {
     "inputs": [
       {
-        "internalType": "bytes16",
-        "name": "commandId",
-        "type": "bytes16"
-      },
-      {
-        "internalType": "bytes16",
-        "name": "licenseId",
-        "type": "bytes16"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "deviceId",
-        "type": "bytes32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "keyVersion",
-        "type": "uint256"
-      }
-    ],
-    "name": "activateDevice",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes16",
-        "name": "licenseId",
-        "type": "bytes16"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "deviceId",
-        "type": "bytes32"
-      }
-    ],
-    "name": "activeDevice",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "address",
         "name": "provider",
         "type": "address"
@@ -501,6 +449,11 @@
           {
             "internalType": "uint256",
             "name": "activeDevices",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "deviceStateVersion",
             "type": "uint256"
           },
           {
@@ -735,29 +688,6 @@
         "internalType": "bytes16",
         "name": "licenseId",
         "type": "bytes16"
-      },
-      {
-        "internalType": "bytes32",
-        "name": "deviceId",
-        "type": "bytes32"
-      }
-    ],
-    "name": "revokeDevice",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "bytes16",
-        "name": "commandId",
-        "type": "bytes16"
-      },
-      {
-        "internalType": "bytes16",
-        "name": "licenseId",
-        "type": "bytes16"
       }
     ],
     "name": "revokeLicense",
@@ -844,6 +774,34 @@
       }
     ],
     "name": "suspendLicense",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes16",
+        "name": "commandId",
+        "type": "bytes16"
+      },
+      {
+        "internalType": "bytes16",
+        "name": "licenseId",
+        "type": "bytes16"
+      },
+      {
+        "internalType": "uint256",
+        "name": "activeDeviceCount",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "deviceStateVersion",
+        "type": "uint256"
+      }
+    ],
+    "name": "syncActiveDeviceCount",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

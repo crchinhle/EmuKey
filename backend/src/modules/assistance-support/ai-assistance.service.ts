@@ -5,7 +5,7 @@ import type { AiGatewayPort, GroundingSource } from './application/ports/ai-gate
 export interface KnowledgeSearchPort {
   searchSources(input: { conversationId: string; customerUserId: string; question: string }): Promise<GroundingSource[]>;
   appendCustomerMessage(input: { clientMessageId: string; conversationId: string; customerUserId: string; content: string }): Promise<unknown>;
-  appendAiMessage(input: { clientMessageId: string; conversationId: string; content: string; citedSourceIds: string[]; grounded: boolean }): Promise<unknown>;
+  appendAiMessage(input: { clientMessageId: string; conversationId: string; content: string; citedSourceIds: string[]; grounded: boolean }): Promise<{ content: string; sources?: string[]; grounded?: boolean }>;
 }
 
 export class AiAssistanceService {
@@ -23,21 +23,7 @@ export class AiAssistanceService {
     });
     const sources = await this.knowledge.searchSources(input);
     const clientMessageId = stableEventUuid(`${input.conversationId}:${input.clientMessageId}:answer`);
-    if (sources.length === 0) {
-      const refusal = {
-        answer: 'Không đủ nguồn chính thức để trả lời câu hỏi này.',
-        citedSourceIds: [],
-        grounded: false,
-      } as const;
-      await this.knowledge.appendAiMessage({
-        clientMessageId,
-        conversationId: input.conversationId,
-        content: refusal.answer,
-        citedSourceIds: [],
-        grounded: false,
-      });
-      return refusal;
-    }
+    if (sources.length === 0) return this.persistRefusal(clientMessageId, input.conversationId);
     let result;
     try {
       result = await this.gateway.answerGrounded({ question: input.question, sources });
@@ -45,38 +31,26 @@ export class AiAssistanceService {
       return this.persistRefusal(clientMessageId, input.conversationId);
     }
     const sourceIds = new Set(sources.map((source) => source.id));
-    if (!result.grounded) {
-      const refusal = {
-        answer: 'Không đủ nguồn chính thức để trả lời câu hỏi này.',
-        citedSourceIds: [],
-        grounded: false,
-      } as const;
-      await this.knowledge.appendAiMessage({
-        clientMessageId,
-        conversationId: input.conversationId,
-        content: refusal.answer,
-        citedSourceIds: [],
-        grounded: false,
-      });
-      return refusal;
-    }
-    if (result.citedSourceIds.some((id) => !sourceIds.has(id))) {
+    if (!result.grounded) return this.persistRefusal(clientMessageId, input.conversationId);
+    if (result.citedSourceIds.length === 0 || result.citedSourceIds.some((id) => !sourceIds.has(id))) {
       return this.persistRefusal(clientMessageId, input.conversationId);
     }
-    await this.knowledge.appendAiMessage({
+    return this.persistAnswer({
       clientMessageId,
       conversationId: input.conversationId,
       content: result.answer,
       citedSourceIds: result.citedSourceIds,
       grounded: result.grounded,
     });
-    return result;
   }
 
   private async persistRefusal(clientMessageId: string, conversationId: string) {
     const answer = 'Không đủ nguồn chính thức để trả lời câu hỏi này.';
-    await this.knowledge.appendAiMessage({ clientMessageId, conversationId, content: answer, citedSourceIds: [], grounded: false });
-    return { answer, citedSourceIds: [], grounded: false } as const;
+    return this.persistAnswer({ clientMessageId, conversationId, content: answer, citedSourceIds: [], grounded: false });
+  }
+  private async persistAnswer(input: { clientMessageId: string; conversationId: string; content: string; citedSourceIds: string[]; grounded: boolean }) {
+    const stored = await this.knowledge.appendAiMessage(input);
+    return { answer: stored.content, citedSourceIds: stored.sources ?? [], grounded: stored.grounded ?? false };
   }
 }
 

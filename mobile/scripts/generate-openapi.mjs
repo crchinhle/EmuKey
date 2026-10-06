@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createClient } from '@hey-api/openapi-ts';
 
 const root = resolve(import.meta.dirname, '..');
+const input = join(root, 'openapi', 'openapi.json');
 const check = process.argv.includes('--check');
 const temporaryDirectory = check
   ? await mkdtemp(join(root, '.openapi-check-'))
@@ -32,8 +34,16 @@ function run(command, args) {
 }
 
 try {
+  const backendSpecificationPath = join(root, '..', 'backend', 'openapi', 'openapi.json');
+  // Compare to the authority in a monorepo checkout, while preserving standalone builds.
+  if (existsSync(backendSpecificationPath)) {
+    const backendSpecification = await readFile(backendSpecificationPath, 'utf8');
+    if (await readFile(input, 'utf8') !== backendSpecification) {
+      throw new Error('Client OpenAPI input differs from backend/openapi/openapi.json; synchronize it before generating clients');
+    }
+  }
   await createClient({
-    input: join(root, 'openapi', 'openapi.json'),
+    input,
     output: { path: output },
     plugins: ['@hey-api/typescript'],
   });

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { requestJson } from '../auth/authContext';
 
@@ -8,6 +8,8 @@ export interface NotificationRecord {
   readonly content: string;
   readonly isRead: boolean;
   readonly createdAt?: string;
+  readonly readAt?: string | null;
+  readonly target: { kind: 'LICENSE' | 'ORDER' | 'CONVERSATION' | 'PAYMENT' | 'SYSTEM'; id: string | null } | null;
   readonly type?: string;
 }
 
@@ -21,6 +23,11 @@ export interface NotificationApiRecord {
   readonly occurredAt?: string | null;
   readonly readAt?: string | null;
   readonly title?: string | null;
+}
+
+export interface NotificationPage {
+  readonly items: NotificationApiRecord[];
+  readonly nextCursor: string | null;
 }
 
 export const notificationTypeLabels: Record<string, string> = {
@@ -46,14 +53,23 @@ export function mapNotificationRecord(source: NotificationApiRecord): Notificati
     content: source.content ?? source.body ?? '',
     isRead: source.isRead === true,
     ...(createdAt ? { createdAt } : {}),
+    ...(source.readAt !== undefined ? { readAt: source.readAt } : {}),
+    target: source.metadata && typeof source.metadata.target === 'object' ? source.metadata.target as NotificationRecord['target'] : null,
     ...(type ? { type } : {}),
   };
 }
 
 export function useNotifications() {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ['notifications'],
-    queryFn: async () => requestJson<NotificationApiRecord[]>('/notifications').then((rows) => rows.map(mapNotificationRecord)),
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) => {
+      const params = new URLSearchParams({ limit: '20' });
+      if (pageParam) params.set('cursor', pageParam);
+      const page = await requestJson<NotificationPage>(`/notifications?${params.toString()}`);
+      return { items: page.items.map(mapNotificationRecord), nextCursor: page.nextCursor };
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });

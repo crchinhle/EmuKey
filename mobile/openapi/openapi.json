@@ -321,6 +321,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestSupportDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -339,6 +349,45 @@
           }
         ],
         "summary": "Escalate an AI conversation to the Support queue",
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/messages/queue-preview": {
+      "get": {
+        "operationId": "AssistanceSupportController_queuePreviewMessages",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessageDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Preview messages for an unclaimed queue item",
         "tags": [
           "assistance"
         ]
@@ -374,6 +423,42 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "assistance"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversationId}/release": {
+      "post": {
+        "operationId": "AssistanceSupportController_release",
+        "parameters": [
+          {
+            "name": "conversationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Release a claimed conversation back to the queue",
         "tags": [
           "assistance"
         ]
@@ -477,6 +562,41 @@
         ]
       }
     },
+    "/api/v1/knowledge/documents/{id}": {
+      "get": {
+        "operationId": "KnowledgeController_detail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/api/v1/knowledge/documents/{id}/publish": {
       "post": {
         "operationId": "KnowledgeController_publish",
@@ -490,6 +610,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishKnowledgeDocumentDto"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "",
@@ -976,7 +1106,26 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NotificationDto"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1004,7 +1153,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2525,6 +2681,7 @@
             "bearer": []
           }
         ],
+        "summary": "Create a device challenge; activation challenges resolve the license from the bearer activation key and require no purchaser login",
         "tags": [
           "licensing"
         ]
@@ -2550,7 +2707,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Phase6CommandDto"
+                  "$ref": "#/components/schemas/LicenseDeviceDto"
                 }
               }
             }
@@ -2561,7 +2718,7 @@
             "bearer": []
           }
         ],
-        "summary": "Request a device activation command after off-chain proof verification",
+        "summary": "Activate a device with a bearer activation key and device proof; no purchaser session is required",
         "tags": [
           "licensing"
         ]
@@ -2591,6 +2748,49 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "licensing"
+        ]
+      }
+    },
+    "/api/v1/licenses/action-verification/resolve": {
+      "post": {
+        "operationId": "LicensingController_resolveActionVerification",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveLicensingActionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicensingActionResolutionDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          },
+          "403": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resolve the licensing action an email token authorizes without consuming it",
         "tags": [
           "licensing"
         ]
@@ -2668,7 +2868,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Phase6CommandDto"
+                  "$ref": "#/components/schemas/LicenseDeviceDto"
                 }
               }
             }
@@ -2721,7 +2921,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Phase6CommandDto"
+                  "$ref": "#/components/schemas/LicenseDeviceDto"
                 }
               }
             }
@@ -3243,6 +3443,7 @@
           }
         },
         "required": [
+          "clientMessageId",
           "question"
         ]
       },
@@ -3266,6 +3467,19 @@
           "answer",
           "citedSourceIds",
           "grounded"
+        ]
+      },
+      "RequestSupportDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "reason"
         ]
       },
       "KnowledgeDocumentDto": {
@@ -3342,6 +3556,55 @@
           "sourceType",
           "title"
         ]
+      },
+      "KnowledgeDocumentDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "logicalDocumentKey": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "chunks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "logicalDocumentKey",
+          "version",
+          "status",
+          "isCurrent",
+          "chunks"
+        ]
+      },
+      "PublishKnowledgeDocumentDto": {
+        "type": "object",
+        "properties": {
+          "expectedCurrentVersion": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Observed current version; 0 means no published version."
+          }
+        }
       },
       "KnowledgeQueryDto": {
         "type": "object",
@@ -3507,6 +3770,44 @@
         },
         "required": [
           "reason"
+        ]
+      },
+      "NotificationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "isRead": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "readAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "target": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "content",
+          "isRead",
+          "createdAt"
         ]
       },
       "RegisterPushTokenDto": {
@@ -4187,6 +4488,12 @@
           "confirmationCount": {
             "type": "number"
           },
+          "activeDeviceCount": {
+            "type": "number"
+          },
+          "deviceStateVersion": {
+            "type": "number"
+          },
           "createdAt": {
             "type": "string"
           },
@@ -4255,6 +4562,8 @@
         },
         "required": [
           "confirmationCount",
+          "activeDeviceCount",
+          "deviceStateVersion",
           "createdAt",
           "entitlementVersion",
           "expiresAt",
@@ -4286,7 +4595,6 @@
           "status": {
             "type": "string",
             "enum": [
-              "PENDING_ONCHAIN",
               "ACTIVE",
               "REVOKED"
             ]
@@ -4299,10 +4607,6 @@
             "nullable": true
           },
           "revokedAt": {
-            "type": "object",
-            "nullable": true
-          },
-          "finality": {
             "type": "object",
             "nullable": true
           }
@@ -4509,6 +4813,15 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "serviceTermsVersionSnapshot": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceTermsHashSnapshot": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "nullable": true
           }
         },
         "required": [
@@ -4598,10 +4911,19 @@
         "properties": {
           "content": {
             "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
-          "content"
+          "content",
+          "version",
+          "hash"
         ]
       },
       "AcceptServiceTermsDto": {
@@ -4612,10 +4934,19 @@
             "enum": [
               true
             ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
-          "accepted"
+          "accepted",
+          "version",
+          "hash"
         ]
       },
       "CheckoutSessionDto": {
@@ -4718,23 +5049,28 @@
           },
           "orderId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "orderNumber": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "orderType": {
             "type": "string",
             "enum": [
               "NEW_PURCHASE",
               "RENEWAL"
-            ]
+            ],
+            "nullable": true
           },
           "planNameSnapshot": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "productNameSnapshot": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "providerEventId": {
             "type": "string"
@@ -4742,6 +5078,10 @@
           "providerTransactionReference": {
             "type": "string",
             "nullable": true
+          },
+          "providerOccurredAt": {
+            "type": "string",
+            "format": "date-time"
           },
           "receivedAt": {
             "type": "string",
@@ -4759,12 +5099,8 @@
         "required": [
           "amountVnd",
           "classification",
-          "orderId",
-          "orderNumber",
-          "orderType",
-          "planNameSnapshot",
-          "productNameSnapshot",
           "providerEventId",
+          "providerOccurredAt",
           "receivedAt",
           "transactionId"
         ]
@@ -4772,9 +5108,8 @@
       "PaymentReviewDto": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
+          "amountVnd": {
+            "type": "number"
           },
           "classification": {
             "type": "string",
@@ -4786,8 +5121,18 @@
               "INVALID"
             ]
           },
-          "amountVnd": {
-            "type": "number"
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orderId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "orderNumber": {
+            "type": "string",
+            "nullable": true
           },
           "providerEventId": {
             "type": "string"
@@ -4808,6 +5153,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "providerOccurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "reviewedAt": {
             "type": "string",
             "format": "date-time",
@@ -4815,11 +5164,12 @@
           }
         },
         "required": [
-          "id",
-          "classification",
           "amountVnd",
+          "classification",
+          "id",
           "providerEventId",
-          "receivedAt"
+          "receivedAt",
+          "providerOccurredAt"
         ]
       },
       "ReviewPaymentDto": {
@@ -4868,6 +5218,22 @@
             "type": "string",
             "format": "date-time"
           },
+          "providerOccurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp reported by the payment provider."
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timingBasis": {
+            "type": "string",
+            "enum": [
+              "PROVIDER",
+              "SANDBOX_RECEIPT"
+            ]
+          },
           "planNameSnapshot": {
             "type": "string"
           },
@@ -4893,6 +5259,9 @@
           "orderNumber",
           "orderType",
           "paidAt",
+          "providerOccurredAt",
+          "receivedAt",
+          "timingBasis",
           "planNameSnapshot",
           "productNameSnapshot",
           "providerNameSnapshot",
@@ -4904,7 +5273,13 @@
         "properties": {
           "licenseId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "License id for device-bound entitlement or revoke challenges; not required for activation."
+          },
+          "activationKey": {
+            "type": "string",
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "description": "Required for activation challenges; used to resolve the license without customer ownership."
           },
           "purpose": {
             "type": "string",
@@ -4927,7 +5302,6 @@
           }
         },
         "required": [
-          "licenseId",
           "purpose",
           "deviceRef"
         ]
@@ -4935,6 +5309,11 @@
       "DeviceChallengeDto": {
         "type": "object",
         "properties": {
+          "licenseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Resolved license id; returned only after the activation credential has been accepted."
+          },
           "challenge": {
             "type": "string"
           },
@@ -4959,6 +5338,7 @@
           }
         },
         "required": [
+          "licenseId",
           "challenge",
           "expiresAt",
           "bindingGeneration",
@@ -4971,14 +5351,18 @@
         "properties": {
           "licenseId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "deprecated": true
           },
           "activationKey": {
             "type": "string",
-            "pattern": "^0x[0-9a-fA-F]{64}$"
+            "pattern": "^0x[0-9a-fA-F]{64}$",
+            "description": "Bearer activation credential supplied by the enterprise administrator"
           },
           "challenge": {
-            "type": "string"
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 512
           },
           "deviceRef": {
             "type": "string",
@@ -4995,48 +5379,11 @@
           }
         },
         "required": [
-          "licenseId",
           "activationKey",
           "challenge",
           "deviceRef",
           "devicePublicKey",
           "proof"
-        ]
-      },
-      "Phase6CommandDto": {
-        "type": "object",
-        "properties": {
-          "commandId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "PENDING",
-              "SUBMITTED",
-              "SUBMITTED_UNKNOWN",
-              "CONFIRMED",
-              "RETRYABLE_FAILED",
-              "DEAD_LETTER",
-              "ABANDONED",
-              "SUPERSEDED"
-            ]
-          },
-          "licenseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "deviceId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          }
-        },
-        "required": [
-          "commandId",
-          "status",
-          "licenseId"
         ]
       },
       "LicensingActionVerificationDto": {
@@ -5064,6 +5411,50 @@
         "required": [
           "action",
           "licenseId"
+        ]
+      },
+      "ResolveLicensingActionDto": {
+        "type": "object",
+        "properties": {
+          "actionToken": {
+            "type": "string",
+            "minLength": 20
+          }
+        },
+        "required": [
+          "actionToken"
+        ]
+      },
+      "LicensingActionResolutionDto": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "ROTATE_KEY",
+              "REVOKE_DEVICE",
+              "REMOTE_REVOKE_DEVICE",
+              "KEY_RECOVERY"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "action",
+          "licenseId",
+          "expiresAt"
         ]
       },
       "Phase6CommandStatusDto": {
@@ -5104,8 +5495,7 @@
               "RESUME_LICENSE",
               "REVOKE_LICENSE",
               "ROTATE_KEY",
-              "ACTIVATE_DEVICE",
-              "REVOKE_DEVICE"
+              "SYNC_DEVICE_COUNT"
             ]
           },
           "confirmedAt": {
@@ -5184,6 +5574,42 @@
         "required": [
           "actionToken",
           "currentKey"
+        ]
+      },
+      "Phase6CommandDto": {
+        "type": "object",
+        "properties": {
+          "commandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUBMITTED",
+              "SUBMITTED_UNKNOWN",
+              "CONFIRMED",
+              "RETRYABLE_FAILED",
+              "DEAD_LETTER",
+              "ABANDONED",
+              "SUPERSEDED"
+            ]
+          },
+          "licenseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "deviceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        },
+        "required": [
+          "commandId",
+          "status",
+          "licenseId"
         ]
       },
       "ActivationKeyRecoveryDto": {
@@ -5294,6 +5720,9 @@
       "EntitlementValidationDto": {
         "type": "object",
         "properties": {
+          "bindingGeneration": {
+            "type": "number"
+          },
           "valid": {
             "type": "boolean",
             "enum": [
@@ -5324,6 +5753,7 @@
           }
         },
         "required": [
+          "bindingGeneration",
           "valid",
           "expiresAt",
           "licenseId",

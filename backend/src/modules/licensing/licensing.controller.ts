@@ -5,12 +5,14 @@ import {
   ParseUUIDPipe,
   Post,
   Get,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 
 import { CurrentUser, Roles } from '../identity-access/security.decorators.js';
-import { AuthGuard, RolesGuard } from '../identity-access/security.guards.js';
+import { AuthGuard, OptionalAuthGuard, RolesGuard } from '../identity-access/security.guards.js';
 import type { AuthPrincipal } from '../identity-access/identity.types.js';
 import {
   ActivateDeviceDto,
@@ -32,36 +34,43 @@ import {
   LicensingActionResolutionDto,
 } from './licensing.dto.js';
 import { LicensingService } from './licensing.service.js';
+import { LicenseDeviceDto } from '../blockchain/presentation/license.dto.js';
 
 @ApiTags('licensing')
 @Controller()
-@UseGuards(AuthGuard, RolesGuard)
 @ApiBearerAuth()
 export class LicensingController {
   constructor(private readonly service: LicensingService) {}
 
   @Post('activations/challenge')
-  @Roles('CUSTOMER')
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: 'Create a device challenge; activation challenges resolve the license from the bearer activation key and require no purchaser login' })
   @ApiCreatedResponse({ type: DeviceChallengeDto })
-  challenge(@CurrentUser() actor: AuthPrincipal, @Body() dto: ActivationChallengeDto) {
-    return this.service.challenge(actor, dto);
+  async challenge(@CurrentUser() actor: AuthPrincipal | undefined, @Body() dto: ActivationChallengeDto, @Req() request: Request) {
+    // Use the connected peer, not untrusted forwarded headers. A reverse proxy
+    // shares this budget and should also apply its own client-IP limit.
+    await this.service.limitPublicActivation(request.socket.remoteAddress ?? 'unknown');
+    return this.service.challenge(actor ?? null, dto);
   }
 
   @Post('activations')
-  @Roles('CUSTOMER')
-  @ApiOperation({ summary: 'Request a device activation command after off-chain proof verification' })
-  @ApiCreatedResponse({ type: Phase6CommandDto })
-  activate(@CurrentUser() actor: AuthPrincipal, @Body() dto: ActivateDeviceDto) {
-    return this.service.activate(actor, dto);
+  @UseGuards(OptionalAuthGuard)
+  @ApiOperation({ summary: 'Activate a device with a bearer activation key and device proof; no purchaser session is required' })
+  @ApiCreatedResponse({ type: LicenseDeviceDto })
+  async activate(@CurrentUser() actor: AuthPrincipal | undefined, @Body() dto: ActivateDeviceDto, @Req() request: Request) {
+    await this.service.limitPublicActivation(request.socket.remoteAddress ?? 'unknown');
+    return this.service.activate(actor ?? null, dto);
   }
 
   @Post('licenses/action-verification')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')
   requestActionVerification(@CurrentUser() actor: AuthPrincipal, @Body() dto: LicensingActionVerificationDto) {
     return this.service.requestActionVerification(actor, dto);
   }
 
   @Post('licenses/action-verification/resolve')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')
   @ApiOperation({ summary: 'Resolve the licensing action an email token authorizes without consuming it' })
   @ApiOkResponse({ type: LicensingActionResolutionDto })
@@ -72,6 +81,7 @@ export class LicensingController {
   }
 
   @Get('commands/:commandId')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER', 'PROVIDER_ADMIN')
   @ApiOkResponse({ type: Phase6CommandStatusDto })
   commandStatus(@CurrentUser() actor: AuthPrincipal, @Param('commandId', ParseUUIDPipe) commandId: string) {
@@ -79,8 +89,9 @@ export class LicensingController {
   }
 
   @Post('licenses/:licenseId/devices/:deviceId/revoke')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')
-  @ApiCreatedResponse({ type: Phase6CommandDto })
+  @ApiCreatedResponse({ type: LicenseDeviceDto })
   revokeDevice(
     @CurrentUser() actor: AuthPrincipal,
     @Param('licenseId', ParseUUIDPipe) licenseId: string,
@@ -91,8 +102,9 @@ export class LicensingController {
   }
 
   @Post('licenses/:licenseId/devices/:deviceId/remote-revoke')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')
-  @ApiCreatedResponse({ type: Phase6CommandDto })
+  @ApiCreatedResponse({ type: LicenseDeviceDto })
   remoteRevokeDevice(
     @CurrentUser() actor: AuthPrincipal,
     @Param('licenseId', ParseUUIDPipe) licenseId: string,
@@ -103,6 +115,7 @@ export class LicensingController {
   }
 
   @Post('licenses/:licenseId/activation-key/rotate')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')
   @ApiCreatedResponse({ type: Phase6CommandDto })
   rotate(
@@ -114,6 +127,7 @@ export class LicensingController {
   }
 
   @Post('licenses/:licenseId/activation-key/recover')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('CUSTOMER')
   @ApiCreatedResponse({ type: Phase6CommandDto })
   recoverActivationKey(
@@ -125,6 +139,7 @@ export class LicensingController {
   }
 
   @Post('licenses/:licenseId/lifecycle')
+  @UseGuards(AuthGuard, RolesGuard)
   @Roles('PROVIDER_ADMIN')
   @ApiCreatedResponse({ type: Phase6CommandDto })
   lifecycle(
@@ -136,23 +151,23 @@ export class LicensingController {
   }
 
   @Post('entitlements/issue')
-  @Roles('CUSTOMER')
+  @UseGuards(OptionalAuthGuard)
   @ApiCreatedResponse({ type: EntitlementDto })
-  issueEntitlement(@CurrentUser() actor: AuthPrincipal, @Body() dto: EntitlementRefreshDto) {
-    return this.service.issueEntitlement(actor, dto);
+  issueEntitlement(@CurrentUser() actor: AuthPrincipal | undefined, @Body() dto: EntitlementRefreshDto) {
+    return this.service.issueEntitlement(actor ?? null, dto);
   }
 
   @Post('entitlements/refresh')
-  @Roles('CUSTOMER')
+  @UseGuards(OptionalAuthGuard)
   @ApiCreatedResponse({ type: EntitlementDto })
-  refreshEntitlement(@CurrentUser() actor: AuthPrincipal, @Body() dto: EntitlementRefreshDto) {
-    return this.service.refreshEntitlement(actor, dto);
+  refreshEntitlement(@CurrentUser() actor: AuthPrincipal | undefined, @Body() dto: EntitlementRefreshDto) {
+    return this.service.refreshEntitlement(actor ?? null, dto);
   }
 
   @Post('entitlements/verify')
-  @Roles('CUSTOMER')
+  @UseGuards(OptionalAuthGuard)
   @ApiOkResponse({ type: EntitlementValidationDto })
-  verifyEntitlement(@CurrentUser() actor: AuthPrincipal, @Body() dto: EntitlementVerifyDto) {
-    return this.service.verifyEntitlement(actor, dto);
+  verifyEntitlement(@CurrentUser() actor: AuthPrincipal | undefined, @Body() dto: EntitlementVerifyDto) {
+    return this.service.verifyEntitlement(actor ?? null, dto);
   }
 }

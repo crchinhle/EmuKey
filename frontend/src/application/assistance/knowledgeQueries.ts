@@ -41,7 +41,7 @@ export function useCreateKnowledgeDocument() {
 export function usePublishKnowledgeDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => requestJson<KnowledgeDocumentDto>(`/knowledge/documents/${encodeURIComponent(id)}/publish`, { method: 'POST' }),
+    mutationFn: ({ id, expectedCurrentVersion }: { id: string; expectedCurrentVersion: number }) => requestJson<KnowledgeDocumentDto>(`/knowledge/documents/${encodeURIComponent(id)}/publish`, { method: 'POST', body: JSON.stringify({ expectedCurrentVersion }) }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['knowledge', 'documents'] });
     },

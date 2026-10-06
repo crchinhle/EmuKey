@@ -25,9 +25,11 @@ const EXPECTED_EXTENSIONS = ['citext', 'pgcrypto', 'vector'] as const;
 
 const EXPECTED_CRITICAL_CONSTRAINTS = {
   ck_license_devices_ref:
-    "CHECK (device_ref::text ~ '^[0-9a-f]{64}$'::text)",
+    "CHECK (octet_length(device_ref::text) >= 1 AND octet_length(device_ref::text) <= 128)",
   ck_license_devices_signer_address:
     "CHECK (device_signer_address::text ~ '^0x[0-9a-f]{40}$'::text)",
+  ck_license_devices_status:
+    "CHECK (status::text = ANY (ARRAY['ACTIVE'::character varying, 'REVOKED'::character varying]::text[]))",
   ck_licenses_pending_activation:
     "CHECK (pending_activation_commitment IS NULL AND pending_activation_key_version IS NULL AND pending_activation_command_id IS NULL OR status::text <> 'PENDING_ONCHAIN'::text AND pending_activation_commitment IS NOT NULL AND pending_activation_key_version = (activation_key_version + 1) AND pending_activation_command_id IS NOT NULL AND octet_length(pending_activation_commitment) = 32)",
   fk_conversations_customer:
@@ -38,12 +40,8 @@ const EXPECTED_CRITICAL_CONSTRAINTS = {
     'FOREIGN KEY (order_id, provider_user_id) REFERENCES orders(id, provider_user_id) ON DELETE RESTRICT',
   fk_chain_commands_renewal_order_license:
     'FOREIGN KEY (renewal_order_id, provider_user_id, license_id, renewal_order_type) REFERENCES orders(id, provider_user_id, target_license_id, order_type) ON DELETE RESTRICT',
-  fk_chain_events_command_device:
-    'FOREIGN KEY (chain_command_id, license_id, license_device_id) REFERENCES chain_commands(id, license_id, license_device_id) ON DELETE RESTRICT',
   fk_chain_events_command_subject:
     'FOREIGN KEY (chain_command_id, provider_user_id, license_id) REFERENCES chain_commands(id, provider_user_id, license_id) ON DELETE RESTRICT',
-  fk_license_devices_last_chain_event:
-    'FOREIGN KEY (last_applied_chain_event_id, id, license_id) REFERENCES chain_events(confirmed_device_event_id, license_device_id, license_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED',
   fk_licenses_last_chain_event:
     'FOREIGN KEY (last_applied_chain_event_id, id) REFERENCES chain_events(confirmed_license_event_id, license_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED',
   fk_licenses_plan:
@@ -68,7 +66,7 @@ const EXPECTED_CRITICAL_INDEXES = {
   uq_chain_commands_relayer_nonce:
     "CREATE UNIQUE INDEX uq_chain_commands_relayer_nonce ON public.chain_commands USING btree (network, chain_id, lower((relayer_address)::text), nonce) WHERE ((relayer_address IS NOT NULL) AND (nonce IS NOT NULL) AND (NOT (((status)::text = ANY ((ARRAY['ABANDONED'::character varying, 'SUPERSEDED'::character varying])::text[])) AND ((resolution_evidence_type)::text = 'NONCE_RESERVATION_RELEASED'::text))))",
   uq_chain_commands_one_forward_mutation:
-    "CREATE UNIQUE INDEX uq_chain_commands_one_forward_mutation ON public.chain_commands USING btree (license_id) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUBMITTED'::character varying, 'RETRYABLE_FAILED'::character varying])::text[]))",
+    "CREATE UNIQUE INDEX uq_chain_commands_one_forward_mutation ON public.chain_commands USING btree (license_id) WHERE (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUBMITTED'::character varying, 'RETRYABLE_FAILED'::character varying])::text[])) AND ((command_type)::text <> 'SYNC_DEVICE_COUNT'::text))",
   uq_chain_commands_current_issue_order:
     "CREATE UNIQUE INDEX uq_chain_commands_current_issue_order ON public.chain_commands USING btree (issue_order_id) WHERE ((issue_order_id IS NOT NULL) AND ((status)::text <> ALL ((ARRAY['ABANDONED'::character varying, 'SUPERSEDED'::character varying])::text[])))",
   uq_chain_commands_current_renewal_order:
@@ -132,8 +130,26 @@ const EXPECTED_CRITICAL_COLUMNS = {
     isGenerated: 'NEVER',
     isNullable: 'YES',
   },
+  'license_devices.device_ref': {
+    dataType: 'character varying',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'NO',
+  },
   'license_devices.device_signer_address': {
     dataType: 'character varying',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'NO',
+  },
+  'licenses.active_device_count': {
+    dataType: 'integer',
+    expression: null,
+    isGenerated: 'NEVER',
+    isNullable: 'NO',
+  },
+  'licenses.device_state_version': {
+    dataType: 'bigint',
     expression: null,
     isGenerated: 'NEVER',
     isNullable: 'NO',

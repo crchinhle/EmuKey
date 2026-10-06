@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 
 import {
   describeApiError,
+  requestJson,
   type ProfileInput,
   useAuth,
 } from '../../application/auth/authContext';
@@ -16,6 +17,7 @@ const roleLabels: Record<string, string> = {
 };
 
 const strongPasswordRules = [
+  { min: 12, message: 'Mật khẩu phải có ít nhất 12 ký tự.' },
   { max: 128, message: 'Mật khẩu không được quá 128 ký tự.' },
   { pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s]).+$/, message: 'Mật khẩu phải có ít nhất 1 chữ hoa, 1 chữ thường, 1 số và 1 ký tự đặc biệt.' },
 ];
@@ -70,22 +72,16 @@ export function AccountProfileScreen() {
     setPasswordSaved(false);
     setPasswordSaving(true);
     try {
-      const response = await fetch('/api/v1/auth/password', {
+      await requestJson<void>('/auth/password', {
         body: JSON.stringify({ currentPassword: values.currentPassword, password: values.password }),
         headers: { 'Content-Type': 'application/json' },
         method: 'PUT',
       });
-      if (!response.ok) {
-        let payload: unknown;
-        try { payload = await response.json(); } catch { payload = undefined; }
-        throw new Error((payload as { error?: { message?: string } })?.error?.message ?? 'Không thể đổi mật khẩu. Vui lòng thử lại.');
-      }
       setPasswordSaved(true);
       passwordForm.resetFields();
-      // Force a session refresh so the new password takes effect immediately.
       await logout();
     } catch (cause) {
-      setPasswordError(cause instanceof Error ? cause.message : 'Không thể đổi mật khẩu. Vui lòng thử lại.');
+      setPasswordError(describeApiError(cause, 'Không thể đổi mật khẩu. Vui lòng thử lại.'));
     } finally {
       setPasswordSaving(false);
     }
@@ -156,7 +152,8 @@ export function AccountProfileScreen() {
                 form={passwordForm}
                 layout="vertical"
                 onFinish={(values) => void submitPassword(values)}
-                style={{ width: 320 }}
+                style={{ width: 'min(320px, calc(100vw - 48px))' }}
+                validateTrigger="onBlur"
               >
                 <Form.Item
                   label="Mật khẩu hiện tại"
