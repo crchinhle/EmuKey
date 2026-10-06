@@ -10,7 +10,7 @@ const temporaryDirectory = check
   : undefined;
 const specification = temporaryDirectory
   ? join(temporaryDirectory, 'openapi.json')
-  : join(root, 'docs', 'openapi', 'openapi.json');
+  : join(root, 'openapi', 'openapi.json');
 
 const environment = {
   ...process.env,
@@ -21,14 +21,14 @@ const environment = {
   DATABASE_URL: 'postgresql://emukey:local@127.0.0.1:5432/emukey',
   EMAIL_ADAPTER: 'fake',
   EVM_ADAPTER: 'viem',
-  EVM_NETWORK: 'hardhat',
-  EVM_CHAIN_ID: '31337',
+  EVM_NETWORK: 'sepolia',
+  EVM_CHAIN_ID: '11155111',
   EVM_CONFIRMATIONS: '2',
-  EVM_CONTRACT_ADDRESS: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-  EVM_DEPLOYMENT_BLOCK: '1',
-  EVM_INDEXER_BATCH_SIZE: '500',
   EVM_RELAYER_PRIVATE_KEY: `0x${'11'.repeat(32)}`,
-  EVM_RPC_HTTP_URL: 'http://127.0.0.1:8545',
+  EVM_CONTRACT_ADDRESS: '0x4d30200F3D0791e0aE34Fa6075A4e4b03f4d1cBC',
+  EVM_DEPLOYMENT_BLOCK: '11842365',
+  EVM_INDEXER_BATCH_SIZE: '500',
+  EVM_RPC_HTTP_URL: 'https://ethereum-sepolia-rpc.publicnode.com',
   STORAGE_ADAPTER: 'local',
   ACTIVATION_ENVELOPE_ADAPTER: 'redis',
   ACTIVATION_ENVELOPE_KEY: '00'.repeat(32),
@@ -52,6 +52,7 @@ const environment = {
   NOTIFICATION_LEASE_SECONDS: '300',
   NOTIFICATION_RETRY_BASE_SECONDS: '30',
   PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE: '30',
+  PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE: '30',
   PUBLIC_VERIFY_ID_MIN_LENGTH: '20',
   REDIS_URL: 'redis://127.0.0.1:6379',
 };
@@ -85,7 +86,7 @@ try {
 
   if (check) {
     const expected = await readFile(
-      join(root, 'docs', 'openapi', 'openapi.json'),
+      join(root, 'openapi', 'openapi.json'),
       'utf8',
     );
     const actual = await readFile(specification, 'utf8');

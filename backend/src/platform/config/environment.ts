@@ -20,6 +20,7 @@ const LOCAL_ADAPTERS = [
   'PUSH_ADAPTER',
   'STORAGE_ADAPTER',
 ] as const;
+
 const HARDHAT_DEVELOPMENT_RELAYER_KEY =
   '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
@@ -88,6 +89,7 @@ export interface PlatformEnvironment {
   NOTIFICATION_LEASE_SECONDS: number;
   NOTIFICATION_RETRY_BASE_SECONDS: number;
   PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE: number;
+  PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE: number;
   PUBLIC_VERIFY_ID_MIN_LENGTH: number;
   ACTIVATION_ENVELOPE_ADAPTER: string;
   ACTIVATION_ENVELOPE_KEY: string;
@@ -164,10 +166,9 @@ function assertHttpUrl(value: string, name: string): void {
   }
 }
 
-function assertNetworkChain(network: string, chainId: number): void {
-  const expected = network === 'hardhat' ? 31_337 : network === 'sepolia' ? 11_155_111 : undefined;
-  if (expected !== undefined && chainId !== expected) {
-    throw new Error(`EVM_NETWORK_${network.toUpperCase()}_CHAIN_ID_MISMATCH`);
+function assertSepoliaRuntime(network: string, chainId: number): void {
+  if (network !== 'sepolia' || chainId !== 11_155_111) {
+    throw new Error('EVM_RUNTIME_MUST_BE_SEPOLIA');
   }
 }
 
@@ -268,6 +269,7 @@ export function validateEnvironment(
     NOTIFICATION_LEASE_SECONDS: parsePositiveInteger(typeof environment.NOTIFICATION_LEASE_SECONDS === 'string' && environment.NOTIFICATION_LEASE_SECONDS.trim() !== '' ? environment.NOTIFICATION_LEASE_SECONDS : '300', 'NOTIFICATION_LEASE_SECONDS'),
     NOTIFICATION_RETRY_BASE_SECONDS: parsePositiveInteger(typeof environment.NOTIFICATION_RETRY_BASE_SECONDS === 'string' && environment.NOTIFICATION_RETRY_BASE_SECONDS.trim() !== '' ? environment.NOTIFICATION_RETRY_BASE_SECONDS : '30', 'NOTIFICATION_RETRY_BASE_SECONDS'),
     PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE: parsePositiveInteger(typeof environment.PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE === 'string' && environment.PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE.trim() !== '' ? environment.PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE : '30', 'PUBLIC_VERIFY_RATE_LIMIT_PER_MINUTE'),
+    PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE: parsePositiveInteger(typeof environment.PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE === 'string' && environment.PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE.trim() !== '' ? environment.PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE : '30', 'PUBLIC_ACTIVATION_RATE_LIMIT_PER_MINUTE'),
     PUBLIC_VERIFY_ID_MIN_LENGTH: parsePositiveInteger(typeof environment.PUBLIC_VERIFY_ID_MIN_LENGTH === 'string' && environment.PUBLIC_VERIFY_ID_MIN_LENGTH.trim() !== '' ? environment.PUBLIC_VERIFY_ID_MIN_LENGTH : '20', 'PUBLIC_VERIFY_ID_MIN_LENGTH'),
   };
 
@@ -359,7 +361,7 @@ export function validateEnvironment(
     throw new Error('EVM_CONTRACT_ADDRESS must contain a 20-byte address');
   }
   result.EVM_CONTRACT_ADDRESS = result.EVM_CONTRACT_ADDRESS.toLowerCase();
-  assertNetworkChain(result.EVM_NETWORK, result.EVM_CHAIN_ID);
+  assertSepoliaRuntime(result.EVM_NETWORK, result.EVM_CHAIN_ID);
   if (!/^[0-9a-fA-F]{64}$/.test(result.ACTIVATION_ENVELOPE_KEY)) {
     throw new Error('ACTIVATION_ENVELOPE_KEY must contain exactly 32 bytes');
   }

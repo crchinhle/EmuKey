@@ -28,7 +28,6 @@ import {
   createCheckout,
   createOrder,
   getOrder,
-  getCommandStatus,
   getOrderTerms,
   getProfile,
   getRenewalPreview,
@@ -40,23 +39,14 @@ import {
   listProducts,
   listNotifications,
   markNotificationRead,
-  activateDevice,
-  createActivationChallenge,
   createConversation,
   appendConversationMessage,
   askConversationAi,
-  issueEntitlement,
-  loadActivationKey,
   login,
   logout,
   restoreSession,
-  retrieveActivationKey,
-  verifyEntitlement,
   requestLicensingActionVerification,
-  refreshEntitlement,
-  revokeDevice,
-  rotateActivationKey,
-  storeActivationKey,
+  remoteRevokeDevice,
   type MobileDevice,
   type MobileCheckoutSession,
   verifyPublicLicense,
@@ -72,8 +62,6 @@ import {
   type MobileConversationMessage,
   updateProfile,
 } from '../infrastructure/api/client';
-import { MobileApiError } from '../infrastructure/api/client';
-import { createOrLoadDeviceIdentity } from '../infrastructure/device-identity';
 
 type RootStackParamList = {
   Assistance: undefined;
@@ -94,11 +82,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export function LoginScreen({
   onAuthenticated,
   onVerify,
-  onActivate,
 }: {
   readonly onAuthenticated: (session: MobileSession) => void;
   readonly onVerify: () => void;
-  readonly onActivate: () => void;
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -137,7 +123,6 @@ export function LoginScreen({
       <Button disabled={!email.trim() || password.length < 8} onPress={() => void submit()} title="Đăng nhập" />
       <Button onPress={() => { setForgotMode(true); setError(null); }} title="Quên mật khẩu" />
       <Button onPress={onVerify} title="Xác minh License công khai" />
-      <Button onPress={onActivate} title="Kích hoạt bằng mã doanh nghiệp" />
     </ScrollView>
   );
 }
@@ -719,58 +704,20 @@ export function PaymentScreen({ navigation, route }: NativeStackScreenProps<Root
   );
 }
 
-export function ActivationScreen({ onComplete }: { readonly onComplete: () => void }) {
-  const [key, setKey] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const submit = async () => {
-    setError(null);
-    setMessage(null);
-    try {
-      const identity = await createOrLoadDeviceIdentity('activation-session');
-      const challenge = await createActivationChallenge({ activationKey: key.trim(), deviceRef: identity.deviceRef, purpose: 'ACTIVATE_DEVICE' }, false);
-      const device = await activateDevice({ activationKey: key.trim(), challenge: challenge.challenge, devicePublicKey: identity.address, deviceRef: identity.deviceRef, proof: identity.signMessage(challenge.challenge) });
-      setMessage(`Thiết bị đã kích hoạt (${device.status}).`);
-      onComplete();
-    } catch (cause) {
-      setError(cause instanceof MobileApiError && cause.status === 429 ? 'Có quá nhiều yêu cầu. Vui lòng thử lại sau.' : 'Mã bản quyền không hợp lệ hoặc không thể sử dụng.');
-    }
-  };
-  return <ScrollView contentContainerStyle={styles.content}>
-    <Text accessibilityRole="header" style={styles.heading}>Kích hoạt phần mềm</Text>
-    <Text>Nhập mã bản quyền do quản trị viên doanh nghiệp cung cấp. Không cần đăng nhập tài khoản người mua.</Text>
-    <TextInput accessibilityLabel="Mã bản quyền" autoCapitalize="none" onChangeText={setKey} placeholder="0x…" style={styles.input} value={key} />
-    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    {message ? <Text accessibilityRole="alert" style={styles.success}>{message}</Text> : null}
-    <Button disabled={key.trim().length === 0} onPress={() => void submit()} title="Kích hoạt" />
-  </ScrollView>;
-}
-
 export function LicensesScreen({
   navigation,
 }: {
   readonly navigation?: NativeStackScreenProps<RootStackParamList, 'Licenses'>['navigation'];
 } = {}) {
   const [licenses, setLicenses] = useState<MobileLicense[]>([]);
-  const [activationKey, setActivationKey] = useState<{ key: string; licenseId: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [devices, setDevices] = useState<Record<string, MobileDevice[]>>({});
   const [actionToken, setActionToken] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  const [commandId, setCommandId] = useState<string | null>(null);
-  const [entitlementToken, setEntitlementToken] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const loadLicenses = async (refresh = false) => { if (refresh) setRefreshing(true); setError(null); try { setLicenses(await listLicenses()); } catch { setError('Không thể tải danh sách License.'); } finally { setRefreshing(false); } };
   useEffect(() => { void loadLicenses(); }, []);
-  const retrieve = async (license: MobileLicense) => {
-    try {
-      const result = await retrieveActivationKey(license.id);
-      await storeActivationKey(license.id, result.activationKey);
-      setActivationKey({ key: result.activationKey, licenseId: license.id });
-    } catch {
-      setError('Activation key không còn khả dụng hoặc đã được nhận trước đó.');
-    }
-  };
   const loadDevices = async (licenseId: string) => {
     try {
       const result = await listDevices(licenseId);
@@ -779,129 +726,30 @@ export function LicensesScreen({
       setError('Không thể tải danh sách thiết bị.');
     }
   };
-  useEffect(() => {
-    let active = true;
-    void Promise.all(licenses.map(async (license) => [license.id, await loadActivationKey(license.id)] as const))
-      .then((values) => {
-        if (!active) return;
-        const saved = values.find(([, key]) => key !== null);
-        if (saved?.[1]) setActivationKey({ key: saved[1], licenseId: saved[0] });
-      });
-    return () => { active = false; };
-  }, [licenses]);
-  const activate = async (license: MobileLicense) => {
-    const key = activationKey?.licenseId === license.id ? activationKey.key : null;
-    if (!key) {        setError('Hãy nhập mã bản quyền do quản trị viên doanh nghiệp cung cấp trước khi kích hoạt thiết bị.'); return; }
+  const remoteRevoke = async (licenseId: string, deviceId: string) => {
+    setError(null);
     setMessage(null);
-    setError(null);
-    try {
-      const identity = await createOrLoadDeviceIdentity(license.id);
-      const challenge = await createActivationChallenge({ activationKey: key, deviceRef: identity.deviceRef, licenseId: license.id, purpose: 'ACTIVATE_DEVICE' }, false);
-      const proof = identity.signMessage(challenge.challenge);
-       const device = await activateDevice({
-         activationKey: key,
-         challenge: challenge.challenge,
-         devicePublicKey: identity.address,
-         deviceRef: identity.deviceRef,
-        proof,
-      });
-       setMessage(`Thiết bị ${device.status}, binding generation ${device.bindingGeneration}.`);
-       await loadDevices(license.id);
-    } catch (cause) {
-      if (cause instanceof MobileApiError && [409, 422].includes(cause.status)) {
-        setError('Thiết bị đã vượt giới hạn số lượng hoặc trùng thiết bị. Kiểm tra lại danh sách thiết bị.');
-      } else if (cause instanceof MobileApiError && (cause.status === 401 || cause.status === 403 || cause.status === 400)) {
-        setError(cause.message || 'Activation key hoặc chữ ký thiết bị không hợp lệ.');
-      } else {
-        setError('Không thể kích hoạt thiết bị. Kiểm tra activation key, quota và trạng thái on-chain.');
-      }
+    if (!currentPassword.trim()) {
+      setError('Vui lòng nhập mật khẩu hiện tại.');
+      return;
     }
-  };
-  const revoke = async (licenseId: string, device: MobileDevice) => {
-    setError(null);
+    if (!actionToken.trim()) {
+      setError('Vui lòng nhập action token từ email.');
+      return;
+    }
     try {
-      const key = activationKey?.licenseId === licenseId ? activationKey.key : await loadActivationKey(licenseId);
-      if (!key) throw new Error('ACTIVATION_KEY_MISSING');
-      const identity = await createOrLoadDeviceIdentity(licenseId);
-      const challenge = await createActivationChallenge({ deviceId: device.id, deviceRef: identity.deviceRef, licenseId, purpose: 'SELF_REVOKE_DEVICE' });
-      const proof = identity.signMessage(challenge.challenge);
-       const revoked = await revokeDevice(licenseId, device.id, { actionToken, activationKey: key, challenge: challenge.challenge, proof });
-       setMessage(`Thiết bị ${revoked.status} ngay trong PostgreSQL.`);
+      const revoked = await remoteRevokeDevice(licenseId, deviceId, {
+        actionToken: actionToken.trim(),
+        currentPassword: currentPassword.trim(),
+      });
+      setMessage(`Thiết bị ${revoked.status} ngay trong PostgreSQL.`);
       await loadDevices(licenseId);
+      setActionToken('');
+      setCurrentPassword('');
     } catch {
-      setError('Không thể thu hồi thiết bị. Xác nhận email trước và nhập action token.');
+      setError('Không thể thu hồi thiết bị. Kiểm tra mật khẩu, action token và quyền sở hữu.');
     }
   };
-  const sendEntitlement = async (licenseId: string, device: MobileDevice, refresh: boolean) => {
-    setError(null);
-    try {
-      const identity = await createOrLoadDeviceIdentity(licenseId);
-      const challenge = await createActivationChallenge({
-        deviceId: device.id,
-        deviceRef: identity.deviceRef,
-        licenseId,
-        purpose: refresh ? 'REFRESH_ENTITLEMENT' : 'ISSUE_ENTITLEMENT',
-      });
-      const proof = identity.signMessage(challenge.challenge);
-      const result = refresh
-        ? await refreshEntitlement(licenseId, device.id, challenge.challenge, proof)
-        : await issueEntitlement(licenseId, device.id, challenge.challenge, proof);
-      setEntitlementToken(result.token);
-      setMessage(`Entitlement hợp lệ đến ${result.expiresAt}`);
-    } catch {
-      setError('Thiết bị chưa đủ điều kiện hoặc chữ ký thiết bị không hợp lệ.');
-    }
-  };
-  const rotateKey = async (licenseId: string) => {
-    setError(null);
-    try {
-      const key = activationKey?.licenseId === licenseId ? activationKey.key : await loadActivationKey(licenseId);
-      if (!key) throw new Error('ACTIVATION_KEY_MISSING');
-      const command = await rotateActivationKey(licenseId, { actionToken, currentKey: key });
-      setMessage(`Rotate ${command.status}: ${command.commandId}. Key mới khả dụng sau finality.`);
-      setCommandId(command.commandId);
-    } catch {
-      setError('Không thể đổi activation key. Kiểm tra token email và key hiện tại.');
-    }
-  };
-  useEffect(() => {
-    if (!commandId) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const schedule = [2_000, 5_000, 10_000, 15_000];
-    let attempt = 0;
-    const poll = async () => {
-      try {
-        const command = await getCommandStatus(commandId);
-        if (!active) return;
-        attempt = 0;
-        setError(null);
-        const transactionHash = typeof command.transactionHash === 'string' ? command.transactionHash : null;
-        setMessage(`Command ${command.status}: ${command.commandId}${transactionHash ? ` · ${transactionHash}` : ''}`);
-        if (command.status === 'CONFIRMED') {
-          if (command.commandType === 'ROTATE_KEY') {
-            void retrieveActivationKey(command.licenseId).then(async (result) => {
-              await storeActivationKey(command.licenseId, result.activationKey);
-              setActivationKey({ key: result.activationKey, licenseId: command.licenseId });
-              setMessage(`Đã nhận key phiên bản ${result.keyVersion} sau finality.`);
-            }).catch(() => setError('Command đã final nhưng không thể nhận activation key mới.'));
-          }
-          void listLicenses().then(setLicenses);
-          void loadDevices(command.licenseId);
-          return;
-        }
-        if (['DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'].includes(command.status)) return;
-      } catch {
-        if (active) { setError('Tạm thời không thể đọc trạng thái blockchain command. Ứng dụng sẽ thử lại.'); attempt = Math.min(attempt + 1, schedule.length - 1); }
-      }
-      if (active) timer = setTimeout(() => void poll(), schedule[attempt] ?? 15_000);
-    };
-    void poll();
-    return () => {
-      active = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [commandId]);
   return (
     <ScrollView
       contentContainerStyle={styles.content}
@@ -917,36 +765,30 @@ export function LicensesScreen({
           <Text style={styles.cardTitle}>{license.productName}</Text>
           <Text>{license.publicLicenseId}</Text>
           <Text>{licenseStatusLabel(license.status)} · {finalityLabel(license.finality)} ({license.confirmationCount}) · {license.activeDeviceCount}/{license.maxActiveDevices} thiết bị</Text>
-           {activationKey?.licenseId === license.id ? (
-            <Text selectable style={styles.activationKey}>{activationKey.key}</Text>
-          ) : (
-            <Button disabled={license.status !== 'ACTIVE'} onPress={() => void retrieve(license)} title="Nhận activation key" />
-           )}
-             <Button onPress={() => void loadDevices(license.id)} title="Xem thiết bị" />
-             <Button disabled={!activationKey || activationKey.licenseId !== license.id || license.status !== 'ACTIVE'} onPress={() => void activate(license)} title="Kích hoạt thiết bị này" />
-             <TextInput accessibilityLabel="Email action token" autoCapitalize="none" onChangeText={setActionToken} placeholder="Action token từ email" style={styles.input} value={actionToken} />
-             <Button onPress={() => void requestLicensingActionVerification(license.id, 'ROTATE_KEY').then(() => setMessage('Đã gửi email xác nhận đổi key.')).catch(() => setError('Không thể gửi email xác nhận.'))} title="Gửi email xác nhận đổi key" />
-             <Button disabled={!actionToken || !activationKey || activationKey.licenseId !== license.id} onPress={() => void rotateKey(license.id)} title="Đổi activation key" />
-            {navigation && license.status === 'ACTIVE' ? (
-              <Button
-                onPress={() => navigation.navigate('Renewal', {
-                  licenseId: license.id,
-                  originOrderId: license.originOrderId,
-                  productName: license.productName,
-                })}
-                title="Gia hạn License"
-              />
-            ) : null}
-            {(devices[license.id] ?? []).map((device) => (
-              <View key={device.id} style={styles.card}>
-                <Text>{device.deviceRef} · {device.status}</Text>
-                {device.status === 'ACTIVE' ? <Button onPress={() => void requestLicensingActionVerification(license.id, 'REVOKE_DEVICE', device.id).then(() => setMessage('Đã gửi email xác nhận thu hồi.')).catch(() => setError('Không thể gửi email xác nhận.'))} title="Gửi email xác nhận thu hồi" /> : null}
-                {device.status === 'ACTIVE' ? <Button disabled={!actionToken} onPress={() => void revoke(license.id, device)} title="Thu hồi thiết bị" /> : null}
-                {device.status === 'ACTIVE' ? <Button onPress={() => void sendEntitlement(license.id, device, false)} title="Cấp entitlement" /> : null}
-                {device.status === 'ACTIVE' ? <Button onPress={() => void sendEntitlement(license.id, device, true)} title="Làm mới entitlement" /> : null}
-                {device.status === 'ACTIVE' && entitlementToken ? <Button onPress={() => void verifyEntitlement(entitlementToken).then((result) => setMessage(`Entitlement v${result.entitlementVersion} còn hiệu lực đến ${result.expiresAt}`)).catch(() => setError('Entitlement đã hết hạn hoặc bị vô hiệu.'))} title="Kiểm tra entitlement" /> : null}
-              </View>
-            ))}
+          <Button onPress={() => void loadDevices(license.id)} title="Xem thiết bị" />
+          {navigation && license.status === 'ACTIVE' ? (
+            <Button
+              onPress={() => navigation.navigate('Renewal', {
+                licenseId: license.id,
+                originOrderId: license.originOrderId,
+                productName: license.productName,
+              })}
+              title="Gia hạn License"
+            />
+          ) : null}
+          {(devices[license.id] ?? []).map((device) => (
+            <View key={device.id} style={styles.card}>
+              <Text>{device.deviceRef} · {device.status}</Text>
+              {device.status === 'ACTIVE' ? (
+                <>
+                  <Button onPress={() => void requestLicensingActionVerification(license.id, 'REMOTE_REVOKE_DEVICE', device.id).then(() => setMessage('Đã gửi email xác nhận thu hồi.')).catch(() => setError('Không thể gửi email xác nhận.'))} title="Gửi email xác nhận thu hồi" />
+                  <TextInput accessibilityLabel="Mật khẩu hiện tại" secureTextEntry onChangeText={setCurrentPassword} placeholder="Mật khẩu" style={styles.input} value={currentPassword} />
+                  <TextInput accessibilityLabel="Action token" autoCapitalize="none" onChangeText={setActionToken} placeholder="Action token từ email" style={styles.input} value={actionToken} />
+                  <Button disabled={!actionToken.trim() || !currentPassword.trim()} onPress={() => void remoteRevoke(license.id, device.id)} title="Thu hồi thiết bị" />
+                </>
+              ) : null}
+            </View>
+          ))}
         </View>
       ))}
     </ScrollView>
@@ -1082,13 +924,11 @@ export function EmuKeyMobileApp() {
   const [session, setSession] = useState<MobileSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [publicVerify, setPublicVerify] = useState(false);
-  const [activationMode, setActivationMode] = useState(false);
   useEffect(() => { void restoreSession().then(setSession).finally(() => setLoading(false)); }, []);
   if ((!fontsLoaded && !fontError) || loading) return <View style={styles.container}><Text>Đang khôi phục phiên đăng nhập...</Text></View>;
   if (!session) {
     if (publicVerify) return <View style={styles.publicContainer}><VerifyLicenseScreen /><Button onPress={() => setPublicVerify(false)} title="Quay lại đăng nhập" /></View>;
-    if (activationMode) return <View style={styles.publicContainer}><ActivationScreen onComplete={() => setActivationMode(false)} /><Button onPress={() => setActivationMode(false)} title="Quay lại đăng nhập" /></View>;
-    return <LoginScreen onAuthenticated={setSession} onVerify={() => setPublicVerify(true)} onActivate={() => setActivationMode(true)} />;
+    return <LoginScreen onAuthenticated={setSession} onVerify={() => setPublicVerify(true)} />;
   }
   return (
     <NavigationContainer>
@@ -1117,7 +957,7 @@ const styles = StyleSheet.create({
   acceptance: { backgroundColor: '#fdfbf6', borderColor: '#a9977a', borderRadius: 8, borderWidth: 1, padding: 12 },
   acceptanceSelected: { backgroundColor: '#fbf0d6', borderColor: '#a8792e' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  activationKey: { backgroundColor: '#e0f2fe', color: '#0c4a6e', fontFamily: 'monospace', padding: 10 },
+
   brand: { color: '#7a2e3a', fontFamily: 'GreatVibes_400Regular', fontSize: 42, lineHeight: 52 },
   card: { backgroundColor: '#fdfbf6', borderColor: '#a9977a', borderRadius: 12, borderWidth: 1, gap: 8, padding: 16 },
   cardTitle: { color: '#1c1a17', fontSize: 17, fontWeight: '700' },
