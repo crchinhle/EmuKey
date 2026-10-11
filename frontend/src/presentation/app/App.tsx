@@ -44,6 +44,7 @@ import { AiAssistantLauncher } from '../components/AiAssistantLauncher';
 import { AppErrorBoundary } from '../components/AppErrorBoundary';
 import { ForbiddenPage } from '../components/ForbiddenPage';
 import { NotFoundPage } from '../components/NotFoundPage';
+import { PageLoading } from '../components/WorkspacePrimitives';
 import { antTheme, themeCssVariables, themeRootCss } from '../theme';
 import { AuthProvider, useAuth } from '../../application/auth/authContext';
 
@@ -69,9 +70,19 @@ function testUserForEntries(initialEntries: readonly string[] | undefined) {
 }
 
 function ProtectedRoute({ children, roles }: { readonly children: ReactElement; readonly roles: string[] }) {
-  const { user, loading } = useAuth();
+  const { loading, retrySessionCheck, sessionCheckError, user } = useAuth();
   const location = useLocation();
-  if (loading) return <div role="status">Đang khôi phục phiên đăng nhập...</div>;
+  if (loading) return <PageLoading label="Đang khôi phục phiên đăng nhập..." />;
+  if (sessionCheckError && !user) {
+    return (
+      <div role="alert" className="page-loading-state">
+        <div className="page-loading-indicator">
+          <p>Không thể kiểm tra phiên đăng nhập. Thử lại.</p>
+          <button onClick={retrySessionCheck} type="button">Thử lại</button>
+        </div>
+      </div>
+    );
+  }
   if (user && roles.includes(user.role)) return children;
   // A known authenticated user with a different role must not flash the login
   // screen; keep the intended URL visible on a dedicated 403 page.

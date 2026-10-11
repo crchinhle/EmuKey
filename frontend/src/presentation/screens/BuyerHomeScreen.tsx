@@ -1,4 +1,5 @@
-import { Alert, Button, Spin } from 'antd';
+import { PageLoading } from '../components/WorkspacePrimitives';
+import { Alert, Button } from 'antd';
 import { useNavigate } from 'react-router-dom';
 
 import { useAllLicenseDevices, useLicenses } from '../../application/licenses/licenseQueries';
@@ -21,19 +22,14 @@ export function BuyerHomeScreen() {
   const loading = licenses.isLoading || orders.isLoading || deviceQueries.some((query) => query.isLoading);
   const failed = licenses.isError || orders.isError || deviceQueries.some((query) => query.isError);
 
+  if (loading) return <PageLoading />;
+  if (failed && (!licenses.data || !orders.data || deviceQueries.some((query) => query.isError && !query.data))) {
+    return <Alert showIcon message="Không thể tải dữ liệu trang chủ." type="error" action={<Button onClick={() => { void licenses.refetch(); void orders.refetch(); deviceQueries.forEach((query) => { void query.refetch(); }); }}>Thử lại</Button>} />;
+  }
+
   return (
     <div className="buyer-home-screen">
       <main className="buyer-home-main">
-        <section aria-labelledby="buyer-home-title" className="buyer-home-welcome">
-          <h1 id="buyer-home-title">Bản quyền và đơn hàng của bạn</h1>
-          <p>Xem nhanh đơn hàng, thiết bị và bản quyền đang sử dụng.</p>
-          <div className="buyer-home-hero-actions">
-            <Button onClick={() => void navigate('/buyer/products')} type="primary">Xem sản phẩm</Button>
-            <Button onClick={() => void navigate('/buyer/licenses')}>Bản quyền của tôi</Button>
-          </div>
-        </section>
-
-        {loading ? <Spin aria-label="Đang tải trang chủ người mua" /> : null}
         {failed ? <Alert showIcon message="Không thể tải dữ liệu trang chủ." type="error" /> : null}
 
         <section aria-label="Tóm tắt tài khoản" className="buyer-home-metrics">

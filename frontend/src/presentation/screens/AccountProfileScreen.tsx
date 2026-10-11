@@ -1,4 +1,5 @@
-import { Alert, Button, Form, Input, Popover, Tag } from 'antd';
+import { LoadingOverlay } from '../components/WorkspacePrimitives';
+import { Alert, Button, Form, Input, Modal, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 
 import {
@@ -32,6 +33,7 @@ export function AccountProfileScreen() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   useEffect(() => {
     form.setFieldsValue({
@@ -78,6 +80,7 @@ export function AccountProfileScreen() {
         method: 'PUT',
       });
       setPasswordSaved(true);
+      setPasswordOpen(false);
       passwordForm.resetFields();
       await logout();
     } catch (cause) {
@@ -134,9 +137,9 @@ export function AccountProfileScreen() {
             ) : null}
             {saved ? <Alert showIcon type="success" message="Đã cập nhật hồ sơ." /> : null}
             {error ? <Alert showIcon role="alert" type="error" message={error} /> : null}
-            <Button htmlType="submit" loading={saving} type="primary">
+            <><Button htmlType="submit" disabled={saving} type="primary">
               Lưu thay đổi
-            </Button>
+            </Button><LoadingOverlay active={saving} label="Đang xử lý yêu cầu: Lưu thay đổi" /></>
           </Form>
         </section>
         <aside className="workspace-card section-card profile-summary">
@@ -146,13 +149,19 @@ export function AccountProfileScreen() {
           <small>
             Email và vai trò được bảo vệ bởi hệ thống xác thực, không thay đổi tại màn hình này.
           </small>
-          <Popover
-            content={
+          <Button onClick={() => { setPasswordError(null); setPasswordOpen(true); }} style={{ marginTop: 16 }} type="default">Đổi mật khẩu</Button>
+          <Modal
+            className="account-password-modal"
+            destroyOnHidden
+            footer={null}
+            onCancel={() => { if (!passwordSaving) setPasswordOpen(false); }}
+            open={passwordOpen}
+            title="Đổi mật khẩu"
+          >
               <Form
                 form={passwordForm}
                 layout="vertical"
                 onFinish={(values) => void submitPassword(values)}
-                style={{ width: 'min(320px, calc(100vw - 48px))' }}
                 validateTrigger="onBlur"
               >
                 <Form.Item
@@ -187,13 +196,9 @@ export function AccountProfileScreen() {
                 </Form.Item>
                 {passwordSaved ? <Alert showIcon message="Đã đổi mật khẩu. Vui lòng đăng nhập lại." type="success" /> : null}
                 {passwordError ? <Alert message={passwordError} role="alert" showIcon type="error" /> : null}
-                <Button htmlType="submit" loading={passwordSaving} type="primary">Đổi mật khẩu</Button>
+                <><Button htmlType="submit" disabled={passwordSaving} type="primary">Đổi mật khẩu</Button><LoadingOverlay active={passwordSaving} label="Đang xử lý yêu cầu: Đổi mật khẩu" /></>
               </Form>
-            }
-            trigger="click"
-          >
-            <Button style={{ marginTop: 16 }} type="default">Đổi mật khẩu</Button>
-          </Popover>
+          </Modal>
         </aside>
       </div>
     </>

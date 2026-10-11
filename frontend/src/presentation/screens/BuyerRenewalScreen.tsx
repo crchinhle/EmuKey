@@ -1,11 +1,12 @@
-import { Alert, Button, Checkbox, Result, Spin, Steps } from 'antd';
+import { LoadingOverlay } from '../components/WorkspacePrimitives';
+import { Alert, Button, Checkbox, Result, Steps } from 'antd';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { describeApiError } from '../../application/auth/authContext';
 import { useOrder, useOrderMutations, useOrderTerms, useRenewalPreview } from '../../application/orders/orderQueries';
 import { OrderSummary } from '../components/OrderSummary';
-import { FactList, PageHeader } from '../components/WorkspacePrimitives';
+import { PageLoading, FactList, PageHeader } from '../components/WorkspacePrimitives';
 
 export function BuyerRenewalScreen() {
   const { licenseId = '' } = useParams();
@@ -20,7 +21,7 @@ export function BuyerRenewalScreen() {
   const [accepted, setAccepted] = useState(false);
   useEffect(() => { setAccepted(false); }, [order?.id, terms.data?.version, terms.data?.hash]);
 
-  if (preview.isPending) return <Spin aria-label="Đang tải thông tin gia hạn" />;
+  if (preview.isPending) return <PageLoading />;
   if (preview.isError || !preview.data) return <Result status="error" title="Không thể tải thông tin gia hạn" subTitle="Bản quyền có thể không thuộc tài khoản này hoặc kết nối đang gián đoạn." extra={<Button onClick={() => void preview.refetch()}>Thử lại</Button>} />;
   const offer = preview.data;
   const terminal = order && ['CANCELLED', 'EXPIRED'].includes(order.orderStatus);
@@ -58,7 +59,7 @@ export function BuyerRenewalScreen() {
         </section>
         {waitingTerms ? <section className="workspace-card section-card">
           <h2>Điều khoản gia hạn</h2>
-          {terms.isPending ? <Spin aria-label="Đang tải điều khoản gia hạn" /> : terms.data ? <>
+          {terms.isPending ? <LoadingOverlay label="Đang tải điều khoản gia hạn" /> : terms.data ? <>
             <pre className="terms-document">{terms.data.content}</pre>
             <Checkbox checked={accepted} onChange={(event) => setAccepted(event.target.checked)}>Tôi đã đọc và đồng ý với điều khoản gia hạn</Checkbox>
           </> : null}
@@ -74,10 +75,10 @@ export function BuyerRenewalScreen() {
         <Alert showIcon type="info" title="Hạn sử dụng được cập nhật sau khi thanh toán và giao dịch gia hạn được xác nhận." />
         <div className="workspace-actions">
           <Button onClick={() => void navigate('/buyer/licenses')}>Quay lại</Button>
-          <Button type="primary" loading={mutations.create.isPending || mutations.acceptServiceTerms.isPending || (Boolean(createdOrderId) && liveOrder.isPending)}
-            disabled={Boolean(terminal) || liveOrder.isError || (waitingTerms ? !accepted || !terms.data || terms.isFetching || terms.isError : !order && !offer.canRenew)} onClick={proceed}>
+          <><Button type="primary"
+            disabled={(Boolean(terminal) || liveOrder.isError || (waitingTerms ? !accepted || !terms.data || terms.isFetching || terms.isError : !order && !offer.canRenew)) || (mutations.create.isPending || mutations.acceptServiceTerms.isPending || (Boolean(createdOrderId) && liveOrder.isPending))} onClick={proceed}>
             {order?.orderStatus === 'PAYMENT_ACCEPTED' ? 'Theo dõi gia hạn' : continuing ? 'Tiếp tục thanh toán' : waitingTerms ? 'Đồng ý và thanh toán' : 'Tạo đơn gia hạn'}
-          </Button>
+          </Button><LoadingOverlay active={mutations.create.isPending || mutations.acceptServiceTerms.isPending || (Boolean(createdOrderId) && liveOrder.isPending)} label="Đang xử lý yêu cầu" /></>
         </div>
       </aside>
     </div>

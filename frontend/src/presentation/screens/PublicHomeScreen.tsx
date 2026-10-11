@@ -1,4 +1,5 @@
-import { Alert, Button, Empty, Spin } from 'antd';
+import { PageLoading } from '../components/WorkspacePrimitives';
+import { Alert, Button, Empty } from 'antd';
 import {
   BlockOutlined,
   CheckCircleOutlined,
@@ -527,7 +528,7 @@ function FeaturedCarousel({ products }: { readonly products: readonly Product[] 
           style={{ transform: `translateX(-${page * 100}%)` }}
         >
           {pages.map((pageProducts, pageIndex) => (
-            <div aria-hidden={pageIndex !== page} className="public-home-page" key={`page-${pageIndex}`}>
+            <div aria-hidden={pageIndex !== page} className="public-home-page" inert={pageIndex !== page} key={`page-${pageIndex}`}>
               {pageProducts.map((product) => {
                 const startingPlan = product.plans[0];
                 return (
@@ -575,6 +576,8 @@ function FeaturedCarousel({ products }: { readonly products: readonly Product[] 
 export function PublicHomeScreen() {
   const { data: products = [], isLoading, isError, refetch } = useProducts();
   const featured = products.slice(0, 6);
+
+  if (isLoading) return <div className="page-shell"><SiteHeader /><PageLoading /></div>;
 
   return (
     <div className="page-shell public-home-screen">
@@ -674,7 +677,7 @@ export function PublicHomeScreen() {
             </div>
           </div>
 
-          {isLoading ? <Spin aria-label="Đang tải sản phẩm" /> : null}
+
           {isError ? (
             <Alert
               action={<Button onClick={() => void refetch()}>Thử lại</Button>}

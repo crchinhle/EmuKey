@@ -1,7 +1,10 @@
-import { Alert, Button, Card, Empty, Input, Pagination, Select, Spin } from 'antd';
+import { PageLoading } from '../components/WorkspacePrimitives';
+import { Alert, Button, Card, Empty, Input, Pagination, Select } from 'antd';
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import { PurchaseFlowModal } from '../components/PurchaseFlowModal';
+import type { Product } from '../../domain/product';
 
 import {
   formatVnd,
@@ -21,6 +24,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
   const [page, setPage] = useState(1);
   const [sort, setSort] =
     useState<(typeof sortOptions)[number]['value']>('popular');
+  const [purchase, setPurchase] = useState<Product | null>(null);
   const { data: products = [], isLoading, isError, refetch } = useProducts();
   const visibleProducts = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('vi');
@@ -39,6 +43,8 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
       : filtered;
   }, [products, search, sort]);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(visibleProducts.length / 12)));
+
+  if (isLoading) return <div className="page-shell">{!authenticated ? <SiteHeader /> : null}<PageLoading /></div>;
 
   return (
     <div className="page-shell">
@@ -81,7 +87,7 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
           className="product-grid"
           id="product-grid"
         >
-          {isLoading ? <Spin aria-label="Đang tải sản phẩm" /> : null}
+
           {isError ? <Alert message="Không thể tải danh mục sản phẩm" type="error" showIcon action={<Button onClick={() => void refetch()}>Thử lại</Button>} /> : null}
           {!isLoading && !isError && products.length === 0 ? (
             <Empty description="Chưa có sản phẩm và gói giá được công bố." />
@@ -102,6 +108,9 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
                  >
                    Xem gói & chi tiết
                  </Link>
+                 {authenticated && product.plans.length ? (
+                   <Button onClick={() => setPurchase(product)} type="primary">Mua gói</Button>
+                 ) : null}
                </div>
              </Card>
            ))}
@@ -111,6 +120,13 @@ export function CatalogScreen({ authenticated = false }: { readonly authenticate
         </section>
         {!isLoading && !isError ? <Pagination current={currentPage} pageSize={12} total={visibleProducts.length} onChange={setPage} hideOnSinglePage showSizeChanger={false} /> : null}
       </main>
+      {purchase ? (
+        <PurchaseFlowModal
+          onClose={() => setPurchase(null)}
+          open
+          product={purchase}
+        />
+      ) : null}
     </div>
   );
 }

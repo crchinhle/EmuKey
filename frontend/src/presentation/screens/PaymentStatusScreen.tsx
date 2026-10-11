@@ -1,6 +1,9 @@
-import { Alert, Button, Input, Spin } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { LoadingOverlay } from '../components/WorkspacePrimitives';
+import { Alert, Button, Input, Modal, Spin } from 'antd';
+import { useEffect, useState } from 'react';
+import { submitSignedCheckout } from '../components/PurchaseFlowModal';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../application/auth/authContext';
 
 import {
   activationKeyErrorLabel,
@@ -13,6 +16,7 @@ import {
   useOrder,
   useOrderMutations,
 } from '../../application/orders/orderQueries';
+import { clearCheckoutIntent } from '../../application/orders/checkoutIntent';
 import {
   FactList,
   PageHeader,
@@ -23,6 +27,7 @@ import {
 
 export function PaymentStatusScreen() {
   const { id = '' } = useParams();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const order = useOrder(id);
@@ -33,15 +38,10 @@ export function PaymentStatusScreen() {
   const [confirmationDelayed, setConfirmationDelayed] = useState(false);
   const retrieveKey = useRetrieveActivationKey();
   const [activationKey, setActivationKey] = useState<string | null>(null);
+  const [keyDialogOpen, setKeyDialogOpen] = useState(false);
   const [retrieveError, setRetrieveError] = useState<unknown>(null);
   const providerReturned = ['success', 'error', 'cancel'].includes(searchParams.get('sepay') ?? '') || searchParams.get('returned') === 'sepay';
   const unsuccessfulReturn = ['error', 'cancel'].includes(searchParams.get('sepay') ?? '');
-  useEffect(() => {
-    setConfirmationDelayed(false);
-    if (!providerReturned || unsuccessfulReturn || !waitingPayment) return;
-    const timer = window.setTimeout(() => setConfirmationDelayed(true), 30_000);
-    return () => window.clearTimeout(timer);
-  }, [id, providerReturned, unsuccessfulReturn, waitingPayment]);
   const isRenewal = order.data?.orderType === 'RENEWAL';
   const renewalConfirmed = order.data?.renewalStatus === 'CONFIRMED';
   const license = useOrderLicense(
@@ -51,16 +51,7 @@ export function PaymentStatusScreen() {
     isRenewal,
     isRenewal ? order.data?.renewalExpiresAt : undefined,
   );
-  const checkoutStarted = useRef(false);
-  const checkoutSubmitted = useRef(false);
   const [copyStatus, setCopyStatus] = useState('');
-  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
-  // PAY-12: loading the status page only reads the order. Creating a signed
-  // checkout attempt and submitting it are both explicit user actions.
-  useEffect(() => {
-    checkoutStarted.current = false;
-    checkoutSubmitted.current = false;
-  }, [id]);
   const renewalProjectionUpdated = Boolean(order.data?.renewalExpiresAt && license.data &&
     Math.floor(Date.parse(license.data.expiresAt) / 1000) >= Math.floor(Date.parse(order.data.renewalExpiresAt) / 1000));
   const licenseReady = license.data?.status === 'ACTIVE' && license.data.activationKeyTrustStatus === 'TRUSTED' &&
@@ -69,9 +60,65 @@ export function PaymentStatusScreen() {
     ['SUSPENDED', 'REVOKED'].includes(license.data?.status ?? '') ||
     (license.data?.status === 'EXPIRED' && (!isRenewal || (renewalConfirmed && renewalProjectionUpdated))) ||
     (isRenewal && ['DEAD_LETTER', 'ABANDONED', 'SUPERSEDED'].includes(order.data?.renewalStatus ?? ''));
-  if (order.isPending) return <Spin />;
+  const [dismissedOrder, setDismissedOrder] = useState<string>();
+  const [checking, setChecking] = useState(false);
+  const currentStatus = order.data?.orderStatus;
+  useEffect(() => {
+    if (currentStatus === 'PAYMENT_ACCEPTED') clearCheckoutIntent(user?.id, id);
+  }, [currentStatus, user?.id]);
+  const processingStage = order.isPending ? 'loading'
+    : order.isError || paymentNeedsReview ? null
+    : waitingPayment && providerReturned && !unsuccessfulReturn ? 'payment'
+    : order.data?.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady && !licenseNeedsReview && !license.isError ? 'license'
+    : null;
+  useEffect(() => {
+    setConfirmationDelayed(false);
+    if (!processingStage) return;
+    const timer = window.setTimeout(() => setConfirmationDelayed(true), 30_000);
+    return () => window.clearTimeout(timer);
+  }, [id, processingStage]);
+  const checkStatus = async () => {
+    setDismissedOrder(undefined);
+    setChecking(true);
+    try {
+      await Promise.all([
+        order.refetch(),
+        ...(waitingPayment ? [history.refetch()] : []),
+        ...(order.data?.orderStatus === 'PAYMENT_ACCEPTED' ? [license.refetch()] : []),
+      ]);
+    } finally { setChecking(false); }
+  };
+  const processingTitle = confirmationDelayed
+    ? processingStage === 'payment' ? 'Chưa nhận được xác nhận thanh toán'
+      : processingStage === 'license' ? 'Bản quyền vẫn đang được xử lý' : 'Tải đơn hàng lâu hơn dự kiến'
+    : processingStage === 'loading' ? 'Đang tải đơn hàng'
+      : processingStage === 'license' ? isRenewal ? 'Đang gia hạn bản quyền' : 'Đang cấp bản quyền'
+        : 'Đang xác nhận thanh toán';
+  const processingModal = (
+    <Modal centered open={Boolean(processingStage) && dismissedOrder !== id}
+      title={processingTitle} onCancel={() => setDismissedOrder(id)}
+      footer={<div className="workspace-actions">
+        {confirmationDelayed ? <Button type="primary" disabled={checking} onClick={() => void checkStatus()}>Kiểm tra lại</Button> : null}
+        <Button onClick={() => void navigate('/buyer/orders')}>Về đơn hàng</Button>
+        {confirmationDelayed ? <Button onClick={() => void navigate('/buyer/support')}>Liên hệ hỗ trợ</Button> : null}
+        <Button onClick={() => setDismissedOrder(id)}>Đóng</Button>
+      </div>}>
+      <div className="payment-processing" role="status" aria-live="polite">
+        {!confirmationDelayed || checking ? <Spin size="large" /> : null}
+        {checking ? <p>Đang kiểm tra lại trạng thái…</p> : null}
+        <p>{processingStage === 'loading' ? 'Đang lấy thông tin đơn hàng của bạn.'
+          : processingStage === 'payment' ? confirmationDelayed
+            ? 'Việc xác nhận đang lâu hơn dự kiến. Nếu đã bị trừ tiền, không thanh toán lại; hãy liên hệ hỗ trợ kèm mã đơn.'
+            : 'Bạn đã quay lại từ SePay. Vui lòng chờ hệ thống xác nhận giao dịch.'
+          : isRenewal ? 'Thanh toán đã xác nhận. Hạn sử dụng đang được cập nhật; mã bản quyền hiện tại được giữ nguyên.'
+            : 'Thanh toán đã xác nhận. Bản quyền đang được chuẩn bị, bạn không cần thanh toán lại.'}</p>
+        <small>Bạn có thể đóng thông báo. Trạng thái sẽ tiếp tục được cập nhật tự động.</small>
+      </div>
+    </Modal>
+  );
+  if (order.isPending) return <div className="workspace-screen"><PageHeader title="Thanh toán đơn hàng" />{processingModal}<Button onClick={() => setDismissedOrder(undefined)}>Xem tiến trình tải đơn hàng</Button></div>;
   if (!order.data)
-    return <Alert type="error" message="Không thể tải đơn hàng." />;
+    return <div className="workspace-screen"><PageHeader title="Thanh toán đơn hàng" />{processingModal}<Alert type="error" message="Không thể tải đơn hàng." action={<Button disabled={order.isFetching} onClick={() => void order.refetch()}>Thử lại</Button>} /></div>;
   const current = order.data;
   const payment = checkout.data;
   const checkoutAttemptExpired = Boolean(payment && Date.parse(payment.expiresAt) <= Date.now());
@@ -107,11 +154,17 @@ export function PaymentStatusScreen() {
     } catch { setCopyStatus('Không thể sao chép. Vui lòng lưu mã thủ công.'); }
   };
 
+  const startCheckout = () => {
+    checkout.mutate(id, { onSuccess: submitSignedCheckout });
+  };
+
   return (
     <div className="workspace-screen">
       <PageHeader
         title="Thanh toán đơn hàng"
       />
+      {processingModal}
+      <LoadingOverlay active={checking && !processingStage} label="Đang kiểm tra trạng thái thanh toán" />
       <div className="payment-grid">
         <section className="workspace-card payment-card">
           <header>
@@ -130,34 +183,10 @@ export function PaymentStatusScreen() {
             </StatusChip>
           </header>
           {paymentNeedsReview ? <Alert showIcon type="warning" title="Giao dịch đã được ghi nhận nhưng cần kiểm tra" description={<>Backend chưa chấp nhận giao dịch cho đơn {current.orderNumber}. Không thanh toán lại. <a href="/buyer/support">Liên hệ hỗ trợ</a> và cung cấp mã đơn để đối chiếu thời gian, số tiền và chứng từ.</>} /> : null}
-          {providerReturned && !unsuccessfulReturn && !paymentNeedsReview && waitingPayment ? (
-            <Alert
-              showIcon
-              type={confirmationDelayed ? 'warning' : 'info'}
-              title={confirmationDelayed ? 'Chưa nhận được xác nhận thanh toán hợp lệ' : 'Đang xác nhận thanh toán'}
-              description={confirmationDelayed ? 'Việc xác nhận đang lâu hơn dự kiến. Hệ thống vẫn kiểm tra tự động; nếu đã bị trừ tiền, không thanh toán lại và hãy liên hệ hỗ trợ kèm mã đơn.' : 'SePay đã chuyển bạn về EmuKey. Trạng thái chỉ hoàn tất khi backend xác nhận giao dịch.'}
-            />
-          ) : null}
-          {waitingPayment ? <div className="workspace-actions"><Button loading={order.isFetching || history.isFetching} onClick={() => { void order.refetch(); void history.refetch(); }}>Kiểm tra lại trạng thái</Button><Button href="/buyer/support">Liên hệ hỗ trợ</Button></div> : null}
+          {processingStage ? <div className="workspace-actions"><Button onClick={() => setDismissedOrder(undefined)}>Xem tiến trình</Button><Button href="/buyer/orders">Về đơn hàng</Button></div> : null}
+          {waitingPayment && !processingStage ? <div className="workspace-actions"><Button disabled={checking} onClick={() => void checkStatus()}>Kiểm tra lại trạng thái</Button><Button href="/buyer/support">Liên hệ hỗ trợ</Button></div> : null}
           {order.isError || (waitingPayment && history.isError) ? <Alert type="warning" title="Không thể cập nhật đầy đủ trạng thái. Dữ liệu đang hiển thị có thể chưa mới nhất." /> : null}
-          {current.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady && !licenseNeedsReview ? (
-            <Alert
-              showIcon
-              type="info"
-              message="Thanh toán đã được xác nhận."
-              description={isRenewal ? 'EmuKey đang xác nhận gia hạn trên blockchain. Key hiện tại được giữ nguyên; bạn không cần thanh toán lại.' : 'EmuKey đang kích hoạt bản quyền của bạn trên blockchain. Bạn không cần thanh toán lại hoặc tự làm mới trang.'}
-            />
-          ) : null}
           {licenseQueryErrorMessage ? <Alert showIcon type="info" message={licenseQueryErrorMessage} /> : null}
-          {current.orderStatus === 'PAYMENT_ACCEPTED' && !licenseReady && !licenseNeedsReview && !license.isError && !order.isError ? (
-            <div className="payment-processing" role="status" aria-label="Đang xử lý bản quyền" aria-live="polite">
-              <span aria-hidden="true"><Spin size="large" /></span>
-              <h3>Đang chờ xác nhận blockchain</h3>
-              <p>{isRenewal ? 'Trạng thái được tự động cập nhật. Hạn sử dụng mới chỉ có hiệu lực sau khi giao dịch gia hạn được xác nhận.' : 'Trạng thái được tự động cập nhật. Mã bản quyền sẽ sẵn sàng sau khi bản quyền được xác nhận.'}</p>
-              <small>Bạn có thể mở trang Bản quyền để theo dõi nếu rời màn hình này.</small>
-              <Button href="/buyer/licenses">Mở trang Bản quyền</Button>
-            </div>
-          ) : null}
           {licenseReady ? (
             <Alert
               showIcon
@@ -194,9 +223,6 @@ export function PaymentStatusScreen() {
               type="primary"
               onClick={() => {
                 checkout.reset();
-                checkoutStarted.current = false;
-                checkoutSubmitted.current = false;
-                setCheckoutNotice(null);
                 setSearchParams({});
               }}
             >
@@ -204,25 +230,18 @@ export function PaymentStatusScreen() {
             </Button>
           ) : providerReturned ? null : !payment ? (
             checkout.isPending ? (
-              <Spin aria-label="Đang tạo yêu cầu thanh toán" />
+              <LoadingOverlay label="Đang tạo yêu cầu thanh toán" />
             ) : (
               <>
                 <Alert
                   showIcon
                   type="info"
-                  message="Đơn hàng đã sẵn sàng thanh toán."
-                  description="Chọn nút bên dưới để tạo yêu cầu thanh toán SePay. Không có yêu cầu nào được gửi đi khi bạn vừa mở trang này."
+                  title="Đơn hàng đã sẵn sàng thanh toán."
+                  description="Chọn nút bên dưới để chuẩn bị yêu cầu và chuyển sang SePay. Không có yêu cầu nào được gửi đi khi bạn vừa mở trang này."
                 />
-                {checkoutNotice ? <Alert showIcon type="warning" message={checkoutNotice} /> : null}
-                <Button
-                  type="primary"
-                  disabled={checkout.isPending}
-                  onClick={() => {
-                    checkoutStarted.current = true;
-                    checkout.mutate(id);
-                  }}
-                >
-                  Tạo yêu cầu thanh toán
+                {checkout.error ? <Alert showIcon type="error" title="Không thể chuẩn bị thanh toán. Đơn hàng vẫn được giữ để bạn thử lại." /> : null}
+                <Button type="primary" loading={checkout.isPending} disabled={checkout.isPending} onClick={startCheckout}>
+                  Thanh toán qua SePay
                 </Button>
               </>
             )
@@ -246,11 +265,7 @@ export function PaymentStatusScreen() {
                   description="Tạo yêu cầu mới để tiếp tục thanh toán đơn hàng này."
                   action={
                     <Button
-                      onClick={() => {
-                        checkout.reset();
-                        checkoutStarted.current = false;
-                        checkoutSubmitted.current = false;
-                      }}
+                      onClick={() => checkout.reset()}
                     >
                       Tạo yêu cầu mới
                     </Button>
@@ -295,9 +310,9 @@ export function PaymentStatusScreen() {
                 {activationKey ? null : keyAvailable ? (
                   <>
                     <p>Mã bản quyền chỉ được hiển thị một lần. Hãy lưu lại trước khi rời trang.</p>
-                    <Button
+                    <><Button
                       type="primary"
-                      loading={retrieveKey.isPending}
+
                       disabled={retrieveKey.isPending}
                       onClick={() => {
                         setRetrieveError(null);
@@ -306,6 +321,8 @@ export function PaymentStatusScreen() {
                           {
                             onSuccess: (value) => {
                               setActivationKey(value.activationKey);
+                              setCopyStatus('');
+                              setKeyDialogOpen(true);
                               retrieveKey.reset();
                             },
                             onError: (error) => {
@@ -317,7 +334,7 @@ export function PaymentStatusScreen() {
                       }}
                     >
                       Nhận mã bản quyền
-                    </Button>
+                    </Button><LoadingOverlay active={retrieveKey.isPending} label="Đang xử lý yêu cầu: Nhận mã bản quyền" /></>
                   </>
                 ) : (
                   <Alert
@@ -335,28 +352,25 @@ export function PaymentStatusScreen() {
                   />
                 )}
                 {activationKey ? (
-                  <div className="workspace-card">
-                    <h3>Mã bản quyền của bạn</h3>
-                    <Input.Password aria-label="Mã bản quyền" readOnly value={activationKey} />
-                    <div className="workspace-actions">
-                      <Button onClick={() => void copyActivationKey()}>Sao chép</Button>
-                      <Button
-                        type="primary"
-                        onClick={() => void navigate(`/buyer/licenses?licenseId=${encodeURIComponent(license.data!.id)}&activate=1`)}
-                      >
-                        Tôi đã lưu mã
-                      </Button>
-                    </div>
-                    <p>Mã bản quyền chỉ được cấp một lần. Hãy lưu lại trước khi rời trang.</p>
-                    <span aria-live="polite">{copyStatus}</span>
-                  </div>
+                  <>
+                    <Button type="primary" onClick={() => setKeyDialogOpen(true)}>Xem mã bản quyền</Button>
+                    <Modal centered width={520} open={keyDialogOpen} title="Mã bản quyền của bạn"
+                      mask={{ closable: false }} onCancel={() => setKeyDialogOpen(false)}
+                      footer={<div className="workspace-actions">
+                        <Button onClick={() => void copyActivationKey()}>Sao chép</Button>
+                        <Button type="primary" onClick={() => setKeyDialogOpen(false)}>Đóng</Button>
+                      </div>}>
+                      <div className="activation-key-dialog-content">
+                        <p>Mã bản quyền chỉ được cấp một lần. Hãy sao chép và lưu ở nơi an toàn trước khi rời trang.</p>
+                        <Input.Password aria-label="Mã bản quyền" readOnly value={activationKey} />
+                        <span role="status" aria-live="polite">{copyStatus || 'Đóng cửa sổ này vẫn có thể xem lại mã trong trang hiện tại. Tải lại hoặc rời trang sẽ mất mã đang hiển thị.'}</span>
+                      </div>
+                    </Modal>
+                  </>
                 ) : null}
                 {retrieveErrorMessage ? <Alert type="warning" message={retrieveErrorMessage} /> : null}
               </div>}
             </>
-          ) : null}
-          {checkout.error ? (
-            <Alert type="error" message="Không thể tạo yêu cầu thanh toán." action={current.orderStatus === 'WAITING_PAYMENT' ? <Button loading={checkout.isPending} onClick={() => checkout.mutate(id)}>Thử lại</Button> : undefined} />
           ) : null}
         </section>
         <aside className="checkout-stack">

@@ -1,10 +1,12 @@
-import { Alert, Button, Empty, Spin } from 'antd';
+import { LoadingOverlay } from '../components/WorkspacePrimitives';
+import { Alert, Button, Empty } from 'antd';
 import { useState } from 'react';
 
 import { conversationContextLabels, conversationStatusLabels, useAppendConversationMessage, useAskAi, useConversationMessages, useConversations, useCreateConversation } from '../../application/assistance/assistanceQueries';
 import { useRequestSupport } from '../../application/assistance/supportQueries';
 import { ConversationPanel } from '../components/ConversationPanel';
 import {
+  PageLoading,
   FactList,
   PageHeader,
   StatusChip,
@@ -23,7 +25,7 @@ export function BuyerAssistanceScreen() {
     { contextType: 'GENERAL', title: 'Hội thoại hỗ trợ' },
     { onSuccess: (created) => { setSelectedId(created.id); askAi.reset(); } },
   );
-  if (conversations.isLoading) return <Spin />;
+  if (conversations.isLoading) return <PageLoading />;
   if (conversations.isError) return <Alert type="error" title="Không thể tải hội thoại" action={<Button onClick={() => void conversations.refetch()}>Thử lại</Button>} />;
   if (!conversation) {
     return (
@@ -31,9 +33,9 @@ export function BuyerAssistanceScreen() {
         <PageHeader title="Hội thoại hỗ trợ" />
         {create.isError ? <Alert type="error" title="Không thể tạo hội thoại. Vui lòng thử lại." /> : null}
         <Empty description="Bạn chưa có hội thoại hỗ trợ." image={Empty.PRESENTED_IMAGE_SIMPLE}>
-          <Button loading={create.isPending} onClick={startConversation} type="primary">
+          <><Button disabled={create.isPending} onClick={startConversation} type="primary">
             Bắt đầu hội thoại
-          </Button>
+          </Button><LoadingOverlay active={create.isPending} label="Đang xử lý yêu cầu: Bắt đầu hội thoại" /></>
         </Empty>
       </>
     );
@@ -42,7 +44,7 @@ export function BuyerAssistanceScreen() {
     <>
       <PageHeader
         title="Hội thoại hỗ trợ"
-        action={<span className="workspace-actions"><Button loading={create.isPending} onClick={startConversation} type="primary">Tạo yêu cầu mới</Button>{conversation.status === 'AI_ACTIVE' ? <Button loading={requestSupport.isPending} onClick={() => requestSupport.mutate({ conversationId: conversation.id, reason: 'AI chưa giải quyết được yêu cầu.' })}>Chuyển cho nhân viên</Button> : null}</span>}
+        action={<span className="workspace-actions"><><Button disabled={create.isPending} onClick={startConversation} type="primary">Tạo yêu cầu mới</Button><LoadingOverlay active={create.isPending} label="Đang xử lý yêu cầu: Tạo yêu cầu mới" /></>{conversation.status === 'AI_ACTIVE' ? <><Button disabled={requestSupport.isPending} onClick={() => requestSupport.mutate({ conversationId: conversation.id, reason: 'AI chưa giải quyết được yêu cầu.' })}>Chuyển cho nhân viên</Button><LoadingOverlay active={requestSupport.isPending} label="Đang xử lý yêu cầu: Chuyển cho nhân viên" /></> : null}</span>}
       />
       {create.isError ? <Alert type="error" title="Không thể tạo hội thoại. Vui lòng thử lại." /> : null}
       <StatusChip tone={conversation.status === 'CLOSED' ? 'success' : 'info'}>{conversationStatusLabels[conversation.status]}</StatusChip>
@@ -64,7 +66,7 @@ export function BuyerAssistanceScreen() {
             <h2>{conversation.title ?? 'Hội thoại hỗ trợ'}</h2>
           </header>
           {messages.isError ? <Alert type="error" title="Không thể tải tin nhắn" action={<Button onClick={() => void messages.refetch()}>Thử lại</Button>} /> : null}
-          {messages.isLoading ? <Spin aria-label="Đang tải tin nhắn" /> : null}
+          {messages.isLoading ? <LoadingOverlay label="Đang tải tin nhắn" /> : null}
           <ConversationPanel
             author="Buyer"
             initialMessages={(messages.data ?? []).map((message) => ({
@@ -73,8 +75,8 @@ export function BuyerAssistanceScreen() {
               author: message.senderType === 'CUSTOMER' ? ('Buyer' as const) : message.senderType === 'AI' ? ('AI' as const) : ('Support' as const),
             }))}
             inputLabel="Tin nhắn hỗ trợ"
-            onSubmit={(content) => append.mutateAsync({ clientMessageId: crypto.randomUUID(), content, conversationId: conversation.id })}
-            onAskAi={(question) => askAi.mutateAsync({ conversationId: conversation.id, question, clientMessageId: crypto.randomUUID() })}
+            onSubmit={(content, clientMessageId) => append.mutateAsync({ clientMessageId, content, conversationId: conversation.id })}
+            onAskAi={(question, clientMessageId) => askAi.mutateAsync({ conversationId: conversation.id, question, clientMessageId })}
             readOnly={conversation.status === 'CLOSED'}
             submitLabel="Gửi tin nhắn"
           />

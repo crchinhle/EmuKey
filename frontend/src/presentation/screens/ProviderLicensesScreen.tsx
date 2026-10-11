@@ -1,9 +1,10 @@
-import { Alert, Button, Empty, Input, Modal, Spin } from 'antd';
+import { LoadingOverlay } from '../components/WorkspacePrimitives';
+import { Alert, Button, Empty, Input, Modal } from 'antd';
 import { useEffect, useState } from 'react';
 
 import { describeApiError } from '../../application/auth/authContext';
 import { licenseStatusLabel, finalityLabel, useLicenseLifecycle, usePhase6Command, useProviderLicenses } from '../../application/licenses/licenseQueries';
-import { PageHeader, StatusChip } from '../components/WorkspacePrimitives';
+import { PageLoading, PageHeader, StatusChip } from '../components/WorkspacePrimitives';
 
 const commandLabels: Record<string, string> = {
   PENDING: 'Đang chờ xử lý',
@@ -47,10 +48,12 @@ export function ProviderLicensesScreen() {
     );
   };
 
+  if (licenses.isLoading) return <PageLoading />;
+
   return (
     <>
       <PageHeader title="Bản quyền nhà cung cấp" />
-      {licenses.isPending ? <Spin aria-label="Đang tải license của nhà cung cấp" /> : null}
+
       {licenses.isError ? <Alert showIcon type="error" message="Không thể tải danh sách license." action={<Button onClick={() => void licenses.refetch()}>Thử lại</Button>} /> : null}
       {!licenses.isPending && !licenses.isError && licenses.data?.length === 0 ? <Empty description="Chưa có license." /> : null}
       {command ? (
@@ -74,9 +77,9 @@ export function ProviderLicensesScreen() {
               <StatusChip tone={license.status === 'ACTIVE' ? 'success' : license.status === 'REVOKED' ? 'error' : 'warning'}>{licenseStatusLabel(license.status)}</StatusChip>
               {errorByLicense[license.id] ? <Alert type="error" showIcon message={errorByLicense[license.id]} /> : null}
               <div className="table-actions">
-                {license.status === 'ACTIVE' ? <Button loading={rowPending} disabled={lifecycle.isPending} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'SUSPEND_LICENSE' }); }}>Tạm ngưng</Button> : null}
-                {license.status === 'SUSPENDED' ? <Button loading={rowPending} disabled={lifecycle.isPending} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'RESUME_LICENSE' }); }}>Tiếp tục</Button> : null}
-                {license.status === 'ACTIVE' || license.status === 'SUSPENDED' ? <Button danger loading={rowPending} disabled={lifecycle.isPending} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'REVOKE_LICENSE' }); }}>Thu hồi</Button> : null}
+                {license.status === 'ACTIVE' ? <><Button  disabled={(lifecycle.isPending) || (rowPending)} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'SUSPEND_LICENSE' }); }}>Tạm ngưng</Button><LoadingOverlay active={rowPending} label="Đang xử lý yêu cầu: Tạm ngưng" /></> : null}
+                {license.status === 'SUSPENDED' ? <><Button  disabled={(lifecycle.isPending) || (rowPending)} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'RESUME_LICENSE' }); }}>Tiếp tục</Button><LoadingOverlay active={rowPending} label="Đang xử lý yêu cầu: Tiếp tục" /></> : null}
+                {license.status === 'ACTIVE' || license.status === 'SUSPENDED' ? <><Button danger  disabled={(lifecycle.isPending) || (rowPending)} onClick={() => { setReason(''); setSelected({ licenseId: license.id, action: 'REVOKE_LICENSE' }); }}>Thu hồi</Button><LoadingOverlay active={rowPending} label="Đang xử lý yêu cầu: Thu hồi" /></> : null}
               </div>
             </article>
           );
@@ -87,11 +90,12 @@ export function ProviderLicensesScreen() {
         title={selected?.action === 'REVOKE_LICENSE' ? 'Xác nhận thu hồi bản quyền' : selected?.action === 'SUSPEND_LICENSE' ? 'Xác nhận tạm ngưng bản quyền' : 'Xác nhận tiếp tục bản quyền'}
         okText="Xác nhận"
         cancelText="Hủy"
-        confirmLoading={lifecycle.isPending}
-        okButtonProps={{ disabled: selected?.action !== 'RESUME_LICENSE' && reason.trim().length < 3 }}
+
+        okButtonProps={{ ...({ disabled: selected?.action !== 'RESUME_LICENSE' && reason.trim().length < 3 }), disabled: (selected?.action !== 'RESUME_LICENSE' && reason.trim().length < 3) || (lifecycle.isPending) }}
         onCancel={() => { if (!lifecycle.isPending) { setSelected(null); setReason(''); } }}
         onOk={run}
       >
+        <LoadingOverlay active={Boolean(selected) && (lifecycle.isPending)} />
         <p>Thao tác chỉ áp dụng cho license đã chọn và sẽ được cập nhật sau khi blockchain xác nhận.</p>
         <Input.TextArea aria-label="Lý do thay đổi trạng thái license" placeholder="Lý do (ít nhất 3 ký tự)" value={reason} onChange={(event) => setReason(event.target.value)} />
       </Modal>

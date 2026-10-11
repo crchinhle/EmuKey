@@ -1,4 +1,6 @@
-import { Alert, Button, Checkbox, Empty, Input, Spin, Table } from 'antd';
+import { LoadingOverlay } from '../components/WorkspacePrimitives';
+import { PageLoading } from '../components/WorkspacePrimitives';
+import { Alert, Button, Checkbox, Empty, Input, Table } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -8,7 +10,9 @@ import {
   useProducts,
 } from '../../application/catalog/catalogQueries';
 import { useOptionalAuth } from '../../application/auth/authContext';
+import { PurchaseFlowModal } from '../components/PurchaseFlowModal';
 import { SiteHeader } from '../components/SiteHeader';
+import type { Product } from '../../domain/product';
 
 function displayDimension(key: string, value: unknown): string {
   if (key === 'priceVnd' && typeof value === 'number') return formatVnd(value);
@@ -35,6 +39,7 @@ export function ComparePlansScreen() {
   );
   const [selectedIds, setSelectedIds] = useState<string[]>(initialIds);
   const [query, setQuery] = useState('');
+  const [purchase, setPurchase] = useState<{ product: Product; planId: string } | null>(null);
   const products = useProducts();
   const comparison = useComparePlans(selectedIds);
   const choices = (products.data ?? []).flatMap((product) =>
@@ -44,6 +49,8 @@ export function ComparePlansScreen() {
       productSlug: product.slug,
     })),
   );
+
+  if (products.isLoading) return <div className="page-shell"><SiteHeader /><PageLoading /></div>;
 
   return (
     <div className="page-shell">
@@ -61,7 +68,7 @@ export function ComparePlansScreen() {
             {selectedIds.length ? <Button onClick={() => setSelectedIds([])}>Bỏ chọn tất cả</Button> : null}
           </div>
           <div className="comparison-selection" aria-label="Chọn gói để so sánh">
-            {products.isLoading ? <Spin aria-label="Đang tải gói" /> : null}
+
             {products.isError ? <Alert type="error" title="Không thể tải các gói" action={<Button onClick={() => void products.refetch()}>Thử lại</Button>} /> : null}
             {choices.filter((choice) => selectedIds.includes(choice.id) || choice.label.toLocaleLowerCase('vi').includes(query.trim().toLocaleLowerCase('vi'))).map((choice) => (
               <Checkbox
@@ -83,9 +90,9 @@ export function ComparePlansScreen() {
         {selectedIds.length < 2 ? (
           <Empty description="Chọn ít nhất hai gói để bắt đầu so sánh." />
         ) : comparison.isLoading ? (
-          <Spin aria-label="Đang so sánh gói" />
+          <LoadingOverlay label="Đang so sánh gói" />
         ) : comparison.isError || !comparison.data ? (
-          <Alert showIcon type="error" message="Không thể tải dữ liệu so sánh gói." />
+          <Alert showIcon type="error" title="Không thể tải dữ liệu so sánh gói." action={<Button disabled={comparison.isFetching} onClick={() => void comparison.refetch()}>Thử lại</Button>} />
         ) : (
           <section className="workspace-card table-card comparison-table" aria-label="Bảng so sánh gói">
             <Table
@@ -108,13 +115,28 @@ export function ComparePlansScreen() {
               {comparison.data.plans.map((plan) => {
                 const choice = choices.find((item) => item.id === plan.id);
                 if (!choice) return null;
-                const checkout = `/buyer/checkout?product=${encodeURIComponent(choice.productSlug)}&planId=${encodeURIComponent(choice.id)}`;
-                return <Button key={plan.id} type="primary" onClick={() => void navigate(auth?.user ? checkout : `/auth?mode=login&redirect=${encodeURIComponent(checkout)}`)}>Mua {plan.name}</Button>;
+                const product = products.data?.find((item) => item.slug === choice.productSlug);
+                if (!product) return null;
+                return <Button key={plan.id} type="primary" onClick={() => {
+                  if (auth?.user) setPurchase({ product, planId: choice.id });
+                  else {
+                    const checkout = `/buyer/checkout?product=${encodeURIComponent(choice.productSlug)}&planId=${encodeURIComponent(choice.id)}`;
+                    void navigate(`/auth?mode=login&redirect=${encodeURIComponent(checkout)}`);
+                  }
+                }}>Mua {plan.name}</Button>;
               })}
             </div>
           </section>
         )}
       </main>
+      {purchase ? (
+        <PurchaseFlowModal
+          initialPlanId={purchase.planId}
+          onClose={() => setPurchase(null)}
+          open
+          product={purchase.product}
+        />
+      ) : null}
     </div>
   );
 }
