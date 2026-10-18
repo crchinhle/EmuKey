@@ -127,6 +127,40 @@ export type KnowledgeSourceDto = {
   content: string;
 };
 
+export type InviteProviderDto = {
+  email: string;
+  displayName: string;
+  organizationName: string;
+  providerChainAddress: string;
+  providerChainNamespace: string;
+};
+
+export type ProviderInvitationDto = {
+  email: string;
+  displayName: string;
+  organizationName: string;
+  providerChainAddress: string;
+  providerChainNamespace: string;
+  id: string;
+  expiresAt: string;
+  createdAt: string;
+  sentAt: string | null;
+  status: 'PENDING' | 'EXPIRED' | 'ACCEPTED';
+};
+
+export type AcceptProviderInvitationDto = {
+  token: string;
+  password: string;
+};
+
+export type ProviderAccountDto = {
+  id: string;
+  email: string;
+  displayName: string;
+  role: 'PROVIDER_ADMIN';
+  status: 'ACTIVE';
+};
+
 export type RegisterDto = {
   email: string;
   password: string;
@@ -245,13 +279,13 @@ export type CreateProductDto = {
   code: string;
   name: string;
   description?: string;
-  imageUrl?: string;
+  imageUrl?: string | null;
 };
 
 export type UpdateProductDto = {
   name?: string;
   description?: string;
-  imageUrl?: string;
+  imageUrl?: string | null;
 };
 
 export type CatalogDeleteResultDto = {
@@ -400,12 +434,8 @@ export type LicenseDeviceDto = {
   deviceRef: string;
   status: 'ACTIVE' | 'REVOKED';
   bindingGeneration: number;
-  activatedAt?: {
-    [key: string]: unknown;
-  } | null;
-  revokedAt?: {
-    [key: string]: unknown;
-  } | null;
+  activatedAt?: string | null;
+  revokedAt?: string | null;
 };
 
 export type ActivationKeyDto = {
@@ -508,6 +538,15 @@ export type AcceptServiceTermsDto = {
   accepted: true;
   version: string;
   hash: string;
+};
+
+export type PaymentRetryDecisionDto = {
+  allowed: boolean;
+  /**
+   * The existing live checkout can be resumed without creating another attempt.
+   */
+  canResume: boolean;
+  reason: 'READY' | 'ATTEMPT_PENDING' | 'PAYMENT_REVIEW' | 'ORDER_NOT_PAYABLE';
 };
 
 export type CheckoutSessionDto = {
@@ -1072,6 +1111,48 @@ export type KnowledgeControllerQueryResponses = {
 
 export type KnowledgeControllerQueryResponse =
   KnowledgeControllerQueryResponses[keyof KnowledgeControllerQueryResponses];
+
+export type IdentityControllerListProviderInvitationsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/provider-invitations';
+};
+
+export type IdentityControllerListProviderInvitationsResponses = {
+  200: Array<ProviderInvitationDto>;
+};
+
+export type IdentityControllerListProviderInvitationsResponse =
+  IdentityControllerListProviderInvitationsResponses[keyof IdentityControllerListProviderInvitationsResponses];
+
+export type IdentityControllerInviteProviderData = {
+  body: InviteProviderDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/provider-invitations';
+};
+
+export type IdentityControllerInviteProviderResponses = {
+  201: ProviderInvitationDto;
+};
+
+export type IdentityControllerInviteProviderResponse =
+  IdentityControllerInviteProviderResponses[keyof IdentityControllerInviteProviderResponses];
+
+export type IdentityControllerAcceptProviderInvitationData = {
+  body: AcceptProviderInvitationDto;
+  path?: never;
+  query?: never;
+  url: '/api/v1/auth/provider-invitations/accept';
+};
+
+export type IdentityControllerAcceptProviderInvitationResponses = {
+  201: ProviderAccountDto;
+};
+
+export type IdentityControllerAcceptProviderInvitationResponse =
+  IdentityControllerAcceptProviderInvitationResponses[keyof IdentityControllerAcceptProviderInvitationResponses];
 
 export type IdentityControllerRegisterData = {
   body: RegisterDto;
@@ -1885,6 +1966,26 @@ export type CommerceControllerAcceptServiceTermsResponses = {
 
 export type CommerceControllerAcceptServiceTermsResponse =
   CommerceControllerAcceptServiceTermsResponses[keyof CommerceControllerAcceptServiceTermsResponses];
+
+export type CommerceControllerPaymentRetryDecisionData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: '/api/v1/orders/{id}/payment-retry';
+};
+
+export type CommerceControllerPaymentRetryDecisionErrors = {
+  404: unknown;
+};
+
+export type CommerceControllerPaymentRetryDecisionResponses = {
+  200: PaymentRetryDecisionDto;
+};
+
+export type CommerceControllerPaymentRetryDecisionResponse =
+  CommerceControllerPaymentRetryDecisionResponses[keyof CommerceControllerPaymentRetryDecisionResponses];
 
 export type CommerceControllerCheckoutData = {
   body?: never;

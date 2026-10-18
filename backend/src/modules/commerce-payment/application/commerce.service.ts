@@ -49,11 +49,11 @@ export class CommerceService {
     this.requireCustomer(actor);
     if (
       !idempotencyKey ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)
     ) {
       throw new BadRequestException({
         code: 'INVALID_IDEMPOTENCY_KEY',
-        message: 'Idempotency-Key must be a UUID.',
+        message: 'Idempotency-Key must be a UUIDv4.',
       });
     }
     try {
@@ -187,7 +187,7 @@ export class CommerceService {
         amountVnd: preparation.amountVnd,
         attemptId: preparation.attemptId,
         expiresAt: preparation.expiresAt.toISOString(),
-        expiresWithOrder: true,
+        expiresWithOrder: preparation.expiresAt.getTime() === order.paymentDueAt.getTime(),
       };
     } catch (error) {
       if (!preparation.existing) {

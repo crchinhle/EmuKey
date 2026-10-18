@@ -9,14 +9,18 @@ import { PurchaseFlowModal } from '../components/PurchaseFlowModal';
 import { PageLoading } from '../components/WorkspacePrimitives';
 
 export function BuyerCheckoutScreen() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const productSlug = searchParams.get('product') ?? 'securedesk';
+  const intent = readCheckoutIntent(user?.id);
+  const productSlug = searchParams.get('product')?.trim() || intent?.productSlug.trim() || '';
   const requestedPlanId = searchParams.get('planId') ?? undefined;
   const requestedOrderId = searchParams.get('orderId') ?? undefined;
-  const intent = readCheckoutIntent(user?.id);
   const { data: product, isLoading, isError } = useProduct(productSlug);
   const [open, setOpen] = useState(true);
+
+  if (!productSlug) {
+    return <Result status="info" title="Chưa có sản phẩm nào được chọn để thanh toán" extra={<Button type="primary" href="/buyer/products">Quay về danh mục</Button>} />;
+  }
 
   if (isLoading) return <PageLoading />;
   if (isError) {
@@ -51,6 +55,7 @@ export function BuyerCheckoutScreen() {
       <PurchaseFlowModal
         {...(planId ? { initialPlanId: planId } : {})}
         onClose={() => setOpen(false)}
+        onOrderPrepared={(order) => setSearchParams({ product: productSlug, planId: order.planId, orderId: order.id }, { replace: true })}
         open={open}
         product={product}
         {...(resumableOrderId ? { resumeOrderId: resumableOrderId } : {})}

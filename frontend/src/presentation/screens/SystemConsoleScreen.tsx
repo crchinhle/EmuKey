@@ -1,7 +1,7 @@
 import { LoadingOverlay } from '../components/WorkspacePrimitives';
 import { Alert, Button, Input, Popconfirm, Table } from 'antd';
 import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { describeApiError, requestJson, useAuth, type AuthUser } from '../../application/auth/authContext';
 import { useAssistanceHealth, useBlockchainReconciliation, usePlatformReadiness } from '../../application/operations/operationsQueries';
@@ -9,6 +9,7 @@ import { usePaymentHistory } from '../../application/orders/orderQueries';
 
 import { PaymentReviewPanel } from '../components/PaymentReviewPanel';
 import { AuditLogPanel } from '../components/AuditLogPanel';
+import { ProviderInvitationsPanel } from '../components/ProviderInvitationsPanel';
 import { PageLoading, FactList, PageHeader } from '../components/WorkspacePrimitives';
 
 export function SystemConsoleScreen() {
@@ -61,11 +62,12 @@ export function SystemConsoleScreen() {
           ['blockchain', 'Blockchain'],
           ['audit', 'Nhật ký'],
         ].map(([value, label]) => (
-          <a className={new URLSearchParams(location.search).get('view') === value || (value === 'all' && !new URLSearchParams(location.search).get('view')) ? 'active' : ''} href={value === 'all' ? '/system/console' : `/system/console?view=${value}`} key={value}>{label}</a>
+          <Link className={new URLSearchParams(location.search).get('view') === value || (value === 'all' && !new URLSearchParams(location.search).get('view')) ? 'active' : ''} to={value === 'all' ? '/system/console' : `/system/console?view=${value}`} key={value}>{label}</Link>
         ))}
       </nav>
       <section className="workspace-card table-card spaced-card">
         {view === 'users' ? <>
+          {permitted ? <ProviderInvitationsPanel /> : null}
           {!permitted ? <Alert message="Bạn không có quyền quản lý tài khoản." type="warning" /> : null}
            {accounts.isError ? <Alert title={describeApiError(accounts.error, 'Không thể tải danh sách tài khoản.')} type="error" action={<Button disabled={accounts.isFetching} onClick={() => void accounts.refetch()}>Thử lại</Button>} /> : null}
            {stateMutation.isError ? <Alert message={describeApiError(stateMutation.error, 'Không thể cập nhật trạng thái tài khoản.')} type="error" description="Kết quả thao tác có thể chưa rõ. Hãy tải lại trạng thái tài khoản trước khi quyết định thao tác tiếp theo." action={<Button disabled={refreshingAccountState} onClick={() => void refreshAccountState()}>Làm mới trạng thái</Button>} /> : null}
@@ -85,7 +87,7 @@ export function SystemConsoleScreen() {
           <div className="section-heading"><h2 className="section-title">Đối soát blockchain</h2><><Button  disabled={(!permitted) || (reconciliation.isPending)} onClick={() => reconciliation.mutate()}>Chạy đối soát</Button><LoadingOverlay active={reconciliation.isPending} label="Đang xử lý yêu cầu: Chạy đối soát" /></></div>
           {reconciliation.isError ? <Alert type="error" title="Không thể chạy đối soát blockchain." action={<Button onClick={() => { reconciliation.reset(); reconciliation.mutate(); }}>Thử lại</Button>} /> : null}
           {reconciliation.data ? <div className="stack-list"><p>Sự kiện đã ghi nhận: {reconciliation.data.indexedEvents}</p><p>Yêu cầu chưa rõ kết quả: {reconciliation.data.health.unknown_commands}</p><p>Sự kiện đang chờ: {reconciliation.data.health.pending_events}</p><p>Bản ghi đã đồng bộ lại: {reconciliation.data.projection.licenseRepairs + reconciliation.data.projection.commandRepairs}</p></div> : <div className="empty-state"><strong>Chưa chạy đối soát</strong><p>Đối chiếu dữ liệu hệ thống với các sự kiện blockchain để phát hiện và xử lý sai lệch.</p></div>}
-        </> : view === 'audit' && permitted ? <AuditLogPanel /> : <div className="empty-state"><h2>Theo dõi hệ thống</h2><p>Xem tình trạng các dịch vụ phía trên. Chọn Người dùng, Thanh toán hoặc Blockchain để kiểm tra chi tiết.</p><p><a href="/system/console?view=audit">Tra cứu nhật ký hệ thống</a></p></div>}
+        </> : view === 'audit' && permitted ? <AuditLogPanel /> : <div className="empty-state"><h2>Theo dõi hệ thống</h2><p>Xem tình trạng các dịch vụ phía trên. Chọn Người dùng, Thanh toán hoặc Blockchain để kiểm tra chi tiết.</p><p><Link to="/system/console?view=audit">Tra cứu nhật ký hệ thống</Link></p></div>}
       </section>
     </>
   );
