@@ -2,6 +2,7 @@ import type { Client, QueryResultRow } from 'pg';
 import { canonicalCatalogSql } from './database-cli.js';
 
 const EXPECTED_TABLES = [
+  'catalog_ai_embeddings',
   'chain_commands',
   'chain_events',
   'chain_indexer_checkpoints',
@@ -24,11 +25,10 @@ const EXPECTED_TABLES = [
   'plans',
   'products',
   'provider_invitations',
-  'schema_versions',
   'users',
 ] as const;
 
-const EXPECTED_EXTENSIONS = ['citext', 'pgcrypto'] as const;
+const EXPECTED_EXTENSIONS = ['citext', 'pgcrypto', 'vector'] as const;
 
 const EXPECTED_CRITICAL_CONSTRAINTS = {
   ck_license_devices_ref:
@@ -52,9 +52,9 @@ const EXPECTED_CRITICAL_CONSTRAINTS = {
   fk_licenses_last_chain_event:
     'FOREIGN KEY (last_applied_chain_event_id, id) REFERENCES chain_events(confirmed_license_event_id, license_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED',
   fk_licenses_plan:
-    'FOREIGN KEY (plan_id, product_id, plan_commitment) REFERENCES plans(id, product_id, plan_commitment) ON DELETE RESTRICT',
+    'FOREIGN KEY (plan_id, product_id) REFERENCES plans(id, product_id) ON DELETE RESTRICT',
   fk_orders_plan:
-    'FOREIGN KEY (plan_id, product_id, plan_commitment_snapshot) REFERENCES plans(id, product_id, plan_commitment) ON DELETE RESTRICT',
+    'FOREIGN KEY (plan_id, product_id) REFERENCES plans(id, product_id) ON DELETE RESTRICT',
   fk_orders_target_license:
     'FOREIGN KEY (target_license_id, provider_user_id, customer_user_id, product_id, plan_id, plan_commitment_snapshot) REFERENCES licenses(id, provider_user_id, customer_user_id, product_id, plan_id, plan_commitment) ON DELETE RESTRICT',
   fk_payment_transactions_attempt_order:
@@ -89,11 +89,12 @@ const EXPECTED_CRITICAL_INDEXES = {
 } as const;
 
 const EXPECTED_CRITICAL_COLUMNS = {
-  'schema_versions.schema_fingerprint': { dataType: 'character varying', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
+  'orders.purchase_snapshot': { dataType: 'jsonb', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
   'license_key_deliveries.delivery_id': { dataType: 'uuid', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
   'license_key_deliveries.retry_until': { dataType: 'timestamp with time zone', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
   'payment_transactions.review_evidence': { dataType: 'jsonb', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
   'messages.citation_details': { dataType: 'jsonb', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
+  'messages.ai_metadata': { dataType: 'jsonb', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
   'conversations.claim_expires_at': { dataType: 'timestamp with time zone', expression: null, isGenerated: 'NEVER', isNullable: 'YES' },
   'conversations.claim_version': { dataType: 'bigint', expression: null, isGenerated: 'NEVER', isNullable: 'NO' },
   'license_devices.display_name': { dataType: 'character varying', expression: null, isGenerated: 'NEVER', isNullable: 'YES' },

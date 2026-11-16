@@ -12,6 +12,7 @@
     "db:seed": "node --env-file-if-exists=.env dist/entrypoints/database/seed.js",
     "db:seed:demo": "node --env-file-if-exists=.env dist/entrypoints/database/seed.js --demo",
     "db:verify": "node --env-file-if-exists=.env dist/entrypoints/database/verify.js",
+    "ai:catalog:index": "node --env-file-if-exists=.env dist/entrypoints/database/index-ai-catalog.js",
     "reconcile:run": "node --env-file-if-exists=.env scripts/reconcile.mjs",
     "reconcile:payment:sandbox": "node --env-file-if-exists=.env scripts/reconcile-sandbox-payment.mjs",
     "lint": "eslint .",
@@ -23,8 +24,7 @@
     "secrets:rotate:dev": "node scripts/rotate-dev-secrets.mjs",
     "contracts:build": "corepack pnpm --dir contracts build && corepack pnpm --dir contracts abi:export",
     "openapi:check": "node scripts/generate-openapi.mjs --check",
-    "openapi:generate": "node scripts/generate-openapi.mjs",
-    "db:upgrade": "node --env-file-if-exists=.env dist/entrypoints/database/upgrade.js"
+    "openapi:generate": "node scripts/generate-openapi.mjs"
   },
   "dependencies": {
     "@getbrevo/brevo": "6.0.3",

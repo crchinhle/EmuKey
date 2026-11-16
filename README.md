@@ -6,7 +6,7 @@ Nền tảng bán và quản lý license: NestJS API/worker, PostgreSQL external
 
 - Node 22.21.0, Corepack và pnpm 11.25.0; Docker Compose v2.
 - PostgreSQL 15 hoặc mới hơn, database riêng đã tạo và tài khoản có quyền cài `pgcrypto`, `citext`, tạo schema/bảng/function/trigger. Không dùng database chung có dữ liệu ngoài EmuKey.
-- `backend/database/schema.sql` là schema authority duy nhất, hiện có 24 bảng. `db:initialize` dành cho database mới; database có dữ liệu dùng guarded `db:upgrade`. Baseline `cf17043` đi qua continuity; baseline PostgreSQL 18 `9ed5729` có đường nâng trực tiếp tới `provider_handoff_20261104`.
+- `backend/database/schema.sql` là nguồn cấu trúc database duy nhất, gồm 23 bảng. Khi đổi cấu trúc, dựng lại database từ đầu; không còn lệnh nâng cấp tại chỗ.
 - Blockchain runtime dùng Sepolia thật. Cần RPC, relayer testnet có gas và địa chỉ contract hợp lệ để nghiệm thu phát hành/gia hạn trên chain. API/worker ở `NODE_ENV=development` yêu cầu SePay sandbox, Brevo, Gemini và FCM cùng credentials tương ứng. Adapter `fake` chỉ được dùng trong `NODE_ENV=test` với fixture cô lập; không khởi động được runtime development thông thường và không chứng minh tích hợp thật.
 
 Từ thư mục `EmuKey/`, sao chép `backend/.env.example` thành `backend/.env`, điền PostgreSQL, JWT secret, các credentials provider, activation envelope key 32 bytes dạng 64 ký tự hex và cấu hình Sepolia. Mẫu chỉ liệt kê biến cần điền, chưa thể chạy bằng các placeholder. Giữ `.env` ngoài Git. Với Compose, PostgreSQL phải truy cập được từ container: `localhost` trong container không phải máy host; Docker Desktop có thể dùng `host.docker.internal`.
@@ -36,20 +36,19 @@ corepack pnpm --dir backend db:verify
 
 Initializer từ chối `NODE_ENV=production` và từ chối database không rỗng nếu không có `--allow-destructive`. Không dùng flag đó để nâng cấp. Demo seed là tùy chọn phát triển: `corepack pnpm --dir backend db:initialize --demo` trên database rỗng với `NODE_ENV=development`; tài khoản/mã trong demo không phải dữ liệu vận hành.
 
-## Nâng cấp database có dữ liệu
+## Dựng lại database khi thay đổi cấu trúc
 
-Sao lưu và diễn tập restore trước; dừng API và worker trong cửa sổ bảo trì để tránh code cũ chạy với schema mới. Lệnh chỉ hỗ trợ đúng baseline đã duyệt, giữ các hàng dữ liệu và chạy trong transaction có advisory lock/timeout:
+Dừng API và worker, cập nhật `backend/database/schema.sql`, rồi chạy từ `EmuKey/` với `NODE_ENV=development`:
 
 ```sh
-corepack pnpm --dir backend db:upgrade --from=cf17043 --to=continuity_20261101
+corepack pnpm --dir backend build
+corepack pnpm --dir backend db:initialize --allow-destructive
 corepack pnpm --dir backend db:verify
 ```
 
-Có thể chạy cùng lệnh bằng `docker compose --profile maintenance run --rm database-upgrade`. Schema lạ, checksum thay đổi hoặc cấu trúc bị sửa sau nâng cấp đều bị từ chối; không chỉnh fingerprint để bỏ qua. Bản nâng cấp thêm receipt nhận key (chỉ metadata), version/fingerprint schema, lease hỗ trợ, metadata thiết bị, citation và evidence review. Nó không chuyển tiền, gửi email hay gửi giao dịch chain. Khi code mới không tương thích, rollback bằng quy trình restore đã diễn tập; không chạy initializer trên dữ liệu cũ.
+Lệnh xóa toàn bộ dữ liệu trong schema `public` và các đối tượng phụ thuộc, rồi tạo lại 23 bảng trong một transaction. Database và role PostgreSQL vẫn được giữ. Nếu tự drop và tạo lại database rỗng, chạy `db:initialize` không cần flag. Khởi tạo ở production vẫn bị chặn. `db:reset` là tên gọi khác của init; thêm `--demo` khi cần dữ liệu mẫu. Khởi động lại API/worker sau khi kiểm tra đạt.
 
-Đường phục hồi đã kiểm thử dùng physical base backup PostgreSQL 15 kèm WAL, khởi động trên cluster clone cùng phiên bản, đối chiếu fingerprint/dữ liệu rồi mới nâng cấp clone. `pg_dump/pg_restore` có thể viết lại cast trong constraint/index/generated expression: dữ liệu có thể phục hồi nhưng fingerprint khác và upgrader vẫn từ chối. Vì vậy không coi logical dump là bằng chứng có thể rollback rồi chạy lại upgrader. Cần diễn tập phương thức snapshot/physical restore mà dịch vụ PostgreSQL thực tế hỗ trợ trước khi bảo trì; không tự sửa fingerprint trong database. Xem [PostgreSQL pg_basebackup](https://www.postgresql.org/docs/15/app-pgbasebackup.html).
-
-Giới hạn trên áp dụng cho đường continuity PostgreSQL 15 đã kiểm thử. Riêng baseline `9ed5729` PostgreSQL 18, dạng logical restore đã được tái tạo độc lập và đưa vào allowlist fingerprint; đã kiểm tra nâng clone từ backup Neon và giữ dữ liệu. Đây không phải quyền bỏ qua fingerprint cho mọi bản restore hay mọi phiên bản schema.
+Không còn bảng ghi phiên bản schema hoặc cơ chế nâng cấp giữ dữ liệu. Init không phục hồi dữ liệu cũ. Dữ liệu blockchain và hệ thống nhà cung cấp nằm bên ngoài, không bị xóa khi reset database; dùng môi trường demo riêng khi bắt đầu lại.
 
 ## Chạy local
 
@@ -94,11 +93,8 @@ Sau đổi API: sinh `backend` OpenAPI, sao chép sang `frontend/openapi/` và `
 
 ## Phát hành và bàn giao cho nhà cung cấp
 
-Sau upgrade continuity, chạy `db:upgrade --from=continuity_20261101 --to=provider_handoff_20261104` bằng guarded CLI. Fresh initializer tạo schema 24 bảng và ghi version mới. API/worker phải nâng cùng phiên bản; không reset database vận hành.
 
-Database PostgreSQL 18 còn ở `9ed5729` dùng `corepack pnpm --dir backend db:upgrade --from=9ed5729 --to=provider_handoff_20261104` từ thư mục `EmuKey`, sau backup/restore và dừng API/worker. Đây là một transaction ghép các delta đã version hóa, không chạy fresh initializer. Chỉ hỗ trợ fingerprint nguyên bản và dạng logical restore đã kiểm thử của baseline đó; schema khác vẫn bị chặn. Các trường lịch sử chưa có ánh xạ an toàn làm upgrade dừng với `LEGACY_DATA_REQUIRES_EXPLICIT_ARCHIVAL`, cần xử lý có chủ đích trước khi chạy lại.
 
-Đường legacy giữ `knowledge_chunks.token_count`, context hội thoại và lịch sử delivery thông báo; EMAIL đã gửi không bị đưa lại vào hàng chờ. Evidence trước chuyển đổi nằm ở `notifications.data._emukey_legacy_delivery`. Không khôi phục key cũ từ commitment/hash hoặc tự gửi lại email/key cho khách sau upgrade.
 
 Backup `ACTIVATION_ENVELOPE_KEY` cùng chính sách bảo vệ database: biến này mã hóa cả key material và token tích hợp. `secrets:rotate:dev` chỉ đổi JWT/session secret, giữ nguyên khóa lưu trữ. Đổi khóa lưu trữ cần quy trình giải mã/mã hóa lại ciphertext có kiểm chứng; không thay giá trị trực tiếp trong `.env`.
 
@@ -111,3 +107,28 @@ Token kết nối là credential máy chủ nhà cung cấp chấp nhận; EmuKe
 Nhà cung cấp phải lưu receipt idempotent trước ACK. Thời hạn/quyền lợi được gửi bằng snapshot đầy đủ có revision tăng dần; ứng dụng của bên bán kiểm tra whitelist tại máy chủ của họ. EmuKey không cung cấp activation/entitlement cho license mới. Buyer nhận key sau ACK hiện hành và xác nhận đã lưu như trước.
 
 Đổi cấu hình đưa công việc đang chờ về lỗi cấu hình để xử lý; probe/bật cấu hình mới rồi gửi lại có lý do. Khi rollback, dừng checkout mới/worker và giữ dữ liệu outbox/ciphertext; không xóa dữ liệu hoặc coi key đã giao là chưa tồn tại.
+# AI Assistant: nâng cấp và vận hành
+
+Luồng Gemini hiểu câu hỏi theo ngữ nghĩa trước khi truy xuất: chuyển cách gọi tự nhiên, viết tắt/không dấu/lỗi gõ và câu tiếp nối thành intent, truy vấn tìm kiếm, điều kiện và tham chiếu có cấu trúc. Backend lấy ứng viên Catalog bằng tên đã đối chiếu hoặc embedding, rồi Gemini chọn nguồn liên quan trong danh sách ID được phép. Không buộc khách gõ đúng tên đầy đủ hoặc một mẫu câu. Khi cách gọi vẫn mơ hồ, trợ lý hỏi lại; lỗi provider được báo riêng. Giá/thiết bị/thời hạn/nhà cung cấp luôn dựng từ dữ liệu công bố, không lấy giá trị do mô hình tự tạo.
+
+AI dùng Catalog công khai và tài liệu Knowledge `READY`/hiện hành. Khách có phiên Redis hết hạn sau 30 phút; Customer dùng Conversation/Message hiện có. Việc chuyển nhân viên chỉ thực hiện khi người dùng bấm xác nhận. AI dừng khi hội thoại đã vào hàng đợi Support.
+
+Tại thư mục `backend`, dùng tài khoản bảo trì được phép cài extension `vector`, tạo view/table và role để chạy nâng cấp bổ sung, giữ nguyên dữ liệu hiện có:
+
+```powershell
+corepack pnpm build
+corepack pnpm ai:catalog:index --upgrade-only
+```
+
+SQL nâng cấp được lấy từ vùng `emukey:ai-retrieval` trong `database/schema.sql`; không chạy lại trình khởi tạo database cho mục đích nâng cấp AI. Cấp membership `emukey_ai_reader` cho login của `AI_RETRIEVAL_DATABASE_URL` (hoặc `DATABASE_URL` nếu dùng mặc định), ví dụ `GRANT emukey_ai_reader TO your_inference_login;`. Reader chỉ có quyền SELECT trên ba view công khai; adapter luôn mở transaction `READ ONLY` và `SET LOCAL ROLE`, tương thích transaction pooler. Một login riêng cho `AI_RETRIEVAL_DATABASE_URL` giúp tách credentials khỏi trusted conversation/indexing services.
+
+```powershell
+corepack pnpm ai:catalog:index
+corepack pnpm ai:catalog:index --status
+```
+
+Đặt `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` (mặc định `gemini-embedding-001`) và `GEMINI_EMBEDDING_DIMENSIONS` (mặc định `768`) trong cấu hình runtime. Worker kiểm tra thay đổi mỗi phút; chỉ embed lại nội dung có hash thay đổi và thử lại ở lần kiểm tra tiếp theo khi provider lỗi. Truy vấn luôn đối chiếu publication/hash/model/dimensions hiện tại, có fallback lexical được ghi log rõ ràng. Sau khi đổi model hoặc dimensions, chạy backfill và kiểm tra `--status` trước khi dựa vào tìm kiếm ngữ nghĩa.
+
+API mới: `POST /api/v1/public/assistant/ask` nhận `question`, UUID `clientMessageId`, và `sessionId` do server cấp ở lượt trước. Endpoint Customer hiện có được mở rộng metadata `intent`, `outcome`, `catalogSources`, `recommendations`. Giá và card được dựng từ dữ liệu backend; hướng dẫn kỹ thuật chỉ trả đoạn trích đã xác minh, không tự thêm bước. Retry giữ nguyên intent nhưng sẽ trả `AI_SOURCES_CHANGED` nếu nguồn cũ không còn hợp lệ.
+
+Kiểm thử Gemini thật là opt-in qua `EMUKEY_TEST_REAL_EMBEDDINGS=1` và `EMUKEY_TEST_REAL_AI=1`; chỉ dùng dữ liệu kiểm thử trong container biệt lập. Kiểm thử giao diện dùng API mô phỏng được ghi nhãn riêng.
